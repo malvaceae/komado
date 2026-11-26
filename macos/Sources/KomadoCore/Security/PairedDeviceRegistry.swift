@@ -94,7 +94,7 @@ public struct PairedDeviceRegistry: Sendable {
         return query
     }
 
-    private func isValid(_ device: PairedDevice) -> Bool {
+    func isValid(_ device: PairedDevice) -> Bool {
         let name = device.name.trimmingCharacters(in: .whitespacesAndNewlines)
         return !name.isEmpty && device.name.utf8.count <= 256 &&
             !device.name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) &&

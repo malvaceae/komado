@@ -5,7 +5,9 @@ import Security
 /// Tracks outstanding device-authentication challenges for local host sessions.
 /// Callers must supply a server-created session ID and a public key from the
 /// paired-device registry over a host-authenticated TLS session. Registry and
-/// TLS handling are outside this type.
+/// TLS handling are outside this type. A pairing coordinator may instead use a
+/// candidate key after checking an invitation, solely to prove possession;
+/// the key must not become trusted until that proof succeeds.
 public actor DeviceChallengeStore {
     public enum IssueError: Error, Equatable {
         case invalidPublicKey
