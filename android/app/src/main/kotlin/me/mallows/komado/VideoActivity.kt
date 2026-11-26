@@ -124,12 +124,10 @@ class VideoActivity : Activity() {
     }
 
     private fun chooseWindow(established: AuthenticatedHostConnection, windows: List<WindowInfo>) {
-        val labels = windows.map { getString(R.string.window_option, it.application, it.title) }.toTypedArray()
-        targetDialog = AlertDialog.Builder(this).setTitle(R.string.select_window).setItems(labels) { _, index ->
+        targetDialog = WindowPickerDialog.show(this, windows, onChoose = { window ->
             targetDialog = null
-            if (active) executor.execute { startMedia(established, null, windows[index].id) }
-        }.setNegativeButton(R.string.cancel) { _, _ -> finish() }
-            .setOnCancelListener { finish() }.show()
+            if (active) executor.execute { startMedia(established, null, window.id) }
+        }, onCancel = { finish() })
     }
 
     private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?, windowId: Long? = null) {
