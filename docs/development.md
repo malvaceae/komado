@@ -2,7 +2,7 @@
 
 ## 現状
 
-macOSの共通コードをSwift Packageとして、Androidの共通コードをKotlinのJVMモジュールとして実装しています。製品版のmacOSアプリとAndroidアプリ、CI・配布手順はまだ整備されていません。技術検証用のコードは[検証手順](../experiments/README.md)を参照してください。
+macOSの共通コードをSwift Packageとして、Androidの共通コードをKotlinのJVMモジュールとして実装しています。Androidアプリには接続先の名前とアドレスを端末内に保存・編集・削除する初期画面があります。保存はペアリングではなく、接続機能も未実装です。製品版のmacOSアプリ、CI・配布手順はまだ整備されていません。技術検証用のコードは[検証手順](../experiments/README.md)を参照してください。
 
 ## 開発の進め方
 
@@ -33,6 +33,7 @@ Android側はJDKを用いて実行します。
 ```sh
 ./android/gradlew -p android :core:test
 ANDROID_SERIAL=emulator-5554 ./android/gradlew -p android :security:connectedDebugAndroidTest :security:lintDebug
+./android/gradlew -p android :app:assembleDebug :app:lintDebug
 ```
 
 後者は起動済みのエミュレーターが必要です。シリアルは対象の環境に合わせて指定します。

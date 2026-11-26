@@ -32,6 +32,7 @@
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター、macOS 26.7.3、Apple Silicon | Android KeystoreのP-256署名とmacOS側の検証 | エミュレーターの一時的なテストアプリで鍵を生成し、署名をCryptoKitで検証 | 正しい署名を受理し、変更したチャレンジを拒否。アプリ・鍵は削除済み。端末認証のプロトコル、実機およびハードウェア保護は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2 | ペアリング済み端末のKeychain保存 | 分離したテスト用項目で登録・取得・一覧・削除と不正な保存内容の拒否を確認 | Swiftの自動テストが成功。ペアリングやセッションとの連携、IntelおよびmacOS 13での動作は未検証 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター | IMEの未確定文字列と確定文字列 | 一時的なテスト用IMEからInputConnectionへ変換途中の文字列と日本語・絵文字を含む確定文字列を送信 | 両方の変換途中イベントと確定文字列を受信し、エディターの結果も一致。元のIMEを復元。実際の日本語IME、Macへの転送および実機は未検証 |
+| 2026-11-27 | Android 16 API 36 arm64エミュレーター、Androidアプリ初期版 | 接続先のローカル保存 | デバッグ版を起動し、接続先の追加、再起動後の表示と削除を操作 | 確認した範囲で成功。編集の保存、実機、API 26、ペアリングと接続は未検証 |
 | 2026-11-27 | Android 16 API 36、arm64エミュレーター、io.getstream:stream-webrtc-android 1.3.10 | WebRTCとSurfaceViewRenderer | Android検証アプリの起動・ログ確認 | 初期化に成功。実機、API 26、映像の受信・描画、相互接続は未検証 |
 
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター、stasel/WebRTC 158.0.0・io.getstream:stream-webrtc-android 1.3.10 | 異なるWebRTC配布物の接続 | [相互接続検証](../experiments/README.md#macosとandroidエミュレーターの相互接続) | 生成映像とメインディスプレイの実画面をそれぞれ10フレーム以上受信し、H.264とDataChannelの往復を確認。Tailscale経由、Android実機およびハードウェア処理は未検証 |

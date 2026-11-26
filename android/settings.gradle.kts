@@ -12,4 +12,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "komado-android"
-include(":core", ":security")
+include(":app", ":core", ":security")

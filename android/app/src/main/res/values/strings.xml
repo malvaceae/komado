@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">komado</string>
+    <string name="hosts">接続先</string>
+    <string name="connection_unavailable">接続機能は準備中です。接続先の保存だけ利用できます。</string>
+    <string name="empty_hosts">接続先がありません</string>
+    <string name="add_host">接続先を追加</string>
+    <string name="edit_host">接続先を編集</string>
+    <string name="host_name">名前</string>
+    <string name="host_address">IPアドレスまたはホスト名</string>
+    <string name="save">保存</string>
+    <string name="cancel">キャンセル</string>
+    <string name="delete">削除</string>
+    <string name="invalid_name">名前を入力してください</string>
+    <string name="invalid_address">IPアドレスまたはホスト名を入力してください</string>
+    <string name="delete_host_title">接続先を削除しますか？</string>
+    <string name="storage_error">接続先を読み込めません。保存データを確認してください。</string>
+    <string name="save_error">接続先を保存できませんでした。</string>
+    <string name="not_paired">未ペアリング</string>
+    <string name="host_description">%1$s\n%2$s\n%3$s</string>
+</resources>
