@@ -32,7 +32,7 @@ jobs:
           distribution: temurin
           java-version: '25'
       - name: Install Android SDK platform
-        run: sdkmanager 'platforms;android-37'
+        run: sdkmanager 'platforms;android-37.0'
       - name: Build, lint and test
         run: ./gradlew :core:test :security:lintDebug :app:lintDebug :app:assembleDebug
         working-directory: android
