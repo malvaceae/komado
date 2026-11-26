@@ -24,16 +24,31 @@ final class DisplayCapture {
 
     static func start(display: SCDisplay, source: RTCVideoSource, route: MediaRouteGate,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
-        guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permissionRequired }
         let size = try dimensions(width: display.width, height: display.height)
+        return try await start(filter: SCContentFilter(display: display, excludingWindows: []),
+                               size: size, source: source, route: route, onStopped: onStopped)
+    }
+
+    static func start(window: SCWindow, source: RTCVideoSource, route: MediaRouteGate,
+                      onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
+        let width = window.frame.width, height = window.frame.height
+        guard width.isFinite, height.isFinite, width >= 2, height >= 2,
+              width <= Double(Int32.max), height <= Double(Int32.max) else { throw CaptureError.invalidDimensions }
+        let size = try dimensions(width: Int(width.rounded(.up)), height: Int(height.rounded(.up)))
+        return try await start(filter: SCContentFilter(desktopIndependentWindow: window),
+                               size: size, source: source, route: route, onStopped: onStopped)
+    }
+
+    private static func start(filter: SCContentFilter, size: (width: Int, height: Int), source: RTCVideoSource,
+                              route: MediaRouteGate, onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
+        guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permissionRequired }
         let configuration = SCStreamConfiguration()
         configuration.width = size.width
         configuration.height = size.height
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
         let bridge = DisplayFrameBridge(source: source, route: route, onStopped: onStopped)
-        let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []),
-                              configuration: configuration, delegate: bridge)
+        let stream = SCStream(filter: filter, configuration: configuration, delegate: bridge)
         try stream.addStreamOutput(bridge, type: .screen,
                                    sampleHandlerQueue: DispatchQueue(label: "me.mallows.komado.capture"))
         do {

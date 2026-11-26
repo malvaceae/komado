@@ -73,6 +73,8 @@ QRペアリングでは、Macで接続先を選んでペアリング情報を発
 
 Androidの`VideoViewport`は映像をアスペクト比を維持して表示した際の余白、倍率、移動を考慮し、表示範囲内のタッチを正規化します。macOSの`CaptureGeometry`はCore Graphicsのグローバル座標（ポイント単位）のキャプチャ領域と正規化座標から入力先の座標を求め、無効な座標や現在と異なるキャプチャリビジョンを拒否します。実際の映像表示との座標の一致、対象のフォーカス確認、入力送信はまだ実装・検証していません。端末認証と認証後の画面表示はエミュレーターで確認済みですが、Android実機では未検証です。
 
+Mac側にはScreenCaptureKitで単一ウインドウを映像トラックに渡す処理も追加しています。アプリからのウインドウ選択・転送や操作にはまだ接続していません。
+
 ## 環境と手順の整備予定
 
 macOSはXcode / Swift / Swift Package Manager、AndroidはAndroid Studio / Kotlin / Gradle Kotlin DSLを候補とします。最新安定版の利用を基本とし、実際の対応状況を確認してバージョンを固定します。Tailscale経由で接続する場合は各端末にTailscaleが必要です。
