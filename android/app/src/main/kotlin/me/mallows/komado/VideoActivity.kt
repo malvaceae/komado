@@ -2,6 +2,8 @@ package me.mallows.komado
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
@@ -15,6 +17,7 @@ import java.util.concurrent.Executors
 
 class VideoActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val lock = Any()
     @Volatile private var active = true
     private var connection: AuthenticatedHostConnection? = null
@@ -23,6 +26,7 @@ class VideoActivity : Activity() {
     private var captureRevision: Long? = null
     private var firstFrameShown = false
     private lateinit var status: TextView
+    private val firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,6 +42,7 @@ class VideoActivity : Activity() {
                     runOnUiThread {
                         if (active) {
                             firstFrameShown = true
+                            firstFrameDeadline.finish()
                             status.setText(R.string.screen_connected)
                         }
                     }
@@ -77,7 +82,10 @@ class VideoActivity : Activity() {
                                     } catch (_: Exception) { showFailure() }
                                 }
                             }
-                            override fun onCaptureReady(revision: Long) { captureRevision = revision }
+                            override fun onCaptureReady(revision: Long) {
+                                captureRevision = revision
+                                firstFrameDeadline.start()
+                            }
                             override fun onVideo(track: VideoTrack?) { renderer?.show(track) }
                             override fun onFailure() { stopSession(failed = true) }
                         })
@@ -104,6 +112,7 @@ class VideoActivity : Activity() {
     }
 
     private fun stopSession(failed: Boolean) {
+        firstFrameDeadline.finish()
         val current = synchronized(lock) {
             active = false
             val old = connection
