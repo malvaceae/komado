@@ -44,6 +44,7 @@ final class HostModel: ObservableObject {
     private var screenMonitor: ScreenEnvironmentMonitor?
     private var mediaTask: Task<Void, Never>?
     private var capture: DisplayCapture?
+    private var sleepActivity: IdleSleepActivity?
     private static let port: NWEndpoint.Port = 48365
 
     convenience init() {
@@ -356,6 +357,7 @@ final class HostModel: ObservableObject {
                 }
                 guard self.mediaID == id, !Task.isCancelled else { try? await captured.stop(); return }
                 self.capture = captured
+                self.sleepActivity = IdleSleepActivity()
                 try session.announceCapture(revision: 1)
             } catch { self?.mediaFailed(id: id) }
         }
@@ -380,6 +382,8 @@ final class HostModel: ObservableObject {
         screenMonitor = nil
         mediaSession?.close()
         mediaSession = nil
+        sleepActivity?.end()
+        sleepActivity = nil
         if let current = capture {
             capture = nil
             Task { try? await current.stop() }
