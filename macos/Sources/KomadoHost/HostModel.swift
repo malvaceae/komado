@@ -377,6 +377,12 @@ final class HostModel: ObservableObject {
                 route.close()
                 failed()
             }
+            // The notification only reports transitions; reject an already unavailable state as well.
+            guard NSApplication.shared.isProtectedDataAvailable else {
+                mediaFailed(id: id)
+                error = "保護データが利用できないため、画面転送を開始できません。"
+                return
+            }
             mediaTask = Task { [weak self] in
                 do {
                     let offer = try await session.makeOffer()
