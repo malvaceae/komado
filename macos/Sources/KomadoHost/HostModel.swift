@@ -167,6 +167,12 @@ final class HostModel: ObservableObject {
         refresh()
     }
 
+    func stopSharing() async {
+        guard sharingScreen, let connection = mediaConnection, let current = server else { return }
+        stopMedia()
+        await current.disconnect(sessionID: connection)
+    }
+
     func issueInvitation() async {
         guard running && ready && !busy && connectedDevice == nil else { return }
         busy = true

@@ -20,6 +20,9 @@ struct KomadoHostApp: App {
                 NSApp.activate(ignoringOtherApps: true)
             }
             if model.running {
+                if model.sharingScreen {
+                    Button("画面共有を停止") { Task { await model.stopSharing() } }
+                }
                 Button("接続を停止") { Task { await model.stop() } }
             }
             Divider()
@@ -75,6 +78,9 @@ private struct HostView: View {
                     Text("同一LANからの接続を受け付けます。VPNを使う場合は、このMacのVPNアドレスも入力してください。")
                         .foregroundStyle(.secondary)
                     if model.running {
+                        if model.sharingScreen {
+                            Button("画面共有を停止") { Task { await model.stopSharing() } }
+                        }
                         Button("接続を停止") { Task { await model.stop() } }
                     } else {
                         Button("接続を開始") { Task { await model.start() } }

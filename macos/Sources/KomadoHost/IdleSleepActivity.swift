@@ -5,7 +5,7 @@ import Foundation
 final class IdleSleepActivity {
     private var activity: (any NSObjectProtocol)?
 
-    init(reason: String = "komado 画面転送中") {
+    init(reason: String = "komado screen sharing") {
         activity = ProcessInfo.processInfo.beginActivity(options: .idleSystemSleepDisabled, reason: reason)
     }
 
