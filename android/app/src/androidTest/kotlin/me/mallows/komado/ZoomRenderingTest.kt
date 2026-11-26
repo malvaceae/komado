@@ -26,6 +26,7 @@ class ZoomRenderingTest {
         var viewport: ZoomableVideoView? = null
         var capturerStarted = false
         val origin = IntArray(2)
+        var side = 0
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 scenario.onActivity { activity ->
@@ -35,7 +36,10 @@ class ZoomRenderingTest {
                     })
                     viewport = ZoomableVideoView(activity, renderer!!.view)
                     val root = FrameLayout(activity).apply { setBackgroundColor(Color.RED) }
-                    root.addView(viewport, FrameLayout.LayoutParams(600, 600).apply { leftMargin = 100; topMargin = 100 })
+                    val metrics = activity.resources.displayMetrics
+                    side = minOf(600, metrics.widthPixels - 80, metrics.heightPixels - 80)
+                    assertTrue("Screen too small for rendering test", side >= 80)
+                    root.addView(viewport, FrameLayout.LayoutParams(side, side).apply { leftMargin = 40; topMargin = 40 })
                     activity.setContentView(root)
                     renderer!!.show(track)
                 }
@@ -65,21 +69,21 @@ class ZoomRenderingTest {
                     return try { bitmap.getPixel(x, y) } finally { bitmap.recycle() }
                 }
                 instrumentation.waitForIdleSync()
-                var before = sample(origin[0] + 150, origin[1] + 300)
+                var before = sample(origin[0] + side / 4, origin[1] + side / 2)
                 for (i in 0 until 20) {
                     if (Color.red(before) < 80) break
                     Thread.sleep(50)
-                    before = sample(origin[0] + 150, origin[1] + 300)
+                    before = sample(origin[0] + side / 4, origin[1] + side / 2)
                 }
                 scenario.onActivity { viewport!!.zoomBy(2.0) }
                 instrumentation.waitForIdleSync()
                 var after = before
                 for (i in 0 until 20) {
-                    after = sample(origin[0] + 150, origin[1] + 300)
+                    after = sample(origin[0] + side / 4, origin[1] + side / 2)
                     if (Color.red(after) > 180) break
                     Thread.sleep(50)
                 }
-                val outside = sample(origin[0] - 40, origin[1] + 300)
+                val outside = sample(origin[0] - 20, origin[1] + side / 2)
                 assertTrue("Synthetic dark stripe was not rendered (red=${Color.red(before)})", Color.red(before) < 80)
                 assertTrue("Zoom did not expose the bright stripe", Color.red(after) > 180)
                 assertTrue("Video escaped the viewport", Color.red(outside) > 180 && Color.green(outside) < 50)
