@@ -21,6 +21,7 @@
 | 日付 | 環境・バージョン | 対象 | 検証方法 | 結果・制約・証跡 |
 |---|---|---|---|---|
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Command Line ToolsのmacOS 27.0 SDK | macOS 13をターゲットとするScreenCaptureKitの基本API | Swiftの型検査（arm64 / x86_64） | 両ターゲットで成功。アプリのビルド・実行やmacOS 13実機の検証ではない |
+| 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2 | macOS 13を最低対象としたUniversal Binary | CaptureProbeをarm64 / x86_64向けに同時ビルドし、lipoとMach-Oヘッダーを確認 | 2アーキテクチャを含み、両方の最低macOSは13.0。Intel MacおよびmacOS 13での実行は未検証 |
 | 2026-11-27 | stasel/WebRTC 158.0.0 | macOS向けバイナリのCPU | 配布XCFrameworkのInfo.plist確認 | macOS用にarm64とx86_64を含む |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | macOS 13を最低対象にしたWebRTCライブラリの導入 | 初期化確認用プログラムのビルド・実行 | arm64でビルド・実行、RTCPeerConnectionFactoryの生成に成功。x86_64でもビルド成功。生成バイナリと両WebRTCスライスの最低macOSは13.0と確認。macOS 13・Intelでの実行やAndroidとの相互接続は未検証 |
 | 2026-11-27 | io.getstream:stream-webrtc-android 1.3.10 | Android ABIと最低APIの宣言 | Maven CentralのAARの内容・マニフェスト確認 | arm64-v8a、armeabi-v7a、x86、x86_64のネイティブライブラリを含み、minSdkVersion 21を宣言。ビルド・実行・Android API 26での動作は未検証 |
@@ -28,6 +29,8 @@
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | ScreenCaptureKitからWebRTCへの映像フレーム | [CaptureProbe](../experiments/README.md#macosでの映像取得)でメインディスプレイを3秒間キャプチャし、映像トラックの受信数を確認 | 89フレームを受信。画面内容の保存や通信は行っていない。Intel実機・macOS 13・エンコード・転送は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2 | ウインドウ単位のキャプチャ・Accessibility操作 | 検証用の自プロセスのウインドウを取得し、AXで位置を変更・照合・復元後にキャプチャ | ウインドウを22フレーム取得。位置変更の照合と復元APIが成功。別アプリ、非アクティブ・最小化時、Intel実機およびmacOS 13は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2 | CGEventによるキー・Unicode入力 | 検証用ウインドウを持つ自プロセスにPID指定でイベントを送信 | キー押下と日本語・絵文字を含むテスト文字列を受信。Android IME、他アプリ、フォーカス制御、ショートカット、キー解放は未検証 |
+| 2026-11-27 | Android 16 API 36 arm64エミュレーター、macOS 26.7.3、Apple Silicon | Android KeystoreのP-256署名とmacOS側の検証 | エミュレーターの一時的なテストアプリで鍵を生成し、署名をCryptoKitで検証 | 正しい署名を受理し、変更したチャレンジを拒否。アプリ・鍵は削除済み。端末認証のプロトコル、実機およびハードウェア保護は未検証 |
+| 2026-11-27 | Android 16 API 36 arm64エミュレーター | IMEの未確定文字列と確定文字列 | 一時的なテスト用IMEからInputConnectionへ変換途中の文字列と日本語・絵文字を含む確定文字列を送信 | 両方の変換途中イベントと確定文字列を受信し、エディターの結果も一致。元のIMEを復元。実際の日本語IME、Macへの転送および実機は未検証 |
 | 2026-11-27 | Android 16 API 36、arm64エミュレーター、io.getstream:stream-webrtc-android 1.3.10 | WebRTCとSurfaceViewRenderer | Android検証アプリの起動・ログ確認 | 初期化に成功。実機、API 26、映像の受信・描画、相互接続は未検証 |
 
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター、stasel/WebRTC 158.0.0・io.getstream:stream-webrtc-android 1.3.10 | 異なるWebRTC配布物の接続 | [相互接続検証](../experiments/README.md#macosとandroidエミュレーターの相互接続) | 生成映像とメインディスプレイの実画面をそれぞれ10フレーム以上受信し、H.264とDataChannelの往復を確認。Tailscale経由、Android実機およびハードウェア処理は未検証 |
