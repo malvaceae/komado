@@ -24,10 +24,22 @@ class AuthenticatedHostConnection private constructor(
     private val socket: SSLSocket,
     val deviceID: UUID,
 ) : Closeable {
-    private enum class MediaState { EXPECTING_OFFER, OFFER_RECEIVED, ANSWER_SENT }
+    private enum class MediaState { IDLE, EXPECTING_OFFER, OFFER_RECEIVED, ANSWER_SENT }
     private val mediaLock = Any()
-    private var mediaState = MediaState.EXPECTING_OFFER
+    private var mediaState = MediaState.IDLE
     @Volatile private var closed = false
+
+    /** Request one media session after device authentication. */
+    fun requestMedia() = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
+        try {
+            send(socket, SignalMessage.StartMedia)
+            mediaState = MediaState.EXPECTING_OFFER
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        }
+    }
 
     /** Waits for the authenticated host's SDP offer. Call from a background thread. */
     fun receiveOffer(): String = synchronized(mediaLock) {

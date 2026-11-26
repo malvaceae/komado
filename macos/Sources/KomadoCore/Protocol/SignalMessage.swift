@@ -9,6 +9,7 @@ public enum SignalMessage: Equatable, Sendable {
     case proof(Data)
     case accepted(deviceID: UUID)
     case rejected
+    case startMedia
     case offer(String)
     case answer(String)
 
@@ -40,6 +41,9 @@ public enum SignalMessage: Equatable, Sendable {
         case "rejected":
             guard fields.count == 2 else { throw MessageError.invalid }
             return .rejected
+        case "start":
+            guard fields.count == 2 else { throw MessageError.invalid }
+            return .startMedia
         case "offer":
             guard fields.count == 3, validSDP(fields[2]) else { throw MessageError.invalid }
             return .offer(fields[2])
@@ -66,6 +70,7 @@ public enum SignalMessage: Equatable, Sendable {
             fields = ["1", "proof", data.base64EncodedString()]
         case let .accepted(id): fields = ["1", "accepted", id.uuidString.lowercased()]
         case .rejected: fields = ["1", "rejected"]
+        case .startMedia: fields = ["1", "start"]
         case let .offer(sdp):
             guard Self.validSDP(sdp) else { throw MessageError.invalid }
             fields = ["1", "offer", sdp]

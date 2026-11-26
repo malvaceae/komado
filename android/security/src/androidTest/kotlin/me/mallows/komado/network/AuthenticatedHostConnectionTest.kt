@@ -83,6 +83,7 @@ class AuthenticatedHostConnectionTest {
                         }
                         assertTrue(verified)
                         send(socket, SignalMessage.Accepted(id))
+                        assertEquals(SignalMessage.StartMedia, receive(socket))
                         if (index == 0) {
                             send(socket, SignalMessage.Offer("v=0\r\ns=offer\r\n"))
                             val expected = "v=0\r\ns=answer\r\nc=IN IP4 127.0.0.1\r\n" +
@@ -100,6 +101,9 @@ class AuthenticatedHostConnectionTest {
                     "Android test", token, key)
                 assertEquals(id, paired.deviceID)
                 assertThrows(IOException::class.java) { paired.sendAnswer("v=0\r\ns=answer\r\n") }
+                assertThrows(IOException::class.java) { paired.receiveOffer() }
+                paired.requestMedia()
+                assertThrows(IOException::class.java) { paired.requestMedia() }
                 assertEquals("v=0\r\ns=offer\r\n", paired.receiveOffer())
                 paired.sendAnswer("v=0\r\ns=answer\r\nc=IN IP4 192.0.2.5\r\n" +
                     "a=candidate:1 1 udp 1 127.0.0.1 54321 typ host\r\n" +
@@ -108,6 +112,7 @@ class AuthenticatedHostConnectionTest {
                 paired.close()
                 val reconnected = AuthenticatedHostConnection.reconnect("127.0.0.1", server.localPort, fingerprint, id, key)
                 assertEquals(id, reconnected.deviceID)
+                reconnected.requestMedia()
                 reconnected.receiveOffer()
                 assertThrows(SdpCandidateFilter.FilterException::class.java) {
                     reconnected.sendAnswer("v=0\r\na=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n")

@@ -129,6 +129,7 @@ final class SignalingServerTests: XCTestCase {
         let authenticated = expectation(description: "two authenticated connections")
         authenticated.expectedFulfillmentCount = 2
         let firstAuthenticated = expectation(description: "first connection authenticated")
+        let mediaRequested = expectation(description: "media requested")
         let answerReceived = expectation(description: "SDP answer")
         let disconnected = expectation(description: "four disconnections")
         disconnected.expectedFulfillmentCount = 4
@@ -140,6 +141,7 @@ final class SignalingServerTests: XCTestCase {
                 case .authenticated:
                     if box.nextAuthentication() == 1 { firstAuthenticated.fulfill() }
                     authenticated.fulfill()
+                case .mediaRequested: mediaRequested.fulfill()
                 case let .answer(_, sdp): box.setAnswer(sdp); answerReceived.fulfill()
                 case .disconnected: disconnected.fulfill()
                 default: break
@@ -166,6 +168,12 @@ final class SignalingServerTests: XCTestCase {
         let offer = "v=0\r\ns=offer\r\nc=IN IP4 192.0.2.5\r\n" + localCandidate + otherCandidate
         let expectedOffer = "v=0\r\ns=offer\r\nc=IN IP4 \(address)\r\n" + localCandidate
         let answer = "v=0\r\ns=answer\r\n"
+        do {
+            try await server.sendOffer(offer)
+            XCTFail("Offer must wait for an explicit media request")
+        } catch { }
+        try await first.send(.startMedia)
+        await fulfillment(of: [mediaRequested], timeout: 10)
         do {
             try await server.sendOffer("v=0\r\n" + otherCandidate)
             XCTFail("Offer without a candidate for the signaling address must be rejected")

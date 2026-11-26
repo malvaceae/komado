@@ -18,6 +18,7 @@ sealed interface SignalMessage {
     data class Proof(val signatureDER: ByteArray) : SignalMessage
     data class Accepted(val deviceID: UUID) : SignalMessage
     data object Rejected : SignalMessage
+    data object StartMedia : SignalMessage
     data class Offer(val sdp: String) : SignalMessage
     data class Answer(val sdp: String) : SignalMessage
 }
@@ -68,6 +69,10 @@ object SignalMessageCodec {
                     if (fields.size != 2) throw MessageException()
                     SignalMessage.Rejected
                 }
+                "start" -> {
+                    if (fields.size != 2) throw MessageException()
+                    SignalMessage.StartMedia
+                }
                 "offer" -> {
                     if (fields.size != 3 || !validSDP(fields[2])) throw MessageException()
                     SignalMessage.Offer(fields[2])
@@ -103,6 +108,7 @@ object SignalMessageCodec {
             }
             is SignalMessage.Accepted -> listOf("1", "accepted", message.deviceID.toString())
             SignalMessage.Rejected -> listOf("1", "rejected")
+            SignalMessage.StartMedia -> listOf("1", "start")
             is SignalMessage.Offer -> {
                 if (!validSDP(message.sdp)) throw MessageException()
                 listOf("1", "offer", message.sdp)

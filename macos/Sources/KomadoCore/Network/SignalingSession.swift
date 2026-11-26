@@ -4,11 +4,12 @@ import Network
 /// One TLS connection with an authenticated, one-off SDP offer/answer exchange.
 actor SignalingSession {
     enum SessionError: Error { case notAuthenticated, unexpectedState }
-    private enum MediaState { case idle, awaitingAnswer, complete }
+    private enum MediaState { case idle, preparingOffer, awaitingAnswer, complete }
     private let connection: NWConnection
     private let handshake: ServerHandshake
     private let queue: DispatchQueue
     private let onAuthenticated: @Sendable (PairedDevice) async -> Void
+    private let onMediaRequested: @Sendable (PairedDevice, NWEndpoint.Host) async -> Void
     private let onAnswer: @Sendable (PairedDevice, String) async -> Void
     private let onClosed: @Sendable () async -> Void
     private var decoder = SignalFrame.Decoder()
@@ -20,12 +21,14 @@ actor SignalingSession {
 
     init(connection: NWConnection, handshake: ServerHandshake, queue: DispatchQueue,
          onAuthenticated: @escaping @Sendable (PairedDevice) async -> Void,
+         onMediaRequested: @escaping @Sendable (PairedDevice, NWEndpoint.Host) async -> Void,
          onAnswer: @escaping @Sendable (PairedDevice, String) async -> Void,
          onClosed: @escaping @Sendable () async -> Void) {
         self.connection = connection
         self.handshake = handshake
         self.queue = queue
         self.onAuthenticated = onAuthenticated
+        self.onMediaRequested = onMediaRequested
         self.onAnswer = onAnswer
         self.onClosed = onClosed
     }
@@ -54,11 +57,12 @@ actor SignalingSession {
 
     func sendOffer(_ sdp: String) throws {
         guard !closed, device != nil else { throw SessionError.notAuthenticated }
-        guard mediaState == .idle else { throw SessionError.unexpectedState }
+        guard mediaState == .preparingOffer else { throw SessionError.unexpectedState }
         guard case let .hostPort(host, _) = connection.currentPath?.localEndpoint else { throw SDPCandidateFilter.FilterError.invalidAddress }
         let restricted = try SDPCandidateFilter.restrict(sdp, to: host)
         let encoded = try SignalFrame.encode(SignalMessage.offer(restricted).encode())
         mediaState = .awaitingAnswer
+        timeout?.cancel()
         timeout = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
             await self?.close()
@@ -101,6 +105,17 @@ actor SignalingSession {
                 }
                 let message = try SignalMessage.decode(frame)
                 if let device {
+                    if message == .startMedia && mediaState == .idle {
+                        guard case let .hostPort(host, _) = connection.currentPath?.localEndpoint else { await close(); return }
+                        mediaState = .preparingOffer
+                        timeout = Task { [weak self] in
+                            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                            await self?.close()
+                        }
+                        await onMediaRequested(device, host)
+                        if !closed { receive() }
+                        return
+                    }
                     guard case let .answer(sdp) = message, mediaState == .awaitingAnswer else { await close(); return }
                     mediaState = .complete
                     timeout?.cancel()

@@ -6,6 +6,7 @@
     "[\"1\",\"proof\",\"MAEB\"]",
     "[\"1\",\"accepted\",\"550e8400-e29b-41d4-a716-446655440000\"]",
     "[\"1\",\"rejected\"]",
+    "[\"1\",\"start\"]",
     "[\"1\",\"offer\",\"v=0\\r\\no=- 1 1 IN IP4 0.0.0.0\\r\\ns=-\\r\\nt=0 0\\r\\n\"]",
     "[\"1\",\"answer\",\"v=0\\r\\no=- 1 1 IN IP4 0.0.0.0\\r\\ns=-\\r\\nt=0 0\\r\\n\"]"
   ],
@@ -20,6 +21,7 @@
     "[\"1\",\"pair\",\"Android\\n\",\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\",\"MAEA\"]",
     "[\"1\",\"pair\",\"Android\",\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\",\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"]",
     "[\"1\",\"rejected\",\"extra\"]",
+    "[\"1\",\"start\",\"extra\"]",
     "[\"1\",\"challenge\",123]",
     "[\"1\",\"unknown\"]",
     "[\"1\",\"rejected\"] [\"1\",\"rejected\"]",

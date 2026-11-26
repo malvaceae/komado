@@ -25,6 +25,7 @@ public actor SignalingServer {
     public enum Event: Sendable {
         case listening(interfaceName: String, address: String, port: UInt16)
         case authenticated(PairedDevice)
+        case mediaRequested(PairedDevice, NWEndpoint.Host)
         case answer(PairedDevice, String)
         case disconnected
         case throttled
@@ -169,6 +170,7 @@ public actor SignalingServer {
         let handshake = ServerHandshake(sessionID: id, pairing: pairing, authentication: authentication)
         let session = SignalingSession(connection: connection, handshake: handshake, queue: queue,
                                        onAuthenticated: { [weak self] device in await self?.authenticated(id: id, device: device) },
+                                       onMediaRequested: { [weak self] device, host in await self?.mediaRequested(id: id, device: device, host: host) },
                                        onAnswer: { [weak self] device, sdp in await self?.answer(id: id, device: device, sdp: sdp) },
                                        onClosed: { [weak self] in await self?.sessionClosed(id: id) })
         active = (id, session)
@@ -183,6 +185,11 @@ public actor SignalingServer {
     private func answer(id: UUID, device: PairedDevice, sdp: String) {
         guard !stopped, active?.id == id else { return }
         onEvent(.answer(device, sdp))
+    }
+
+    private func mediaRequested(id: UUID, device: PairedDevice, host: NWEndpoint.Host) {
+        guard !stopped, active?.id == id else { return }
+        onEvent(.mediaRequested(device, host))
     }
 
     private func sessionClosed(id: UUID) {
