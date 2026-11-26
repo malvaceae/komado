@@ -29,9 +29,11 @@ import java.text.DateFormat
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
+    private data class ConnectionCheck(val address: String, val port: Int, val pairing: Pairing, val succeeded: Boolean, val checkedAt: Long)
     private val store by lazy { HostStore(applicationContext) }
     private val executor = Executors.newSingleThreadExecutor()
     private var hosts = emptyList<Host>()
+    private val connectionChecks = mutableMapOf<String, ConnectionCheck>()
     private var readable = true
     private var busy = false
     private var pendingNetworkAction: (() -> Unit)? = null
@@ -102,6 +104,7 @@ class MainActivity : ComponentActivity() {
             hosts = emptyList()
             readable = false
         }
+        connectionChecks.keys.retainAll(hosts.map { it.id }.toSet())
         status.setText(if (busy) R.string.connecting else R.string.connection_unavailable)
         addButton.isEnabled = readable && !busy
         scanButton.isEnabled = readable && !busy
@@ -121,7 +124,13 @@ class MainActivity : ComponentActivity() {
                 val last = host.lastConnectedAt?.let {
                     getString(R.string.last_connected, DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)))
                 } ?: getString(R.string.never_connected)
-                text = "$details\n$last"
+                val check = connectionChecks[host.id]?.takeIf {
+                    it.address == host.address && it.port == host.port && it.pairing == host.pairing
+                }?.let {
+                    val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it.checkedAt))
+                    getString(R.string.checked_connection, time, getString(if (it.succeeded) R.string.check_succeeded else R.string.check_failed))
+                }
+                text = listOfNotNull(details, last, check).joinToString("\n")
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
                 isAllCaps = false
                 isEnabled = !busy
@@ -310,13 +319,16 @@ class MainActivity : ComponentActivity() {
                     UUID.fromString(pairing.deviceID), DeviceSigningKey(pairing.keyAlias)).use { }
                 runCatching { HostStore(applicationContext).recordConnection(host, System.currentTimeMillis()) }
             }.isSuccess
-            finishOperation(if (success) R.string.connection_success else R.string.connection_failed)
+            finishOperation(if (success) R.string.connection_success else R.string.connection_failed, host, success)
         }
     }
 
-    private fun finishOperation(message: Int) {
+    private fun finishOperation(message: Int, checkedHost: Host? = null, succeeded: Boolean = false) {
         runOnUiThread {
             if (!isFinishing && !isDestroyed) {
+                checkedHost?.pairing?.let {
+                    connectionChecks[checkedHost.id] = ConnectionCheck(checkedHost.address, checkedHost.port, it, succeeded, System.currentTimeMillis())
+                }
                 busy = false
                 refresh()
                 toast(message)

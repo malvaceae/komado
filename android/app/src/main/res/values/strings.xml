@@ -27,6 +27,9 @@
     <string name="paired">ペアリング済み</string>
     <string name="last_connected">最終認証: %1$s</string>
     <string name="never_connected">認証履歴なし</string>
+    <string name="checked_connection">%1$s の接続確認: %2$s</string>
+    <string name="check_succeeded">成功</string>
+    <string name="check_failed">失敗</string>
     <string name="pair">ペアリング</string>
     <string name="check_connection">接続を確認</string>
     <string name="view_screen">画面を見る</string>
