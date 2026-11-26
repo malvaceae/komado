@@ -1,8 +1,11 @@
 package me.mallows.komado
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -24,6 +27,7 @@ class MainActivity : Activity() {
     private var hosts = emptyList<Host>()
     private var readable = true
     private var busy = false
+    private var pendingNetworkAction: (() -> Unit)? = null
     private lateinit var list: LinearLayout
     private lateinit var addButton: Button
     private lateinit var status: TextView
@@ -56,6 +60,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        pendingNetworkAction = null
         executor.shutdown()
         super.onDestroy()
     }
@@ -96,16 +101,35 @@ class MainActivity : Activity() {
         else arrayOf(getString(R.string.view_screen), getString(R.string.check_connection), getString(R.string.edit_host), getString(R.string.delete))
         AlertDialog.Builder(this).setTitle(host.name).setItems(actions) { _, index ->
             if (host.pairing == null) when (index) {
-                0 -> pairHost(host)
+                0 -> withLocalNetworkPermission { pairHost(host) }
                 1 -> editHost(host)
                 2 -> deleteHost(host)
             } else when (index) {
-                0 -> startActivity(Intent(this, VideoActivity::class.java).putExtra(VideoActivity.HOST_ID, host.id))
-                1 -> checkConnection(host)
+                0 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java).putExtra(VideoActivity.HOST_ID, host.id)) }
+                1 -> withLocalNetworkPermission { checkConnection(host) }
                 2 -> editHost(host)
                 3 -> deleteHost(host)
             }
         }.setNegativeButton(R.string.cancel, null).show()
+    }
+
+    private fun withLocalNetworkPermission(action: () -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN ||
+            checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) == PackageManager.PERMISSION_GRANTED) {
+            action()
+            return
+        }
+        pendingNetworkAction = action
+        requestPermissions(arrayOf(Manifest.permission.ACCESS_LOCAL_NETWORK), LOCAL_NETWORK_REQUEST)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != LOCAL_NETWORK_REQUEST) return
+        val action = pendingNetworkAction
+        pendingNetworkAction = null
+        if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) toast(R.string.local_network_denied)
+        action?.invoke()
     }
 
     private fun editHost(existing: Host?) {
@@ -253,5 +277,7 @@ class MainActivity : Activity() {
     private fun hexBytes(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     private fun toast(message: Int) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    companion object { private const val LOCAL_NETWORK_REQUEST = 101 }
 
 }
