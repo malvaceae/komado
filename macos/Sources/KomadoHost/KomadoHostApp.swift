@@ -84,6 +84,18 @@ private struct HostView: View {
                 }
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
+                    Text("画面収録").font(.headline)
+                    if model.screenPermission {
+                        Text("許可されています。画面転送時にメインディスプレイを共有します。")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("画面転送には画面収録の許可が必要です。")
+                            .foregroundStyle(.secondary)
+                        Button("画面収録を許可") { model.requestScreenPermission() }
+                    }
+                }
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
                     Text("ペアリング").font(.headline)
                     Button("ペアリング情報を発行") { Task { await model.issueInvitation() } }
                         .disabled(!model.ready || model.busy || model.connectedDevice != nil)

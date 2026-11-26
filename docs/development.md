@@ -2,7 +2,7 @@
 
 ## 現状
 
-macOSの共通コードをSwift Packageとして、Androidの共通コードをKotlinのJVMモジュールとして実装しています。macOSのメニューバーアプリは、待ち受けの開始・停止、手動ペアリング情報の発行、登録端末の表示と削除を行います。Androidアプリは接続先の保存、手動ペアリング、認証済み接続の確認に対応します。画面転送やリモート操作は製品アプリにまだ組み込まれていません。CI・配布手順はまだ整備されていません。技術検証用のコードは[検証手順](../experiments/README.md)を参照してください。
+macOSの共通コードをSwift Packageとして、Androidの共通コードをKotlinのJVMモジュールとして実装しています。macOSのメニューバーアプリは、待ち受けの開始・停止、手動ペアリング情報の発行、登録端末の表示と削除を行います。Androidアプリは接続先の保存、手動ペアリング、認証済み接続とメインディスプレイの表示に対応します。リモート操作と音声転送は未実装です。CI・配布手順はまだ整備されていません。技術検証用のコードは[検証手順](../experiments/README.md)を参照してください。
 
 ## 開発の進め方
 
@@ -18,7 +18,7 @@ macOSの共通コードをSwift Packageとして、Androidの共通コードをK
 
 - Xcode 27.2が`/Applications/Xcode.app`にインストールされ、macOS 27.2 SDKを認識できる。システムの選択先はCommand Line Toolsのため、Xcodeのツールを使うコマンドには`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`を指定できる。
 - Android SDK、Java、Androidエミュレーターがある。Android実機はADBに接続されていない。
-- [macOSのWebRTC検証用プログラム](../experiments/README.md)を追加し、Apple Silicon上でビルド・起動を確認した。候補のWebRTC配布物について、含まれるCPU・ABIとAndroidのminSdk宣言を確認した。結果と検証範囲は[互換性](compatibility.md)を参照する。エミュレーターとの相互接続は確認したが、ライブラリの正式採用は未確定。
+- [macOSのWebRTC検証用プログラム](../experiments/README.md)を追加し、Apple Silicon上でビルド・起動を確認した。WebRTC配布物について、含まれるCPU・ABIとAndroidのminSdk宣言を確認した。両アプリに固定バージョンを組み込み、エミュレーターとの相互接続を確認している。結果と未検証の環境は[互換性](compatibility.md)を参照する。
 
 ## 共通コードのテスト
 
@@ -50,7 +50,7 @@ ANDROID_SERIAL=emulator-5554 ./android/gradlew -p android :app:connectedDebugAnd
 
 手動ペアリングでは、Macで確認情報を作成して待ち受けを開始し、表示された接続先アドレス・ポート、フィンガープリント、発行したペアリングコードをAndroidに入力します。VPN経由の場合はMacのVPNアドレスを指定して待ち受けを開始します。各アドレスに別のポートが割り当てられ、ネットワーク構成が変わるとポートが変わる場合があります。IPv6のリンクローカルアドレスは、Android側のインターフェース名をゾーンとして指定する必要がある場合があります。別端末でのLAN・VPN接続とIPv6の実動作はまだ検証していません。
 
-Androidの`VideoViewport`は映像をアスペクト比を維持して表示した際の余白、倍率、移動を考慮し、表示範囲内のタッチを正規化します。macOSの`CaptureGeometry`はCore Graphicsのグローバル座標（ポイント単位）のキャプチャ領域と正規化座標から入力先の座標を求め、無効な座標や現在と異なるキャプチャリビジョンを拒否します。実際の映像表示との座標の一致、対象のフォーカス確認、入力送信はまだ実装・検証していません。端末認証は手動ペアリングと再接続まで実装していますが、実機や認証後のWebRTC接続は未検証です。
+Androidの`VideoViewport`は映像をアスペクト比を維持して表示した際の余白、倍率、移動を考慮し、表示範囲内のタッチを正規化します。macOSの`CaptureGeometry`はCore Graphicsのグローバル座標（ポイント単位）のキャプチャ領域と正規化座標から入力先の座標を求め、無効な座標や現在と異なるキャプチャリビジョンを拒否します。実際の映像表示との座標の一致、対象のフォーカス確認、入力送信はまだ実装・検証していません。端末認証と認証後の画面表示はエミュレーターで確認済みですが、Android実機では未検証です。
 
 ## 環境と手順の整備予定
 

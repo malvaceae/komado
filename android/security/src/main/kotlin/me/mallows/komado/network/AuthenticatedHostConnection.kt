@@ -11,6 +11,7 @@ import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
 import java.net.InetSocketAddress
+import java.net.InetAddress
 import java.net.Socket
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -24,6 +25,7 @@ class AuthenticatedHostConnection private constructor(
     private val socket: SSLSocket,
     val deviceID: UUID,
 ) : Closeable {
+    val localAddress: InetAddress get() = socket.localAddress
     private enum class MediaState { IDLE, EXPECTING_OFFER, OFFER_RECEIVED, ANSWER_SENT }
     private val mediaLock = Any()
     private var mediaState = MediaState.IDLE
@@ -65,6 +67,15 @@ class AuthenticatedHostConnection private constructor(
             runCatching { close() }
             throw error
         }
+    }
+
+    /** Blocks until the host closes the signaling connection. */
+    fun awaitClosure() {
+        synchronized(mediaLock) {
+            if (closed || mediaState != MediaState.ANSWER_SENT) throw IOException("Unexpected signaling state")
+            socket.soTimeout = 0
+        }
+        if (socket.inputStream.read() != -1) throw IOException("Unexpected signaling data")
     }
 
     override fun close() {

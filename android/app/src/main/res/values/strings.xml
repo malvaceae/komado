@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">komado</string>
     <string name="hosts">接続先</string>
-    <string name="connection_unavailable">ペアリングと接続確認ができます。画面操作は準備中です。</string>
+    <string name="connection_unavailable">ペアリング済みのMacの画面を表示できます。操作機能は準備中です。</string>
     <string name="empty_hosts">接続先がありません</string>
     <string name="add_host">接続先を追加</string>
     <string name="edit_host">接続先を編集</string>
@@ -21,6 +21,12 @@
     <string name="paired">ペアリング済み</string>
     <string name="pair">ペアリング</string>
     <string name="check_connection">接続を確認</string>
+    <string name="view_screen">画面を見る</string>
+    <string name="screen_waiting">画面を接続中…</string>
+    <string name="screen_connected">画面を表示中</string>
+    <string name="screen_failed">画面に接続できませんでした。Macの待ち受けと画面収録の許可を確認してください。</string>
+    <string name="screen_closed">接続を終了しました。</string>
+    <string name="close_screen">画面を閉じる</string>
     <string name="connecting">接続中…</string>
     <string name="pair_instructions">Macに表示されたフィンガープリントを確認し、同じ値とペアリングコードを入力してください。</string>
     <string name="fingerprint">Macのフィンガープリント</string>

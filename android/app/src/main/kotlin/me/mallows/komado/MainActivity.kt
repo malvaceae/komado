@@ -2,6 +2,7 @@ package me.mallows.komado
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -91,13 +92,18 @@ class MainActivity : Activity() {
     }
 
     private fun hostActions(host: Host) {
-        val actions = arrayOf(getString(if (host.pairing == null) R.string.pair else R.string.check_connection),
-            getString(R.string.edit_host), getString(R.string.delete))
+        val actions = if (host.pairing == null) arrayOf(getString(R.string.pair), getString(R.string.edit_host), getString(R.string.delete))
+        else arrayOf(getString(R.string.view_screen), getString(R.string.check_connection), getString(R.string.edit_host), getString(R.string.delete))
         AlertDialog.Builder(this).setTitle(host.name).setItems(actions) { _, index ->
-            when (index) {
-                0 -> if (host.pairing == null) pairHost(host) else checkConnection(host)
+            if (host.pairing == null) when (index) {
+                0 -> pairHost(host)
                 1 -> editHost(host)
                 2 -> deleteHost(host)
+            } else when (index) {
+                0 -> startActivity(Intent(this, VideoActivity::class.java).putExtra(VideoActivity.HOST_ID, host.id))
+                1 -> checkConnection(host)
+                2 -> editHost(host)
+                3 -> deleteHost(host)
             }
         }.setNegativeButton(R.string.cancel, null).show()
     }

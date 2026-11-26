@@ -109,6 +109,7 @@ class AuthenticatedHostConnectionTest {
                     "a=candidate:1 1 udp 1 127.0.0.1 54321 typ host\r\n" +
                     "a=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n")
                 assertThrows(IOException::class.java) { paired.sendAnswer("v=0\r\ns=answer\r\n") }
+                paired.awaitClosure()
                 paired.close()
                 val reconnected = AuthenticatedHostConnection.reconnect("127.0.0.1", server.localPort, fingerprint, id, key)
                 assertEquals(id, reconnected.deviceID)

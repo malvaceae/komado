@@ -1,6 +1,8 @@
 import AppKit
+import CoreGraphics
 import KomadoCore
 import Network
+import ScreenCaptureKit
 import SwiftUI
 
 @MainActor
@@ -17,6 +19,7 @@ final class HostModel: ObservableObject {
     @Published private(set) var networkReady = false
     @Published private(set) var invitation: String?
     @Published private(set) var error: String?
+    @Published private(set) var screenPermission = CGPreflightScreenCaptureAccess()
     @Published var vpnAddress = ""
 
     private let identityStore: HostTLSIdentityStore
@@ -33,6 +36,13 @@ final class HostModel: ObservableObject {
     private var invitationExpiry: Task<Void, Never>?
     private var invitationCleanup: Task<Void, Never>?
     private var listening = Set<String>()
+    private var mediaID = UUID()
+    private var connectedSession: UUID?
+    private var mediaConnection: UUID?
+    private var mediaSession: HostMediaSession?
+    private var mediaRoute: MediaRouteGate?
+    private var mediaTask: Task<Void, Never>?
+    private var capture: DisplayCapture?
     private static let port: NWEndpoint.Port = 48365
 
     convenience init() {
@@ -54,6 +64,7 @@ final class HostModel: ObservableObject {
     }
 
     func refresh() {
+        screenPermission = CGPreflightScreenCaptureAccess()
         do {
             fingerprint = try identityStore.load().map { Self.format($0.fingerprintSHA256, separator: ":") }
             identityError = false
@@ -68,6 +79,11 @@ final class HostModel: ObservableObject {
             devices = []
             devicesError = true
         }
+    }
+
+    func requestScreenPermission() {
+        screenPermission = CGRequestScreenCaptureAccess()
+        if !screenPermission { error = "画面収録が許可されていません。システム設定で許可してください。" }
     }
 
     func createIdentity() {
@@ -105,6 +121,7 @@ final class HostModel: ObservableObject {
             listening.removeAll()
             addresses = []
             connectedDevice = nil
+            connectedSession = nil
             ready = false
             running = true
             server = newServer
@@ -128,6 +145,7 @@ final class HostModel: ObservableObject {
     }
 
     func stop() async {
+        stopMedia()
         let current = server
         generation = UUID()
         server = nil
@@ -135,6 +153,7 @@ final class HostModel: ObservableObject {
         ready = false
         addresses = []
         connectedDevice = nil
+        connectedSession = nil
         invitation = nil
         invitationGeneration = UUID()
         invitationExpiry?.cancel()
@@ -180,6 +199,7 @@ final class HostModel: ObservableObject {
         guard !busy else { return }
         busy = true
         defer { busy = false }
+        stopMedia()
         do {
             if let server { _ = try await server.removeDevice(id: device.id) }
             else { _ = try await authentication.removeDevice(id: device.id) }
@@ -257,7 +277,8 @@ final class HostModel: ObservableObject {
             let item = "\(interfaceName): \(host):\(port)"
             if listening.insert(item).inserted { addresses.append(item) }
             ready = listening.count == bindings.count
-        case let .authenticated(device):
+        case let .authenticated(id, device):
+            connectedSession = id
             connectedDevice = device.name
             invitation = nil
             invitationGeneration = UUID()
@@ -265,9 +286,13 @@ final class HostModel: ObservableObject {
             invitationExpiry = nil
             invitationCleanup = Task { try? await pairing.cancelInvitation() }
             refresh()
-        case .mediaRequested: break
-        case .answer: break
-        case .disconnected: connectedDevice = nil
+        case let .mediaRequested(id, _, address):
+            Task { [weak self] in await self?.startMedia(address: address, connection: id) }
+        case let .answer(id, _, sdp):
+            if mediaConnection == id { applyAnswer(sdp) }
+        case let .disconnected(id):
+            if mediaConnection == id { stopMedia() }
+            if connectedSession == id { connectedSession = nil; connectedDevice = nil }
         case .throttled: error = "接続試行が多いため、一時的に新しい接続を待機しています。"
         case .failed:
             error = "待ち受けに失敗しました。ネットワークとポートを確認してください。"
@@ -275,6 +300,82 @@ final class HostModel: ObservableObject {
         case .stopped:
             running = false
             ready = false
+        }
+    }
+
+    private func startMedia(address: NWEndpoint.Host, connection: UUID) async {
+        guard let server, await server.isActive(sessionID: connection), self.server === server, running else { return }
+        if mediaConnection != nil && mediaConnection != connection { stopMedia() }
+        guard mediaSession == nil else { return }
+        screenPermission = CGPreflightScreenCaptureAccess()
+        guard screenPermission else {
+            error = "画面収録の許可が必要です。許可してから接続し直してください。"
+            Task { await server.disconnect(sessionID: connection) }
+            return
+        }
+        let id = UUID()
+        mediaID = id
+        mediaConnection = connection
+        let failed: @Sendable () -> Void = { [weak self] in
+            Task { @MainActor [weak self] in self?.mediaFailed(id: id) }
+        }
+        let route = MediaRouteGate(address: address, onInvalidRoute: failed)
+        do {
+            let session = try HostMediaSession(route: route, onFailure: failed)
+            mediaRoute = route
+            mediaSession = session
+            mediaTask = Task { [weak self] in
+                do {
+                    let offer = try await session.makeOffer()
+                    guard let self, self.mediaID == id, !Task.isCancelled else { return }
+                    try await server.sendOffer(offer, sessionID: connection)
+                } catch { self?.mediaFailed(id: id) }
+            }
+        } catch { mediaFailed(id: id) }
+    }
+
+    private func applyAnswer(_ sdp: String) {
+        guard let session = mediaSession, let route = mediaRoute else { return }
+        let id = mediaID
+        mediaTask = Task { [weak self] in
+            do {
+                try await session.applyAnswer(sdp)
+                guard let self, self.mediaID == id, !Task.isCancelled else { return }
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                guard self.mediaID == id, !Task.isCancelled,
+                      let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) else {
+                    throw HostMediaSession.SessionError.creationFailed
+                }
+                let captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route) { [weak self] in
+                    Task { @MainActor [weak self] in self?.mediaFailed(id: id) }
+                }
+                guard self.mediaID == id, !Task.isCancelled else { try? await captured.stop(); return }
+                self.capture = captured
+            } catch { self?.mediaFailed(id: id) }
+        }
+    }
+
+    private func mediaFailed(id: UUID) {
+        guard mediaID == id else { return }
+        let connection = mediaConnection
+        stopMedia()
+        error = "画面転送を開始または継続できませんでした。接続と画面収録の許可を確認してください。"
+        let current = server
+        if let connection { Task { await current?.disconnect(sessionID: connection) } }
+    }
+
+    private func stopMedia() {
+        mediaID = UUID()
+        mediaConnection = nil
+        mediaTask?.cancel()
+        mediaTask = nil
+        mediaRoute?.close()
+        mediaRoute = nil
+        mediaSession?.close()
+        mediaSession = nil
+        if let current = capture {
+            capture = nil
+            Task { try? await current.stop() }
         }
     }
 

@@ -24,10 +24,10 @@ public actor SignalingServer {
     public enum ServerError: Error, Equatable { case invalidBindings, alreadyStarted, removalBusy, noConnection }
     public enum Event: Sendable {
         case listening(interfaceName: String, address: String, port: UInt16)
-        case authenticated(PairedDevice)
-        case mediaRequested(PairedDevice, NWEndpoint.Host)
-        case answer(PairedDevice, String)
-        case disconnected
+        case authenticated(UUID, PairedDevice)
+        case mediaRequested(UUID, PairedDevice, NWEndpoint.Host)
+        case answer(UUID, PairedDevice, String)
+        case disconnected(UUID)
         case throttled
         case failed
         case stopped
@@ -116,9 +116,18 @@ public actor SignalingServer {
         if let current = active { await current.session.close() }
     }
 
+    /// Ignore a delayed teardown for a connection that has already ended.
+    public func disconnect(sessionID: UUID) async {
+        if let current = active, current.id == sessionID { await current.session.close() }
+    }
+
+    public func isActive(sessionID: UUID) -> Bool {
+        !stopped && active?.id == sessionID
+    }
+
     /// Sends one SDP offer only after the active device has authenticated.
-    public func sendOffer(_ sdp: String) async throws {
-        guard let current = active, !stopped, !removing else { throw ServerError.noConnection }
+    public func sendOffer(_ sdp: String, sessionID: UUID? = nil) async throws {
+        guard let current = active, !stopped, !removing, sessionID == nil || sessionID == current.id else { throw ServerError.noConnection }
         try await current.session.sendOffer(sdp)
     }
 
@@ -179,24 +188,24 @@ public actor SignalingServer {
 
     private func authenticated(id: UUID, device: PairedDevice) {
         guard !stopped, active?.id == id else { return }
-        onEvent(.authenticated(device))
+        onEvent(.authenticated(id, device))
     }
 
     private func answer(id: UUID, device: PairedDevice, sdp: String) {
         guard !stopped, active?.id == id else { return }
-        onEvent(.answer(device, sdp))
+        onEvent(.answer(id, device, sdp))
     }
 
     private func mediaRequested(id: UUID, device: PairedDevice, host: NWEndpoint.Host) {
         guard !stopped, active?.id == id else { return }
-        onEvent(.mediaRequested(device, host))
+        onEvent(.mediaRequested(id, device, host))
     }
 
     private func sessionClosed(id: UUID) {
         guard active?.id == id else { return }
         active = nil
         guard !stopped else { return }
-        onEvent(.disconnected)
+        onEvent(.disconnected(id))
         if !removing && retry == nil {
             for slot in listeners { slot.listener.newConnectionLimit = 1 }
         }

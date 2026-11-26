@@ -11,6 +11,7 @@ private final class ServerTestBox: @unchecked Sendable {
     private var port: UInt16?
     private var authenticationCount = 0
     private var answer: String?
+    private var mediaSession: UUID?
     func setInterface(_ value: NWInterface?) { lock.withLock { interface = value } }
     func getInterface() -> NWInterface? { lock.withLock { interface } }
     func setPort(_ value: UInt16) { lock.withLock { port = value } }
@@ -18,6 +19,8 @@ private final class ServerTestBox: @unchecked Sendable {
     func nextAuthentication() -> Int { lock.withLock { authenticationCount += 1; return authenticationCount } }
     func setAnswer(_ value: String) { lock.withLock { answer = value } }
     func getAnswer() -> String? { lock.withLock { answer } }
+    func setMediaSession(_ value: UUID) { lock.withLock { mediaSession = value } }
+    func getMediaSession() -> UUID? { lock.withLock { mediaSession } }
 }
 
 private final class ServerTestPeer: @unchecked Sendable {
@@ -141,8 +144,8 @@ final class SignalingServerTests: XCTestCase {
                 case .authenticated:
                     if box.nextAuthentication() == 1 { firstAuthenticated.fulfill() }
                     authenticated.fulfill()
-                case .mediaRequested: mediaRequested.fulfill()
-                case let .answer(_, sdp): box.setAnswer(sdp); answerReceived.fulfill()
+                case let .mediaRequested(id, _, _): box.setMediaSession(id); mediaRequested.fulfill()
+                case let .answer(_, _, sdp): box.setAnswer(sdp); answerReceived.fulfill()
                 case .disconnected: disconnected.fulfill()
                 default: break
                 }
@@ -174,11 +177,22 @@ final class SignalingServerTests: XCTestCase {
         } catch { }
         try await first.send(.startMedia)
         await fulfillment(of: [mediaRequested], timeout: 10)
+        let staleConnection = UUID()
+        let currentConnection = try XCTUnwrap(box.getMediaSession())
+        let currentIsActive = await server.isActive(sessionID: currentConnection)
+        let staleIsActive = await server.isActive(sessionID: staleConnection)
+        XCTAssertTrue(currentIsActive)
+        XCTAssertFalse(staleIsActive)
+        await server.disconnect(sessionID: staleConnection)
+        do {
+            try await server.sendOffer(offer, sessionID: staleConnection)
+            XCTFail("An old connection must not affect the active session")
+        } catch { }
         do {
             try await server.sendOffer("v=0\r\n" + otherCandidate)
             XCTFail("Offer without a candidate for the signaling address must be rejected")
         } catch { }
-        try await server.sendOffer(offer)
+        try await server.sendOffer(offer, sessionID: currentConnection)
         let receivedOffer = try await first.receive()
         XCTAssertEqual(receivedOffer, .offer(expectedOffer))
         try await first.send(.answer(answer))
