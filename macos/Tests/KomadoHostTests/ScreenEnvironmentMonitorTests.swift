@@ -17,12 +17,16 @@ final class ScreenEnvironmentMonitorTests: XCTestCase {
         var monitor: ScreenEnvironmentMonitor? = ScreenEnvironmentMonitor(workspace: workspace, application: application) { counter.increment() }
         XCTAssertNotNil(monitor)
         workspace.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+        workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
+        workspace.post(name: NSWorkspace.willPowerOffNotification, object: nil)
         workspace.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
         application.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        XCTAssertEqual(counter.value, 3)
+        XCTAssertEqual(counter.value, 5)
         monitor = nil
+        workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
+        workspace.post(name: NSWorkspace.willPowerOffNotification, object: nil)
         workspace.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
         application.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        XCTAssertEqual(counter.value, 3)
+        XCTAssertEqual(counter.value, 5)
     }
 }

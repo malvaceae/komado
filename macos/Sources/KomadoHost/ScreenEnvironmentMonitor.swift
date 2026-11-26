@@ -12,6 +12,8 @@ final class ScreenEnvironmentMonitor: @unchecked Sendable {
          onChange: @escaping @Sendable () -> Void) {
         for (center, name) in [
             (workspace, NSWorkspace.sessionDidResignActiveNotification),
+            (workspace, NSWorkspace.willSleepNotification),
+            (workspace, NSWorkspace.willPowerOffNotification),
             (workspace, NSWorkspace.screensDidSleepNotification),
             (application, NSApplication.didChangeScreenParametersNotification),
         ] {
