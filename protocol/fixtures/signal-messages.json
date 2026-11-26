@@ -1,0 +1,28 @@
+{
+  "valid": [
+    "[\"1\",\"pair\",\"Android 日本語\",\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\",\"MAEA\"]",
+    "[\"1\",\"auth\",\"550e8400-e29b-41d4-a716-446655440000\"]",
+    "[\"1\",\"challenge\",\"Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=\"]",
+    "[\"1\",\"proof\",\"MAEB\"]",
+    "[\"1\",\"accepted\",\"550e8400-e29b-41d4-a716-446655440000\"]",
+    "[\"1\",\"rejected\"]"
+  ],
+  "invalid": [
+    "[\"2\",\"rejected\"]",
+    "[\"1\",\"auth\",\"550E8400-E29B-41D4-A716-446655440000\"]",
+    "[\"1\",\"auth\",\"1-1-1-1-1\"]",
+    "[\"1\",\"challenge\",\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\"]",
+    "[\"1\",\"proof\",\"\"]",
+    "[\"1\",\"proof\",\"MAEBBA\"]",
+    "[\"1\",\"pair\",\" \",\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\",\"MAEA\"]",
+    "[\"1\",\"pair\",\"Android\\n\",\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\",\"MAEA\"]",
+    "[\"1\",\"pair\",\"Android\",\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\",\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"]",
+    "[\"1\",\"rejected\",\"extra\"]",
+    "[\"1\",\"challenge\",123]",
+    "[\"1\",\"unknown\"]",
+    "[\"1\",\"rejected\"] [\"1\",\"rejected\"]",
+    "[\"1\",\"rejected\",]",
+    "['1','rejected']",
+    "[\"1\",\"pair\",\"\\ud800\",\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\",\"MAEA\"]"
+  ]
+}

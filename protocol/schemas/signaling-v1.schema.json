@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:komado:signaling:v1",
+  "title": "komado signaling v1",
+  "description": "Semantic byte lengths and canonical base64 are checked by implementations.",
+  "oneOf": [
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "pair"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "[^ ]",
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+          }
+        },
+        {
+          "type": "string",
+          "contentEncoding": "base64",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "minLength": 44,
+          "maxLength": 44,
+          "not": {
+            "pattern": "[^A-Za-z0-9+/=]"
+          }
+        },
+        {
+          "type": "string",
+          "contentEncoding": "base64",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "minLength": 4,
+          "maxLength": 172,
+          "not": {
+            "pattern": "[^A-Za-z0-9+/=]"
+          }
+        }
+      ],
+      "minItems": 5,
+      "maxItems": 5,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "auth"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "minLength": 36,
+          "maxLength": 36
+        }
+      ],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "challenge"
+        },
+        {
+          "type": "string",
+          "contentEncoding": "base64",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "minLength": 44,
+          "maxLength": 44,
+          "not": {
+            "pattern": "[^A-Za-z0-9+/=]"
+          }
+        }
+      ],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "proof"
+        },
+        {
+          "type": "string",
+          "contentEncoding": "base64",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "minLength": 4,
+          "maxLength": 96,
+          "not": {
+            "pattern": "[^A-Za-z0-9+/=]"
+          }
+        }
+      ],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "accepted"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "minLength": 36,
+          "maxLength": 36
+        }
+      ],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "rejected"
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2,
+      "items": false
+    }
+  ]
+}
