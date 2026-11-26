@@ -40,11 +40,13 @@
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター | MacのTLS待ち受けとAndroidの初期認証 | Wi-Fiアドレスに固定したMac側待ち受けへ同じMac上のエミュレーターから接続し、不一致のフィンガープリント、初回登録、再認証を確認 | 不一致を拒否し、登録と再認証に成功。テスト用の鍵・登録情報と一時テストコードは削除。別端末のLAN・Tailscale接続、画面との統合、WebRTCは未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター | 手動ペアリング画面とMacの待ち受け管理 | Macアプリの待ち受け・コード発行処理をテスト用の保存領域で起動し、Androidアプリの画面から誤ったフィンガープリント、正しい情報での登録、接続確認を操作 | 誤った値を拒否し、ペアリングと再認証に成功。Mac画面は自動操作ツールがタイムアウトしたため未確認。別端末のLAN・Tailscale接続、IPv6とWebRTC、Android実機は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター | 認証済みTLSでのSDP送受信 | Mac側待ち受けとAndroid接続処理でペアリング後、テスト文字列のOfferとAnswerを送受信 | 送受信に成功。WebRTCが生成した実際のSDP、ICE・DTLS接続、別端末のLAN・Tailscale経由は未検証。テスト用の鍵と一時テストコードは削除 |
+| 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター、stasel/WebRTC 158.0.0・io.getstream:stream-webrtc-android 1.3.10 | 製品アプリへのWebRTC組み込み | Macアプリのビルド・署名検証とWebRTCファクトリーの生成、Androidアプリのエミュレーターテスト | 両OSでファクトリーの生成に成功。Macアプリにフレームワーク、Android APKに4 ABIのネイティブライブラリを同梱。製品アプリ内でのメディア接続、他OS・実機での動作は未検証 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター | IMEの未確定文字列と確定文字列 | 一時的なテスト用IMEからInputConnectionへ変換途中の文字列と日本語・絵文字を含む確定文字列を送信 | 両方の変換途中イベントと確定文字列を受信し、エディターの結果も一致。元のIMEを復元。実際の日本語IME、Macへの転送および実機は未検証 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター、Androidアプリ初期版 | 接続先のローカル保存 | デバッグ版を起動し、接続先の追加、再起動後の表示と削除を操作 | 確認した範囲で成功。編集の保存、実機、API 26、ペアリングと接続は未検証 |
 | 2026-11-27 | Android 16 API 36、arm64エミュレーター、io.getstream:stream-webrtc-android 1.3.10 | WebRTCとSurfaceViewRenderer | Android検証アプリの起動・ログ確認 | 初期化に成功。実機、API 26、映像の受信・描画、相互接続は未検証 |
 
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター、stasel/WebRTC 158.0.0・io.getstream:stream-webrtc-android 1.3.10 | 異なるWebRTC配布物の接続 | [相互接続検証](../experiments/README.md#macosとandroidエミュレーターの相互接続) | 生成映像とメインディスプレイの実画面をそれぞれ10フレーム以上受信し、H.264とDataChannelの往復を確認。Tailscale経由、Android実機およびハードウェア処理は未検証 |
+| 2026-11-27 | 同上 | ICE候補を絞った相互接続 | 一時的な検証でMacのOfferをWi-Fiアドレスの候補、AndroidのAnswerをMacへの経路で選択されたアドレスの候補に絞り、生成映像とDataChannelを確認 | H.264映像を10フレーム以上受信し、DataChannelの往復に成功。SDPの候補を除くだけではWebRTCが別のインターフェースを使わないことを保証できない。Tailscale、別端末、製品アプリでの経路制限は未検証 |
 
 実画面の相互接続検証では、1280×800の映像でVideoToolboxが`kVTParameterErr`（-12902）を返し、エンコードされなかった。1152×720に縮小するとエンコード・受信に成功した。失敗時のH.264設定は`profile-level-id=42e01f`（Level 3.1）で、1280×800は4,000マクロブロックと、[WebRTCのLevel 3.1の上限](https://webrtc.googlesource.com/src/+/fb1c41a93d92d4188f068f437d80ef2c4b50c3a9/api/video_codecs/h264_profile_level_id.cc)である3,600を超えるため、これが一因の可能性がある。エラーの原因は確定しておらず、製品の解像度上限としては扱わない。
 
