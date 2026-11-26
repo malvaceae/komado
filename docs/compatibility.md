@@ -1,6 +1,6 @@
 # 互換性
 
-以下は対応候補であり、**ビルド・実機動作のいずれもまだ確認されていません**。依存ライブラリとOS APIの要件を調査し、実際のビルドと動作検証を経て確定します。
+以下は対応候補であり、**対応範囲の確定に必要な検証は完了していません**。依存ライブラリとOS APIの要件を調査し、実際のビルドと動作検証を経て確定します。
 
 | 対象 | 初期候補 | 状態 |
 |---|---|---|
@@ -20,6 +20,9 @@
 
 | 日付 | 環境・バージョン | 対象 | 検証方法 | 結果・制約・証跡 |
 |---|---|---|---|---|
-| — | — | — | — | 記録なし |
+| 2026-11-27 | macOS 26.7.3、Apple Silicon、Command Line ToolsのmacOS 27.0 SDK | macOS 13をターゲットとするScreenCaptureKitの基本API | Swiftの型検査（arm64 / x86_64） | 両ターゲットで成功。アプリのビルド・実行やmacOS 13実機の検証ではない |
+| 2026-11-27 | stasel/WebRTC 158.0.0 | macOS向けバイナリのCPU | 配布XCFrameworkのInfo.plist確認 | macOS用にarm64とx86_64を含む |
+| 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | macOS 13を最低対象にしたWebRTCライブラリの導入 | [検証用プログラム](../experiments/macos-webrtc/README.md)のビルド・実行 | arm64でビルド・実行、RTCPeerConnectionFactoryの生成に成功。x86_64でもビルド成功。生成バイナリと両WebRTCスライスの最低macOSは13.0と確認。macOS 13・Intelでの実行やAndroidとの相互接続は未検証 |
+| 2026-11-27 | io.getstream:stream-webrtc-android 1.3.10 | Android ABIと最低APIの宣言 | Maven CentralのAARの内容・マニフェスト確認 | arm64-v8a、armeabi-v7a、x86、x86_64のネイティブライブラリを含み、minSdkVersion 21を宣言。ビルド・実行・Android API 26での動作は未検証 |
 
 最低対応環境と最新環境、Apple Silicon / Intel、ARM64 / ARM32、画面・ネットワーク・OS状態の組み合わせは[テスト計画](testing.md)に従って検証します。対応範囲を変更する場合は具体的な技術的理由を記録します。
