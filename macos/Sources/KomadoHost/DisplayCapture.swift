@@ -20,7 +20,7 @@ final class DisplayCapture {
         self.bridge = bridge
     }
 
-    static func start(display: SCDisplay, source: RTCVideoSource,
+    static func start(display: SCDisplay, source: RTCVideoSource, route: MediaRouteGate,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permissionRequired }
         let size = try dimensions(width: display.width, height: display.height)
@@ -29,7 +29,7 @@ final class DisplayCapture {
         configuration.height = size.height
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
-        let bridge = DisplayFrameBridge(source: source, onStopped: onStopped)
+        let bridge = DisplayFrameBridge(source: source, route: route, onStopped: onStopped)
         let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []),
                               configuration: configuration, delegate: bridge)
         try stream.addStreamOutput(bridge, type: .screen,
@@ -69,11 +69,13 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
     private var active = true
     private let source: RTCVideoSource
     private let capturer: RTCVideoCapturer
+    private let route: MediaRouteGate
     private let onStopped: @Sendable () -> Void
 
-    init(source: RTCVideoSource, onStopped: @escaping @Sendable () -> Void) {
+    init(source: RTCVideoSource, route: MediaRouteGate, onStopped: @escaping @Sendable () -> Void) {
         self.source = source
         self.capturer = RTCVideoCapturer(delegate: source)
+        self.route = route
         self.onStopped = onStopped
     }
 
@@ -99,7 +101,7 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
         let frame = RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: image), rotation: ._0, timeStampNs: timestamp.value)
         lock.withLock {
             guard active else { return }
-            source.capturer(capturer, didCapture: frame)
+            route.withAllowedFrame { source.capturer(capturer, didCapture: frame) }
         }
     }
 }

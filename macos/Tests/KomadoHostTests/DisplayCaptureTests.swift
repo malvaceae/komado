@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import Network
 import ScreenCaptureKit
 import WebRTC
 import XCTest
@@ -33,7 +34,9 @@ final class DisplayCaptureTests: XCTestCase {
         let counter = FrameCounter()
         track.add(counter)
         defer { track.remove(counter) }
-        let capture = try await DisplayCapture.start(display: display, source: source, onStopped: {})
+        let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
+        route.selected(localCandidate: "candidate:1 1 udp 1 127.0.0.1 1234 typ host")
+        let capture = try await DisplayCapture.start(display: display, source: source, route: route, onStopped: {})
         try await Task.sleep(for: .seconds(2))
         try await capture.stop()
         let countAfterStop = counter.value
