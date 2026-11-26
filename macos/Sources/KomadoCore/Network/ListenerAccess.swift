@@ -22,7 +22,7 @@ public enum ListenerAccess {
     public static func addresses(on interface: NWInterface) throws -> [NWEndpoint.Host] {
         try assignedAddresses(interfaceName: interface.name).compactMap { bytes in
             if bytes.count == 4, let address = IPv4Address(bytes) { return .ipv4(address) }
-            if bytes.count == 16, let address = IPv6Address(bytes) { return .ipv6(address) }
+            if bytes.count == 16, let address = IPv6Address(bytes, interface) { return .ipv6(address) }
             return nil
         }
     }
@@ -45,6 +45,12 @@ public enum ListenerAccess {
         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
         sec_protocol_options_set_local_identity(tls.securityProtocolOptions, tlsIdentity)
         let parameters = NWParameters(tls: tls, tcp: .init())
+        guard let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options else { throw AccessError.invalidAddress }
+        switch address {
+        case .ipv4: ip.version = .v4
+        case .ipv6: ip.version = .v6
+        default: throw AccessError.invalidAddress
+        }
         parameters.requiredInterface = interface
         parameters.requiredLocalEndpoint = .hostPort(host: address, port: port)
         if case .localLink = scope { parameters.acceptLocalOnly = true }

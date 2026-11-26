@@ -15,5 +15,6 @@ let package = Package(
         .target(name: "KomadoCore", dependencies: [.product(name: "X509", package: "swift-certificates")]),
         .executableTarget(name: "KomadoHost", dependencies: ["KomadoCore"]),
         .testTarget(name: "KomadoCoreTests", dependencies: ["KomadoCore"]),
+        .testTarget(name: "KomadoHostTests", dependencies: ["KomadoHost", "KomadoCore"]),
     ]
 )

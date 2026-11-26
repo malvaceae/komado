@@ -6,11 +6,13 @@ public struct ListenerBinding {
     public let scope: ListenerAccess.Scope
     public let interface: NWInterface
     public let address: NWEndpoint.Host
+    public let port: NWEndpoint.Port?
 
-    public init(scope: ListenerAccess.Scope, interface: NWInterface, address: NWEndpoint.Host) {
+    public init(scope: ListenerAccess.Scope, interface: NWInterface, address: NWEndpoint.Host, port: NWEndpoint.Port? = nil) {
         self.scope = scope
         self.interface = interface
         self.address = address
+        self.port = port
     }
 }
 
@@ -21,7 +23,7 @@ public struct ListenerBinding {
 public actor SignalingServer {
     public enum ServerError: Error, Equatable { case invalidBindings, alreadyStarted, removalBusy }
     public enum Event: Sendable {
-        case listening(interfaceName: String, port: UInt16)
+        case listening(interfaceName: String, address: String, port: UInt16)
         case authenticated(PairedDevice)
         case disconnected
         case throttled
@@ -29,8 +31,9 @@ public actor SignalingServer {
         case stopped
     }
 
-    private struct Slot {
+    private struct Slot: Sendable {
         let interfaceName: String
+        let address: String
         let listener: NWListener
     }
 
@@ -48,20 +51,32 @@ public actor SignalingServer {
     private var stopped = false
     private var removing = false
 
-    public init(identity: SecIdentity, bindings: [ListenerBinding], port: NWEndpoint.Port,
-                pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator,
-                onEvent: @escaping @Sendable (Event) -> Void) throws {
+    public nonisolated static func create(identity: SecIdentity, bindings: [ListenerBinding], port: NWEndpoint.Port,
+                                         pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator,
+                                         onEvent: @escaping @Sendable (Event) -> Void) throws -> SignalingServer {
+        let ports = bindings.map { ($0.port ?? port).rawValue }.filter { $0 != 0 }
         guard (1...8).contains(bindings.count),
-              Set(bindings.map { "\($0.interface.index)|\($0.address)" }).count == bindings.count else {
+              Set(bindings.map { "\($0.interface.index)|\($0.address)" }).count == bindings.count,
+              Set(ports).count == ports.count else {
             throw ServerError.invalidBindings
         }
-        self.listeners = try bindings.map { binding in
+        let listeners = try bindings.map { binding in
             let parameters = try ListenerAccess.parameters(identity: identity, scope: binding.scope,
-                                                            interface: binding.interface, address: binding.address, port: port)
+                                                            interface: binding.interface, address: binding.address, port: binding.port ?? port)
             let listener = try NWListener(using: parameters)
             listener.newConnectionLimit = 1
-            return Slot(interfaceName: binding.interface.name, listener: listener)
+            let displayedAddress: String
+            if case let .ipv6(address) = binding.address, let unscoped = IPv6Address(address.rawValue) {
+                displayedAddress = "\(unscoped)"
+            } else { displayedAddress = "\(binding.address)" }
+            return Slot(interfaceName: binding.interface.name, address: displayedAddress, listener: listener)
         }
+        return SignalingServer(listeners: listeners, pairing: pairing, authentication: authentication, onEvent: onEvent)
+    }
+
+    private init(listeners: [Slot], pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator,
+                 onEvent: @escaping @Sendable (Event) -> Void) {
+        self.listeners = listeners
         self.pairing = pairing
         self.authentication = authentication
         self.onEvent = onEvent
@@ -121,7 +136,7 @@ public actor SignalingServer {
         switch state {
         case .ready:
             if let port = listeners[index].listener.port {
-                onEvent(.listening(interfaceName: listeners[index].interfaceName, port: port.rawValue))
+                onEvent(.listening(interfaceName: listeners[index].interfaceName, address: listeners[index].address, port: port.rawValue))
             }
         case .failed:
             onEvent(.failed)

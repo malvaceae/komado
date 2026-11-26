@@ -125,11 +125,11 @@ final class SignalingServerTests: XCTestCase {
         authenticated.expectedFulfillmentCount = 2
         let disconnected = expectation(description: "four disconnections")
         disconnected.expectedFulfillmentCount = 4
-        let server = try SignalingServer(identity: identity.identity,
+        let server = try SignalingServer.create(identity: identity.identity,
             bindings: [ListenerBinding(scope: .localLink, interface: interface, address: address)],
             port: .any, pairing: pairing, authentication: auth) { event in
                 switch event {
-                case let .listening(_, port): box.setPort(port); listening.fulfill()
+                case let .listening(_, _, port): box.setPort(port); listening.fulfill()
                 case .authenticated: authenticated.fulfill()
                 case .disconnected: disconnected.fulfill()
                 default: break

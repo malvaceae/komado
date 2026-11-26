@@ -12,77 +12,63 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import org.json.JSONArray
-import org.json.JSONObject
+import me.mallows.komado.network.AuthenticatedHostConnection
+import me.mallows.komado.security.DeviceSigningKey
 import java.util.UUID
+import java.util.concurrent.Executors
 
-private data class Host(val id: String, val name: String, val address: String)
-
-/** Local address book only. An entry is not an authenticated or paired host. */
 class MainActivity : Activity() {
-    private val preferences by lazy { getSharedPreferences("hosts", MODE_PRIVATE) }
-    private val hosts = mutableListOf<Host>()
+    private val store by lazy { HostStore(applicationContext) }
+    private val executor = Executors.newSingleThreadExecutor()
+    private var hosts = emptyList<Host>()
     private var readable = true
+    private var busy = false
     private lateinit var list: LinearLayout
+    private lateinit var addButton: Button
+    private lateinit var status: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        loadHosts()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(32), dp(24), dp(24))
         }
-        val title = TextView(this).apply { setText(R.string.hosts); textSize = 26f }
-        root.addView(title)
-        root.addView(TextView(this).apply {
-            setText(R.string.connection_unavailable)
-            setPadding(0, dp(12), 0, dp(12))
-        })
+        root.addView(TextView(this).apply { setText(R.string.hosts); textSize = 26f })
+        status = TextView(this).apply { setPadding(0, dp(12), 0, dp(12)) }
+        root.addView(status)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
-        root.addView(Button(this).apply {
+        addButton = Button(this).apply {
             setText(R.string.add_host)
-            isEnabled = readable
             setOnClickListener { editHost(null) }
-        })
+        }
+        root.addView(addButton)
         setContentView(root)
         refresh()
     }
 
-    private fun loadHosts() {
-        try {
-            val stored = preferences.getString("entries", null) ?: return
-            val array = JSONArray(stored)
-            val ids = mutableSetOf<String>()
-            for (i in 0 until array.length()) {
-                val item = array.getJSONObject(i)
-                val host = Host(item.getString("id"), item.getString("name"), item.getString("address"))
-                require(UUID.fromString(host.id).toString() == host.id && ids.add(host.id))
-                require(validName(host.name) && validAddress(host.address))
-                hosts.add(host)
-            }
-        } catch (_: Exception) {
-            hosts.clear()
-            readable = false
-        }
+    override fun onResume() {
+        super.onResume()
+        if (::list.isInitialized) refresh()
     }
 
-    private fun saveHosts(updated: List<Host>): Boolean {
-        val array = JSONArray()
-        updated.forEach { host -> array.put(JSONObject().put("id", host.id).put("name", host.name).put("address", host.address)) }
-        if (!preferences.edit().putString("entries", array.toString()).commit()) {
-            Toast.makeText(this, R.string.save_error, Toast.LENGTH_LONG).show()
-            return false
-        }
-        hosts.clear()
-        hosts.addAll(updated)
-        refresh()
-        return true
+    override fun onDestroy() {
+        executor.shutdown()
+        super.onDestroy()
     }
 
     private fun refresh() {
+        try {
+            hosts = store.load()
+            readable = true
+        } catch (_: Exception) {
+            hosts = emptyList()
+            readable = false
+        }
+        status.setText(if (busy) R.string.connecting else R.string.connection_unavailable)
+        addButton.isEnabled = readable && !busy
         list.removeAllViews()
         if (!readable || hosts.isEmpty()) {
             list.addView(TextView(this).apply {
@@ -93,68 +79,173 @@ class MainActivity : Activity() {
         }
         hosts.forEach { host ->
             list.addView(Button(this).apply {
-                text = getString(R.string.host_description, host.name, host.address, getString(R.string.not_paired))
+                val destination = if (host.address.contains(':')) "[${host.address}]:${host.port}" else "${host.address}:${host.port}"
+                text = getString(R.string.host_description, host.name, destination,
+                    getString(if (host.pairing == null) R.string.not_paired else R.string.paired))
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
                 isAllCaps = false
-                setOnClickListener { editHost(host) }
+                isEnabled = !busy
+                setOnClickListener { hostActions(host) }
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
     }
 
+    private fun hostActions(host: Host) {
+        val actions = arrayOf(getString(if (host.pairing == null) R.string.pair else R.string.check_connection),
+            getString(R.string.edit_host), getString(R.string.delete))
+        AlertDialog.Builder(this).setTitle(host.name).setItems(actions) { _, index ->
+            when (index) {
+                0 -> if (host.pairing == null) pairHost(host) else checkConnection(host)
+                1 -> editHost(host)
+                2 -> deleteHost(host)
+            }
+        }.setNegativeButton(R.string.cancel, null).show()
+    }
+
     private fun editHost(existing: Host?) {
-        val fields = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), 0, dp(24), 0)
-        }
-        val name = EditText(this).apply {
-            setHint(R.string.host_name)
-            setSingleLine()
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            setText(existing?.name.orEmpty())
-        }
-        val address = EditText(this).apply {
-            setHint(R.string.host_address)
-            setSingleLine()
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(existing?.address.orEmpty())
-        }
+        val fields = fields()
+        val name = field(R.string.host_name, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES, existing?.name)
+        val address = field(R.string.host_address, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI, existing?.address)
+        val port = field(R.string.port, InputType.TYPE_CLASS_NUMBER, (existing?.port ?: 48365).toString())
         fields.addView(name)
         fields.addView(address)
+        fields.addView(port)
         val dialog = AlertDialog.Builder(this)
             .setTitle(if (existing == null) R.string.add_host else R.string.edit_host)
-            .setView(fields)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.save, null)
-            .apply { if (existing != null) setNeutralButton(R.string.delete, null) }
-            .create()
+            .setView(fields).setNegativeButton(R.string.cancel, null).setPositiveButton(R.string.save, null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val hostName = name.text.toString().trim()
                 val hostAddress = address.text.toString().trim()
+                val hostPort = port.text.toString().toIntOrNull()
                 when {
-                    !validName(hostName) -> name.setError(getString(R.string.invalid_name))
-                    !validAddress(hostAddress) -> address.setError(getString(R.string.invalid_address))
+                    !HostStore.validName(hostName) -> name.error = getString(R.string.invalid_name)
+                    !HostStore.validAddress(hostAddress) -> address.error = getString(R.string.invalid_address)
+                    hostPort == null || hostPort !in 1..65535 -> port.error = getString(R.string.invalid_port)
                     else -> {
-                        val host = Host(existing?.id ?: UUID.randomUUID().toString(), hostName, hostAddress)
-                        val updated = if (existing == null) hosts + host else hosts.map { if (it.id == host.id) host else it }
-                        if (saveHosts(updated)) dialog.dismiss()
+                        val host = Host(existing?.id ?: UUID.randomUUID().toString(), hostName, hostAddress, hostPort, existing?.pairing)
+                        val saved = runCatching { store.save(existing, host) }.getOrDefault(false)
+                        if (saved) dialog.dismiss() else toast(R.string.save_error)
+                        refresh()
                     }
                 }
-            }
-            if (existing != null) dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.delete_host_title)
-                    .setMessage(existing.name)
-                    .setNegativeButton(R.string.cancel, null)
-                    .setPositiveButton(R.string.delete) { _, _ ->
-                        if (saveHosts(hosts.filterNot { it.id == existing.id })) dialog.dismiss()
-                    }.show()
             }
         }
         dialog.show()
     }
 
-    private fun validName(value: String) = value.isNotBlank() && value.length <= 128 && value.none { it.isISOControl() }
-    private fun validAddress(value: String) = value.isNotBlank() && value.length <= 253 && value.none { it.isWhitespace() || it.isISOControl() }
+    private fun deleteHost(host: Host) {
+        AlertDialog.Builder(this).setTitle(R.string.delete_host_title)
+            .setMessage(if (host.pairing == null) host.name else getString(R.string.delete_paired_message, host.name))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                val removed = runCatching { store.remove(host) }.getOrDefault(false)
+                if (removed) {
+                    host.pairing?.let {
+                        if (runCatching { DeviceSigningKey(it.keyAlias).delete() }.isFailure) toast(R.string.key_delete_error)
+                    }
+                } else toast(R.string.save_error)
+                refresh()
+            }.show()
+    }
+
+    private fun pairHost(host: Host) {
+        val fields = fields()
+        fields.addView(TextView(this).apply { setText(R.string.pair_instructions); setPadding(0, 0, 0, dp(12)) })
+        val fingerprint = field(R.string.fingerprint, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
+        val invitation = field(R.string.invitation, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
+        fields.addView(fingerprint)
+        fields.addView(invitation)
+        val dialog = AlertDialog.Builder(this).setTitle(R.string.pair).setView(fields)
+            .setNegativeButton(R.string.cancel, null).setPositiveButton(R.string.pair, null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val pinText = normalizeHex(fingerprint.text.toString())
+                val tokenText = normalizeHex(invitation.text.toString())
+                when {
+                    pinText == null -> fingerprint.error = getString(R.string.invalid_fingerprint)
+                    tokenText == null -> invitation.error = getString(R.string.invalid_invitation)
+                    else -> {
+                        dialog.dismiss()
+                        startPairing(host, pinText, tokenText)
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun startPairing(host: Host, pinText: String, tokenText: String) {
+        if (busy) return
+        busy = true
+        refresh()
+        val repository = HostStore(applicationContext)
+        executor.execute {
+            val alias = "me.mallows.komado.pair.${UUID.randomUUID()}"
+            val key = DeviceSigningKey(alias)
+            val token = hexBytes(tokenText)
+            var saved = false
+            try {
+                val model = android.os.Build.MODEL
+                val deviceName = if (HostStore.validName(model)) model else "Android"
+                val connection = AuthenticatedHostConnection.pair(host.address, host.port, hexBytes(pinText),
+                    deviceName, token, key)
+                val deviceID = connection.deviceID.toString()
+                connection.close()
+                saved = repository.pair(host, Pairing(deviceID, pinText, alias))
+            } catch (_: Exception) {
+                // Do not log addresses, invitation codes, or authentication details.
+            } finally {
+                token.fill(0)
+                if (!saved) runCatching { key.delete() }
+            }
+            finishOperation(if (saved) R.string.pair_success else R.string.pair_failed)
+        }
+    }
+
+    private fun checkConnection(host: Host) {
+        val pairing = host.pairing ?: return
+        if (busy) return
+        busy = true
+        refresh()
+        executor.execute {
+            val success = runCatching {
+                AuthenticatedHostConnection.reconnect(host.address, host.port, hexBytes(pairing.fingerprint),
+                    UUID.fromString(pairing.deviceID), DeviceSigningKey(pairing.keyAlias)).use { }
+            }.isSuccess
+            finishOperation(if (success) R.string.connection_success else R.string.connection_failed)
+        }
+    }
+
+    private fun finishOperation(message: Int) {
+        runOnUiThread {
+            if (!isFinishing && !isDestroyed) {
+                busy = false
+                refresh()
+                toast(message)
+            }
+        }
+    }
+
+    private fun fields() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(24), 0, dp(24), 0)
+    }
+
+    private fun field(hint: Int, input: Int, value: String? = null) = EditText(this).apply {
+        setHint(hint)
+        setSingleLine()
+        inputType = input
+        setText(value.orEmpty())
+    }
+
+    private fun normalizeHex(value: String): String? {
+        val normalized = value.filterNot { it == ':' || it.isWhitespace() }.uppercase(java.util.Locale.ROOT)
+        return normalized.takeIf { HostStore.validHex(it) }
+    }
+
+    private fun hexBytes(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    private fun toast(message: Int) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
 }
