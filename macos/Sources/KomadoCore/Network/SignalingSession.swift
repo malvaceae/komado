@@ -9,7 +9,7 @@ actor SignalingSession {
     private let handshake: ServerHandshake
     private let queue: DispatchQueue
     private let onAuthenticated: @Sendable (PairedDevice) async -> Void
-    private let onMediaRequested: @Sendable (PairedDevice, NWEndpoint.Host) async -> Void
+    private let onMediaRequested: @Sendable (PairedDevice, NWEndpoint.Host, UInt32?) async -> Void
     private let onAnswer: @Sendable (PairedDevice, String) async -> Void
     private let onClosed: @Sendable () async -> Void
     private var decoder = SignalFrame.Decoder()
@@ -18,10 +18,11 @@ actor SignalingSession {
     private var ready = false
     private var device: PairedDevice?
     private var mediaState: MediaState = .idle
+    private var displaySnapshot: [DisplayInfo]?
 
     init(connection: NWConnection, handshake: ServerHandshake, queue: DispatchQueue,
          onAuthenticated: @escaping @Sendable (PairedDevice) async -> Void,
-         onMediaRequested: @escaping @Sendable (PairedDevice, NWEndpoint.Host) async -> Void,
+         onMediaRequested: @escaping @Sendable (PairedDevice, NWEndpoint.Host, UInt32?) async -> Void,
          onAnswer: @escaping @Sendable (PairedDevice, String) async -> Void,
          onClosed: @escaping @Sendable () async -> Void) {
         self.connection = connection
@@ -105,14 +106,33 @@ actor SignalingSession {
                 }
                 let message = try SignalMessage.decode(frame)
                 if let device {
-                    if message == .startMedia && mediaState == .idle {
+                    if message == .listDisplays && mediaState == .idle && displaySnapshot == nil {
+                        let displays = try DisplayCatalog.active()
+                        let response = try SignalFrame.encode(SignalMessage.displays(displays).encode())
+                        displaySnapshot = displays
+                        connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                            Task { await self?.sentDisplayList(error: error) }
+                        })
+                        return
+                    }
+                    let displayID: UInt32?
+                    let startsMedia: Bool
+                    switch message {
+                    case .startMedia: displayID = nil; startsMedia = true
+                    case let .startDisplay(id):
+                        guard let snapshot = displaySnapshot, snapshot.contains(where: { $0.id == id }),
+                              try DisplayCatalog.active() == snapshot else { await close(); return }
+                        displayID = id; startsMedia = true
+                    default: displayID = nil; startsMedia = false
+                    }
+                    if startsMedia && mediaState == .idle {
                         guard case let .hostPort(host, _) = connection.currentPath?.localEndpoint else { await close(); return }
                         mediaState = .preparingOffer
                         timeout = Task { [weak self] in
                             do { try await Task.sleep(for: .seconds(30)) } catch { return }
                             await self?.close()
                         }
-                        await onMediaRequested(device, host)
+                        await onMediaRequested(device, host, displayID)
                         if !closed { receive() }
                         return
                     }
@@ -136,6 +156,12 @@ actor SignalingSession {
             _ = try? decoder.finish()
             await close()
         } else { receive() }
+    }
+
+    private func sentDisplayList(error: NWError?) async {
+        guard !closed else { return }
+        guard error == nil else { await close(); return }
+        receive()
     }
 
     private func sent(response: SignalMessage, error: NWError?) async {

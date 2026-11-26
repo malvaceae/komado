@@ -4,6 +4,7 @@ import me.mallows.komado.protocol.SignalFrame
 import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.protocol.SignalMessageCodec
 import me.mallows.komado.protocol.SdpCandidateFilter
+import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.security.DeviceSigningKey
 import me.mallows.komado.security.HostCertificateTrustManager
 import java.io.Closeable
@@ -29,14 +30,28 @@ class AuthenticatedHostConnection private constructor(
     private enum class MediaState { IDLE, EXPECTING_OFFER, OFFER_RECEIVED, ANSWER_SENT }
     private val mediaLock = Any()
     private var mediaState = MediaState.IDLE
+    private var displaysRequested = false
     @Volatile private var closed = false
 
     /** Request one media session after device authentication. */
-    fun requestMedia() = synchronized(mediaLock) {
+    fun requestMedia(displayId: Long? = null) = synchronized(mediaLock) {
         if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
         try {
-            send(socket, SignalMessage.StartMedia)
+            send(socket, if (displayId == null) SignalMessage.StartMedia else SignalMessage.StartDisplay(displayId))
             mediaState = MediaState.EXPECTING_OFFER
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        }
+    }
+
+    /** Queries the authenticated host once before starting media. */
+    fun listDisplays(): List<DisplayInfo> = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE || displaysRequested) throw IOException("Unexpected signaling state")
+        try {
+            displaysRequested = true
+            send(socket, SignalMessage.ListDisplays)
+            (receive(socket) as? SignalMessage.Displays)?.values ?: throw IOException("Expected display list")
         } catch (error: Exception) {
             runCatching { close() }
             throw error

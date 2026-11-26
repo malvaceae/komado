@@ -1,5 +1,16 @@
 import Foundation
 
+public struct DisplayInfo: Equatable, Sendable {
+    public let id: UInt32
+    public let width: UInt32
+    public let height: UInt32
+    public init(id: UInt32, width: UInt32, height: UInt32) {
+        self.id = id
+        self.width = width
+        self.height = height
+    }
+}
+
 /// Version 1 signaling messages. A successfully decoded message is still
 /// untrusted until it has been accepted by the authenticated session state.
 public enum SignalMessage: Equatable, Sendable {
@@ -10,6 +21,9 @@ public enum SignalMessage: Equatable, Sendable {
     case accepted(deviceID: UUID)
     case rejected
     case startMedia
+    case startDisplay(UInt32)
+    case listDisplays
+    case displays([DisplayInfo])
     case offer(String)
     case answer(String)
 
@@ -42,8 +56,24 @@ public enum SignalMessage: Equatable, Sendable {
             guard fields.count == 2 else { throw MessageError.invalid }
             return .rejected
         case "start":
+            if fields.count == 2 { return .startMedia }
+            guard fields.count == 3, let id = Self.positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
+            return .startDisplay(UInt32(id))
+        case "display.list":
             guard fields.count == 2 else { throw MessageError.invalid }
-            return .startMedia
+            return .listDisplays
+        case "display.listed":
+            guard fields.count >= 5, fields.count <= 194, (fields.count - 2).isMultiple(of: 3) else { throw MessageError.invalid }
+            var displays: [DisplayInfo] = []
+            var ids = Set<UInt32>()
+            for i in stride(from: 2, to: fields.count, by: 3) {
+                guard let id = positiveInteger(fields[i], max: UInt64(UInt32.max)),
+                      let width = positiveInteger(fields[i + 1], max: 65_535),
+                      let height = positiveInteger(fields[i + 2], max: 65_535),
+                      ids.insert(UInt32(id)).inserted else { throw MessageError.invalid }
+                displays.append(DisplayInfo(id: UInt32(id), width: UInt32(width), height: UInt32(height)))
+            }
+            return .displays(displays)
         case "offer":
             guard fields.count == 3, validSDP(fields[2]) else { throw MessageError.invalid }
             return .offer(fields[2])
@@ -71,6 +101,13 @@ public enum SignalMessage: Equatable, Sendable {
         case let .accepted(id): fields = ["1", "accepted", id.uuidString.lowercased()]
         case .rejected: fields = ["1", "rejected"]
         case .startMedia: fields = ["1", "start"]
+        case let .startDisplay(id):
+            guard id > 0 else { throw MessageError.invalid }
+            fields = ["1", "start", String(id)]
+        case .listDisplays: fields = ["1", "display.list"]
+        case let .displays(displays):
+            guard (1...64).contains(displays.count) else { throw MessageError.invalid }
+            fields = ["1", "display.listed"] + displays.flatMap { [String($0.id), String($0.width), String($0.height)] }
         case let .offer(sdp):
             guard Self.validSDP(sdp) else { throw MessageError.invalid }
             fields = ["1", "offer", sdp]
@@ -86,6 +123,13 @@ public enum SignalMessage: Equatable, Sendable {
     private static func validName(_ name: String) -> Bool {
         name.utf8.count <= 256 && !name.trimmingCharacters(in: CharacterSet(charactersIn: " ")).isEmpty &&
             !name.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+    }
+
+    private static func positiveInteger(_ value: String, max: UInt64) -> UInt64? {
+        guard !value.isEmpty, value.utf8.count <= 10, !value.hasPrefix("0"),
+              value.utf8.allSatisfy({ (48...57).contains($0) }), let number = UInt64(value),
+              (1...max).contains(number) else { return nil }
+        return number
     }
 
     private static func validSDP(_ sdp: String) -> Bool {

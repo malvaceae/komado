@@ -1,6 +1,7 @@
 package me.mallows.komado
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +10,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import me.mallows.komado.network.AuthenticatedHostConnection
+import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.security.DeviceSigningKey
 import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
@@ -23,6 +25,7 @@ class VideoActivity : Activity() {
     private var connection: AuthenticatedHostConnection? = null
     private var media: AndroidMediaSession? = null
     private var renderer: RemoteVideoRenderer? = null
+    private var displayDialog: AlertDialog? = null
     private var viewport: ZoomableVideoView? = null
     private val zoomButtons = mutableListOf<Button>()
     private var captureRevision: Long? = null
@@ -86,35 +89,58 @@ class VideoActivity : Activity() {
                 }
                 if (!keep) { established.close(); return@execute }
                 runCatching { HostStore(applicationContext).recordConnection(host, System.currentTimeMillis()) }
-                established.requestMedia()
-                val offer = established.receiveOffer()
-                runOnUiThread {
-                    if (!active) return@runOnUiThread
-                    try {
-                        val session = AndroidMediaSession(applicationContext, established.localAddress, object : AndroidMediaSession.Listener {
-                            override fun onAnswer(sdp: String) {
-                                if (!active) return
-                                executor.execute {
-                                    try {
-                                        established.sendAnswer(sdp)
-                                        established.awaitClosure()
-                                        showFailure()
-                                    } catch (_: Exception) { showFailure() }
-                                }
-                            }
-                            override fun onCaptureReady(revision: Long) {
-                                captureRevision = revision
-                                firstFrameDeadline.start()
-                            }
-                            override fun onVideo(track: VideoTrack?) { renderer?.show(track) }
-                            override fun onFailure() { stopSession(failed = true) }
-                        })
-                        media = session
-                        session.acceptOffer(offer)
-                    } catch (_: Exception) { stopSession(failed = true) }
-                }
+                if (intent.getBooleanExtra(CHOOSE_DISPLAY, false)) {
+                    val displays = try { established.listDisplays() } catch (_: Exception) {
+                        runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.screen_selection_failed) } }
+                        return@execute
+                    }
+                    runOnUiThread { if (active) chooseDisplay(established, displays) }
+                } else startMedia(established, null)
             } catch (_: Exception) { showFailure() }
         }
+    }
+
+    private fun chooseDisplay(established: AuthenticatedHostConnection, displays: List<DisplayInfo>) {
+        val labels = displays.mapIndexed { index, display ->
+            getString(R.string.screen_option, index + 1, display.width, display.height)
+        }.toTypedArray()
+        displayDialog = AlertDialog.Builder(this).setTitle(R.string.select_screen).setItems(labels) { _, index ->
+            displayDialog = null
+            if (active) executor.execute { startMedia(established, displays[index].id) }
+        }.setNegativeButton(R.string.cancel) { _, _ -> finish() }
+            .setOnCancelListener { finish() }.show()
+    }
+
+    private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?) {
+        try {
+            established.requestMedia(displayId)
+            val offer = established.receiveOffer()
+            runOnUiThread {
+                if (!active) return@runOnUiThread
+                try {
+                    val session = AndroidMediaSession(applicationContext, established.localAddress, object : AndroidMediaSession.Listener {
+                        override fun onAnswer(sdp: String) {
+                            if (!active) return
+                            executor.execute {
+                                try {
+                                    established.sendAnswer(sdp)
+                                    established.awaitClosure()
+                                    showFailure()
+                                } catch (_: Exception) { showFailure() }
+                            }
+                        }
+                        override fun onCaptureReady(revision: Long) {
+                            captureRevision = revision
+                            firstFrameDeadline.start()
+                        }
+                        override fun onVideo(track: VideoTrack?) { renderer?.show(track) }
+                        override fun onFailure() { stopSession(failed = true) }
+                    })
+                    media = session
+                    session.acceptOffer(offer)
+                } catch (_: Exception) { stopSession(failed = true) }
+            }
+        } catch (_: Exception) { showFailure() }
     }
 
     override fun onStop() {
@@ -140,6 +166,8 @@ class VideoActivity : Activity() {
             old
         }
         runCatching { current?.close() }
+        displayDialog?.dismiss()
+        displayDialog = null
         runCatching { media?.close() }
         media = null
         captureRevision = null
@@ -154,5 +182,8 @@ class VideoActivity : Activity() {
     private fun hexBytes(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
-    companion object { const val HOST_ID = "me.mallows.komado.host_id" }
+    companion object {
+        const val HOST_ID = "me.mallows.komado.host_id"
+        const val CHOOSE_DISPLAY = "me.mallows.komado.choose_display"
+    }
 }

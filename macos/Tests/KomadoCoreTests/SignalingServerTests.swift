@@ -10,17 +10,24 @@ private final class ServerTestBox: @unchecked Sendable {
     private var interface: NWInterface?
     private var port: UInt16?
     private var authenticationCount = 0
+    private var lastAuthenticated: UUID?
     private var answer: String?
     private var mediaSession: UUID?
+    private var mediaCount = 0
+    private var requestedDisplay: UInt32?
     func setInterface(_ value: NWInterface?) { lock.withLock { interface = value } }
     func getInterface() -> NWInterface? { lock.withLock { interface } }
     func setPort(_ value: UInt16) { lock.withLock { port = value } }
     func getPort() -> UInt16? { lock.withLock { port } }
     func nextAuthentication() -> Int { lock.withLock { authenticationCount += 1; return authenticationCount } }
+    func setLastAuthenticated(_ value: UUID) { lock.withLock { lastAuthenticated = value } }
+    func getLastAuthenticated() -> UUID? { lock.withLock { lastAuthenticated } }
     func setAnswer(_ value: String) { lock.withLock { answer = value } }
     func getAnswer() -> String? { lock.withLock { answer } }
     func setMediaSession(_ value: UUID) { lock.withLock { mediaSession = value } }
     func getMediaSession() -> UUID? { lock.withLock { mediaSession } }
+    func noteMedia(_ display: UInt32?) -> Int { lock.withLock { mediaCount += 1; requestedDisplay = display; return mediaCount } }
+    func getRequestedDisplay() -> UInt32? { lock.withLock { requestedDisplay } }
 }
 
 private final class ServerTestPeer: @unchecked Sendable {
@@ -133,18 +140,23 @@ final class SignalingServerTests: XCTestCase {
         authenticated.expectedFulfillmentCount = 2
         let firstAuthenticated = expectation(description: "first connection authenticated")
         let mediaRequested = expectation(description: "media requested")
+        let selectedMediaRequested = expectation(description: "selected display requested")
         let answerReceived = expectation(description: "SDP answer")
-        let disconnected = expectation(description: "four disconnections")
-        disconnected.expectedFulfillmentCount = 4
+        let disconnected = expectation(description: "seven disconnections")
+        disconnected.expectedFulfillmentCount = 7
         let server = try SignalingServer.create(identity: identity.identity,
             bindings: [ListenerBinding(scope: .localLink, interface: interface, address: address)],
             port: .any, pairing: pairing, authentication: auth) { event in
                 switch event {
                 case let .listening(_, _, port): box.setPort(port); listening.fulfill()
-                case .authenticated:
-                    if box.nextAuthentication() == 1 { firstAuthenticated.fulfill() }
-                    authenticated.fulfill()
-                case let .mediaRequested(id, _, _): box.setMediaSession(id); mediaRequested.fulfill()
+                case let .authenticated(id, _):
+                    box.setLastAuthenticated(id)
+                    let count = box.nextAuthentication()
+                    if count == 1 { firstAuthenticated.fulfill() }
+                    if count <= 2 { authenticated.fulfill() }
+                case let .mediaRequested(id, _, _, display):
+                    box.setMediaSession(id)
+                    if box.noteMedia(display) == 1 { mediaRequested.fulfill() } else { selectedMediaRequested.fulfill() }
                 case let .answer(_, _, sdp): box.setAnswer(sdp); answerReceived.fulfill()
                 case .disconnected: disconnected.fulfill()
                 default: break
@@ -166,6 +178,10 @@ final class SignalingServerTests: XCTestCase {
         try await first.send(.proof(signature))
         guard case let .accepted(deviceID) = try await first.receive() else { return XCTFail("Expected acceptance") }
         await fulfillment(of: [firstAuthenticated], timeout: 10)
+        try await first.send(.listDisplays)
+        guard case let .displays(displays) = try await first.receive(), let display = displays.first else {
+            return XCTFail("Expected a nonempty display list")
+        }
         let localCandidate = "a=candidate:1 1 udp 1 \(address) 54321 typ host\r\n"
         let otherCandidate = "a=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n"
         let offer = "v=0\r\ns=offer\r\nc=IN IP4 192.0.2.5\r\n" + localCandidate + otherCandidate
@@ -214,9 +230,64 @@ final class SignalingServerTests: XCTestCase {
         let accepted = try await second.receive()
         XCTAssertEqual(accepted, .accepted(deviceID: deviceID))
         await fulfillment(of: [authenticated], timeout: 10)
+        try await second.send(.listDisplays)
+        guard case let .displays(secondDisplays) = try await second.receive(),
+              secondDisplays.contains(where: { $0.id == display.id }) else { return XCTFail("Expected display") }
+        try await second.send(.startDisplay(display.id))
+        await fulfillment(of: [selectedMediaRequested], timeout: 10)
+        XCTAssertEqual(box.getRequestedDisplay(), display.id)
+        let secondID = try XCTUnwrap(box.getLastAuthenticated())
+        second.connection.cancel()
+        await server.disconnectCurrent()
+        let unlisted = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
+        try await unlisted.start()
+        try await unlisted.send(.authenticate(deviceID: deviceID))
+        guard case let .challenge(thirdChallenge) = try await unlisted.receive() else { return XCTFail("Expected challenge") }
+        let thirdSignature = try key.signature(for: Data("komado.device-auth.v1\0".utf8) + thirdChallenge).derRepresentation
+        try await unlisted.send(.proof(thirdSignature))
+        let unlistedAccepted = try await unlisted.receive()
+        XCTAssertEqual(unlistedAccepted, .accepted(deviceID: deviceID))
+        let thirdDeadline = Date().addingTimeInterval(5)
+        while box.getLastAuthenticated() == secondID && Date() < thirdDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let unlistedID = try XCTUnwrap(box.getLastAuthenticated())
+        XCTAssertNotEqual(unlistedID, secondID)
+        try await unlisted.send(.startDisplay(display.id))
+        let closeDeadline = Date().addingTimeInterval(5)
+        while await server.isActive(sessionID: unlistedID) && Date() < closeDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let stillActive = await server.isActive(sessionID: unlistedID)
+        XCTAssertFalse(stillActive, "A display cannot be selected before listing")
+        unlisted.connection.cancel()
+        let unknown = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
+        try await unknown.start()
+        try await unknown.send(.authenticate(deviceID: deviceID))
+        guard case let .challenge(fourthChallenge) = try await unknown.receive() else { return XCTFail("Expected challenge") }
+        let fourthSignature = try key.signature(for: Data("komado.device-auth.v1\0".utf8) + fourthChallenge).derRepresentation
+        try await unknown.send(.proof(fourthSignature))
+        let unknownAccepted = try await unknown.receive()
+        XCTAssertEqual(unknownAccepted, .accepted(deviceID: deviceID))
+        let fourthDeadline = Date().addingTimeInterval(5)
+        while box.getLastAuthenticated() == unlistedID && Date() < fourthDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let unknownID = try XCTUnwrap(box.getLastAuthenticated())
+        XCTAssertNotEqual(unknownID, unlistedID)
+        try await unknown.send(.listDisplays)
+        guard case let .displays(currentDisplays) = try await unknown.receive() else { return XCTFail("Expected display list") }
+        let absent = try XCTUnwrap((UInt32(1)...65).first { candidate in !currentDisplays.contains { $0.id == candidate } })
+        try await unknown.send(.startDisplay(absent))
+        let unknownCloseDeadline = Date().addingTimeInterval(5)
+        while await server.isActive(sessionID: unknownID) && Date() < unknownCloseDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let unknownStillActive = await server.isActive(sessionID: unknownID)
+        XCTAssertFalse(unknownStillActive, "A display not present in the list must be rejected")
+        unknown.connection.cancel()
         let removed = try await server.removeDevice(id: deviceID)
         XCTAssertTrue(removed)
-        second.connection.cancel()
         let third = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
         try await third.start()
         try await third.send(.authenticate(deviceID: deviceID))
@@ -231,6 +302,13 @@ final class SignalingServerTests: XCTestCase {
             XCTFail("Invalid frame must close the connection")
         } catch { }
         fourth.connection.cancel()
+        await server.disconnectCurrent()
+        let unauthenticated = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
+        try await unauthenticated.start()
+        try await unauthenticated.send(.listDisplays)
+        let unauthenticatedResponse = try await unauthenticated.receive()
+        XCTAssertEqual(unauthenticatedResponse, .rejected)
+        unauthenticated.connection.cancel()
         await fulfillment(of: [disconnected], timeout: 10)
         XCTAssertEqual(try registry.all().count, 0)
         await server.stop()

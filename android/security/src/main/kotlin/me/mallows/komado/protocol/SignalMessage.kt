@@ -10,6 +10,8 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.util.UUID
 
+data class DisplayInfo(val id: Long, val width: Int, val height: Int)
+
 /** Decoding validates message structure, not the sender or session state. */
 sealed interface SignalMessage {
     data class Pair(val name: String, val invitation: ByteArray, val publicKeyDER: ByteArray) : SignalMessage
@@ -19,6 +21,9 @@ sealed interface SignalMessage {
     data class Accepted(val deviceID: UUID) : SignalMessage
     data object Rejected : SignalMessage
     data object StartMedia : SignalMessage
+    data class StartDisplay(val id: Long) : SignalMessage
+    data object ListDisplays : SignalMessage
+    data class Displays(val values: List<DisplayInfo>) : SignalMessage
     data class Offer(val sdp: String) : SignalMessage
     data class Answer(val sdp: String) : SignalMessage
 }
@@ -37,7 +42,7 @@ object SignalMessageCodec {
                 reader.isLenient = false
                 reader.beginArray()
                 while (reader.hasNext()) {
-                    if (fields.size == 5 || reader.peek() != JsonToken.STRING) throw MessageException()
+                    if (fields.size == 194 || reader.peek() != JsonToken.STRING) throw MessageException()
                     fields.add(reader.nextString())
                 }
                 reader.endArray()
@@ -70,8 +75,22 @@ object SignalMessageCodec {
                     SignalMessage.Rejected
                 }
                 "start" -> {
+                    if (fields.size == 2) SignalMessage.StartMedia
+                    else if (fields.size == 3) SignalMessage.StartDisplay(positiveInteger(fields[2], 4_294_967_295L))
+                    else throw MessageException()
+                }
+                "display.list" -> {
                     if (fields.size != 2) throw MessageException()
-                    SignalMessage.StartMedia
+                    SignalMessage.ListDisplays
+                }
+                "display.listed" -> {
+                    if (fields.size !in 5..194 || (fields.size - 2) % 3 != 0) throw MessageException()
+                    val values = (2 until fields.size step 3).map { i ->
+                        DisplayInfo(positiveInteger(fields[i], 4_294_967_295L),
+                            positiveInteger(fields[i + 1], 65_535).toInt(), positiveInteger(fields[i + 2], 65_535).toInt())
+                    }
+                    if (values.map { it.id }.toSet().size != values.size) throw MessageException()
+                    SignalMessage.Displays(values)
                 }
                 "offer" -> {
                     if (fields.size != 3 || !validSDP(fields[2])) throw MessageException()
@@ -109,6 +128,12 @@ object SignalMessageCodec {
             is SignalMessage.Accepted -> listOf("1", "accepted", message.deviceID.toString())
             SignalMessage.Rejected -> listOf("1", "rejected")
             SignalMessage.StartMedia -> listOf("1", "start")
+            is SignalMessage.StartDisplay -> listOf("1", "start", message.id.toString())
+            SignalMessage.ListDisplays -> listOf("1", "display.list")
+            is SignalMessage.Displays -> {
+                if (message.values.size !in 1..64) throw MessageException()
+                listOf("1", "display.listed") + message.values.flatMap { listOf(it.id.toString(), it.width.toString(), it.height.toString()) }
+            }
             is SignalMessage.Offer -> {
                 if (!validSDP(message.sdp)) throw MessageException()
                 listOf("1", "offer", message.sdp)
@@ -134,6 +159,11 @@ object SignalMessageCodec {
         val bytes = name.toByteArray(Charsets.UTF_8)
         return name.trim(' ').isNotEmpty() && bytes.size <= 256 &&
             String(bytes, Charsets.UTF_8) == name && name.none { it.isISOControl() }
+    }
+
+    private fun positiveInteger(value: String, maximum: Long): Long {
+        if (value.isEmpty() || value.length > 10 || value.startsWith('0') || value.any { it !in '0'..'9' }) throw MessageException()
+        return value.toLongOrNull()?.takeIf { it in 1..maximum } ?: throw MessageException()
     }
 
     private fun validSDP(sdp: String): Boolean {

@@ -31,6 +31,7 @@ final class HostModel: ObservableObject {
     @Published private(set) var pairingEndpoints: [PairingEndpoint] = []
     @Published private(set) var connectedDevice: String?
     @Published private(set) var sharingScreen = false
+    @Published private(set) var sharingDisplayName: String?
     @Published private(set) var networkReady = false
     @Published private(set) var invitation: String?
     @Published private(set) var error: String?
@@ -61,6 +62,7 @@ final class HostModel: ObservableObject {
     private var mediaID = UUID()
     private var connectedSession: UUID?
     private var mediaConnection: UUID?
+    private var mediaDisplayID: UInt32?
     private var mediaSession: HostMediaSession?
     private var mediaRoute: MediaRouteGate?
     private var screenMonitor: ScreenEnvironmentMonitor?
@@ -331,8 +333,8 @@ final class HostModel: ObservableObject {
             invitationExpiry = nil
             invitationCleanup = Task { try? await pairing.cancelInvitation() }
             refresh()
-        case let .mediaRequested(id, _, address):
-            Task { [weak self] in await self?.startMedia(address: address, connection: id) }
+        case let .mediaRequested(id, _, address, display):
+            Task { [weak self] in await self?.startMedia(address: address, connection: id, display: display) }
         case let .answer(id, _, sdp):
             if mediaConnection == id { applyAnswer(sdp) }
         case let .disconnected(id):
@@ -348,7 +350,7 @@ final class HostModel: ObservableObject {
         }
     }
 
-    private func startMedia(address: NWEndpoint.Host, connection: UUID) async {
+    private func startMedia(address: NWEndpoint.Host, connection: UUID, display: UInt32?) async {
         guard let server, await server.isActive(sessionID: connection), self.server === server, running else { return }
         if mediaConnection != nil && mediaConnection != connection { stopMedia() }
         guard mediaSession == nil else { return }
@@ -361,6 +363,7 @@ final class HostModel: ObservableObject {
         let id = UUID()
         mediaID = id
         mediaConnection = connection
+        mediaDisplayID = display
         let failed: @Sendable () -> Void = { [weak self] in
             Task { @MainActor [weak self] in self?.mediaFailed(id: id) }
         }
@@ -392,9 +395,14 @@ final class HostModel: ObservableObject {
                 guard let self, self.mediaID == id, !Task.isCancelled else { return }
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
                 guard self.mediaID == id, !Task.isCancelled,
-                      let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) else {
+                      let display = content.displays.first(where: { $0.displayID == (self.mediaDisplayID ?? CGMainDisplayID()) }) else {
                     throw HostMediaSession.SessionError.creationFailed
                 }
+                let screen = NSScreen.screens.first {
+                    ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID
+                }
+                self.sharingDisplayName = screen?.localizedName ??
+                    "\(CGDisplayPixelsWide(display.displayID)) × \(CGDisplayPixelsHigh(display.displayID)) px"
                 self.sharingScreen = true
                 let captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route) { [weak self] in
                     Task { @MainActor [weak self] in self?.mediaFailed(id: id) }
@@ -419,11 +427,13 @@ final class HostModel: ObservableObject {
     private func stopMedia() {
         mediaID = UUID()
         mediaConnection = nil
+        mediaDisplayID = nil
         mediaTask?.cancel()
         mediaTask = nil
         mediaRoute?.close()
         mediaRoute = nil
         sharingScreen = false
+        sharingDisplayName = nil
         screenMonitor = nil
         mediaSession?.close()
         mediaSession = nil
