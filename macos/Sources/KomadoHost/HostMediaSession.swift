@@ -21,10 +21,10 @@ final class HostMediaSession {
     private var announced = false
     private var announceTimeout: Task<Void, Never>?
 
-    init(route: MediaRouteGate, onClick: (@Sendable (PointerClick) -> Void)? = nil,
+    init(route: MediaRouteGate, onControl: (@Sendable (ControlInput) -> Void)? = nil,
          onFailure: @escaping @Sendable () -> Void) throws {
         let factory = MediaFactory.create()
-        let delegate = HostPeerDelegate(route: route, onClick: onClick, onFailure: onFailure)
+        let delegate = HostPeerDelegate(route: route, onControl: onControl, onFailure: onFailure)
         let configuration = RTCConfiguration()
         configuration.iceServers = []
         configuration.sdpSemantics = .unifiedPlan
@@ -141,18 +141,18 @@ final class HostMediaSession {
 private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
     private let route: MediaRouteGate
     private let onFailure: @Sendable () -> Void
-    private let onClick: (@Sendable (PointerClick) -> Void)?
+    private let onControl: (@Sendable (ControlInput) -> Void)?
     private let gathering: AsyncStream<Void>
     private let continuation: AsyncStream<Void>.Continuation
     private let lock = NSLock()
     private var closed = false
     private var failureNotified = false
-    private let control = ControlClickGate()
+    private let control = ControlInputGate()
     private var onChannelOpen: (@Sendable () -> Void)?
 
-    init(route: MediaRouteGate, onClick: (@Sendable (PointerClick) -> Void)?, onFailure: @escaping @Sendable () -> Void) {
+    init(route: MediaRouteGate, onControl: (@Sendable (ControlInput) -> Void)?, onFailure: @escaping @Sendable () -> Void) {
         self.route = route
-        self.onClick = onClick
+        self.onControl = onControl
         self.onFailure = onFailure
         (gathering, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
     }
@@ -200,10 +200,10 @@ private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDa
     }
 
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
-        guard let click = control.accept(buffer.data, binary: buffer.isBinary) else { fail(); return }
-        let callback = lock.withLock { closed ? nil : onClick }
+        guard let input = control.accept(buffer.data, binary: buffer.isBinary) else { fail(); return }
+        let callback = lock.withLock { closed ? nil : onControl }
         guard let callback else { fail(); return }
-        callback(click)
+        callback(input)
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}

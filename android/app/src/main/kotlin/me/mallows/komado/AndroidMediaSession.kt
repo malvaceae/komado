@@ -7,6 +7,8 @@ import me.mallows.komado.protocol.SdpCandidateFilter
 import me.mallows.komado.protocol.CaptureReadyCodec
 import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerClickCodec
+import me.mallows.komado.protocol.KeyboardText
+import me.mallows.komado.protocol.KeyboardTextCodec
 import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.DataChannel
 import org.webrtc.EglBase
@@ -120,13 +122,20 @@ internal class AndroidMediaSession(
 
     /** The UI must separately authorize input and map it to the current capture. */
     fun sendClick(click: PointerClick): Boolean {
+        return sendInput(click.sequence, click.captureRevision) { PointerClickCodec.encode(click) }
+    }
+
+    fun sendText(text: KeyboardText): Boolean {
+        return sendInput(text.sequence, text.captureRevision) { KeyboardTextCodec.encode(text) }
+    }
+
+    private fun sendInput(sequence: Long, revision: Long, encode: () -> ByteArray): Boolean {
         checkMainThread()
-        if (state != State.ANSWER_READY || captureRevision != click.captureRevision ||
-            click.sequence <= lastSentSequence || !selectedRouteAllowed) return false
+        if (state != State.ANSWER_READY || captureRevision != revision || sequence <= lastSentSequence || !selectedRouteAllowed) return false
         val current = channel ?: return false
         if (current.state() != DataChannel.State.OPEN) return false
-        val data = try { PointerClickCodec.encode(click) } catch (_: Exception) { return false }
-        return current.send(DataChannel.Buffer(ByteBuffer.wrap(data), false)).also { if (it) lastSentSequence = click.sequence }
+        val data = try { encode() } catch (_: Exception) { return false }
+        return current.send(DataChannel.Buffer(ByteBuffer.wrap(data), false)).also { if (it) lastSentSequence = sequence }
     }
 
     private fun fail() {
