@@ -356,6 +356,7 @@ final class HostModel: ObservableObject {
                 }
                 guard self.mediaID == id, !Task.isCancelled else { try? await captured.stop(); return }
                 self.capture = captured
+                try session.announceCapture(revision: 1)
             } catch { self?.mediaFailed(id: id) }
         }
     }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import me.mallows.komado.protocol.SdpCandidateFilter
+import me.mallows.komado.protocol.CaptureReadyCodec
 import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.DataChannel
 import org.webrtc.EglBase
@@ -27,6 +28,7 @@ internal class AndroidMediaSession(
 ) : PeerConnection.Observer, AutoCloseable {
     interface Listener {
         fun onAnswer(sdp: String)
+        fun onCaptureReady(revision: Long)
         /** Detach synchronously when the track is null, before the peer is disposed. */
         fun onVideo(track: VideoTrack?)
         fun onFailure()
@@ -42,6 +44,7 @@ internal class AndroidMediaSession(
     private var selectedRouteAllowed = false
     private var remoteTrack: VideoTrack? = null
     private var trackShown = false
+    private var captureReady = false
     private var channel: DataChannel? = null
     private val timeout = Runnable { fail() }
 
@@ -170,7 +173,21 @@ internal class AndroidMediaSession(
                 dataChannel.registerObserver(object : DataChannel.Observer {
                     override fun onBufferedAmountChange(previousAmount: Long) = Unit
                     override fun onStateChange() = Unit
-                    override fun onMessage(buffer: DataChannel.Buffer) = postIfOpen { fail() }
+                    override fun onMessage(buffer: DataChannel.Buffer) {
+                        if (buffer.binary || buffer.data.remaining() !in 1..256) {
+                            postIfOpen { fail() }
+                            return
+                        }
+                        val data = ByteArray(buffer.data.remaining())
+                        buffer.data.get(data)
+                        postIfOpen {
+                            if (captureReady) fail() else {
+                                val revision = try { CaptureReadyCodec.decode(data) } catch (_: Exception) { fail(); return@postIfOpen }
+                                captureReady = true
+                                listener.onCaptureReady(revision)
+                            }
+                        }
+                    }
                 })
             }
         }

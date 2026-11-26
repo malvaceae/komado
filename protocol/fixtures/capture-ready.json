@@ -1,0 +1,15 @@
+{
+  "valid": [
+    "[\"1\",\"capture.ready\",\"1\"]",
+    "[\"1\",\"capture.ready\",\"9007199254740991\"]"
+  ],
+  "invalid": [
+    "[\"1\",\"capture.ready\",\"0\"]",
+    "[\"1\",\"capture.ready\",\"01\"]",
+    "[\"1\",\"capture.ready\",\"9007199254740992\"]",
+    "[\"1\",\"capture.ready\",1]",
+    "[\"1\",\"capture.ready\",\"1\",\"extra\"]",
+    "[\"1\",\"capture.ready\",\"1\",]",
+    "[\"1\",\"capture.ready\",\"1\"] []"
+  ]
+}

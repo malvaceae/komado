@@ -20,6 +20,7 @@ class VideoActivity : Activity() {
     private var connection: AuthenticatedHostConnection? = null
     private var media: AndroidMediaSession? = null
     private var renderer: RemoteVideoRenderer? = null
+    private var captureRevision: Long? = null
     private lateinit var status: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,6 +69,7 @@ class VideoActivity : Activity() {
                                     } catch (_: Exception) { showFailure() }
                                 }
                             }
+                            override fun onCaptureReady(revision: Long) { captureRevision = revision }
                             override fun onVideo(track: VideoTrack?) { renderer?.show(track) }
                             override fun onFailure() { stopSession(failed = true) }
                         })
@@ -103,6 +105,7 @@ class VideoActivity : Activity() {
         runCatching { current?.close() }
         runCatching { media?.close() }
         media = null
+        captureRevision = null
         runCatching { renderer?.close() }
         renderer = null
         if (::status.isInitialized) status.setText(if (failed) R.string.screen_failed else R.string.screen_closed)

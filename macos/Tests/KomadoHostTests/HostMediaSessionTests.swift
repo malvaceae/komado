@@ -7,6 +7,7 @@ final class HostMediaSessionTests: XCTestCase {
     func testOfferAndSessionLifecycle() async throws {
         let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
         let session = try HostMediaSession(route: route, onFailure: {})
+        XCTAssertThrowsError(try session.announceCapture(revision: 1))
         let offer = try await session.makeOffer()
         XCTAssertTrue(offer.hasPrefix("v=0\r\n"))
         XCTAssertTrue(offer.contains("m=video "))

@@ -21,6 +21,7 @@ import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -43,6 +44,8 @@ class AndroidMediaSessionTest {
         val answer = CompletableFuture<String>()
         val remoteVideo = CompletableFuture<VideoTrack>()
         val frames = CountDownLatch(1)
+        val captureReady = CountDownLatch(1)
+        val failed = CountDownLatch(1)
         val sink = VideoSink { frames.countDown() }
         var attached: VideoTrack? = null
         var receiver: AndroidMediaSession? = null
@@ -59,6 +62,7 @@ class AndroidMediaSessionTest {
             instrumentation.runOnMainSync {
                 receiver = AndroidMediaSession(instrumentation.targetContext, address, object : AndroidMediaSession.Listener {
                     override fun onAnswer(sdp: String) { answer.complete(sdp) }
+                    override fun onCaptureReady(revision: Long) { if (revision == 1L) captureReady.countDown() }
                     override fun onVideo(track: VideoTrack?) {
                         attached?.removeSink(sink)
                         attached = track
@@ -66,6 +70,7 @@ class AndroidMediaSessionTest {
                         if (track != null) remoteVideo.complete(track)
                     }
                     override fun onFailure() {
+                        failed.countDown()
                         answer.completeExceptionally(IllegalStateException("Media session failed"))
                         remoteVideo.completeExceptionally(IllegalStateException("Media session failed"))
                     }
@@ -77,6 +82,11 @@ class AndroidMediaSessionTest {
             sender.setRemoteDescription(DescriptionObserver(set = setRemote), SessionDescription(SessionDescription.Type.ANSWER, restrictedAnswer))
             setRemote.get(10, TimeUnit.SECONDS)
             remoteVideo.get(20, TimeUnit.SECONDS)
+            val channelDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+            while (channel.state() != DataChannel.State.OPEN && System.nanoTime() < channelDeadline) Thread.sleep(50)
+            assertTrue("Control channel did not open", channel.state() == DataChannel.State.OPEN)
+            assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap("[\"1\",\"capture.ready\",\"1\"]".toByteArray()), false)))
+            assertTrue("Capture revision was not received", captureReady.await(5, TimeUnit.SECONDS))
             source.capturerObserver.onCapturerStarted(true)
             for (i in 0 until 50) {
                 val frame = VideoFrame(JavaI420Buffer.allocate(320, 240), 0, System.nanoTime())
@@ -85,6 +95,8 @@ class AndroidMediaSessionTest {
             }
             assertTrue("No frame received", frames.await(5, TimeUnit.SECONDS))
             source.capturerObserver.onCapturerStopped()
+            assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap("[\"1\",\"capture.ready\",\"1\"]".toByteArray()), false)))
+            assertTrue("Duplicate capture notification was not rejected", failed.await(5, TimeUnit.SECONDS))
         } finally {
             instrumentation.runOnMainSync { receiver?.close() }
             channel.dispose()
@@ -106,6 +118,7 @@ class AndroidMediaSessionTest {
                 receiver = AndroidMediaSession(instrumentation.targetContext, InetAddress.getByName("127.0.0.1"),
                     object : AndroidMediaSession.Listener {
                         override fun onAnswer(sdp: String) = throw AssertionError("Unexpected answer")
+                        override fun onCaptureReady(revision: Long) = throw AssertionError("Unexpected capture")
                         override fun onVideo(track: VideoTrack?) = throw AssertionError("Unexpected video")
                         override fun onFailure() { failed.countDown() }
                     })

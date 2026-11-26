@@ -1,4 +1,5 @@
 import Foundation
+import KomadoCore
 @preconcurrency import WebRTC
 
 /// Owns one WebRTC peer. The caller exchanges descriptions over authenticated
@@ -14,7 +15,11 @@ final class HostMediaSession {
     let videoSource: RTCVideoSource
     private let videoTrack: RTCVideoTrack
     private let dataChannel: RTCDataChannel
+    private let onFailure: @Sendable () -> Void
     private var state: State = .idle
+    private var pendingRevision: UInt64?
+    private var announced = false
+    private var announceTimeout: Task<Void, Never>?
 
     init(route: MediaRouteGate, onFailure: @escaping @Sendable () -> Void) throws {
         let factory = MediaFactory.create()
@@ -39,6 +44,40 @@ final class HostMediaSession {
         self.videoSource = source
         self.videoTrack = track
         self.dataChannel = channel
+        self.onFailure = onFailure
+        delegate.setOnChannelOpen { [weak self] in
+            Task { @MainActor [weak self] in self?.channelOpened() }
+        }
+        channel.delegate = delegate
+    }
+
+    func announceCapture(revision: UInt64) throws {
+        guard state == .answerApplied, pendingRevision == nil, !announced,
+              (1...PointerClick.maximumSequence).contains(revision) else { throw SessionError.unexpectedState }
+        pendingRevision = revision
+        try sendCaptureIfReady()
+        if pendingRevision != nil {
+            announceTimeout = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                guard let self, self.pendingRevision != nil else { return }
+                self.close()
+                self.onFailure()
+            }
+        }
+    }
+
+    private func channelOpened() {
+        do { try sendCaptureIfReady() } catch { close(); onFailure() }
+    }
+
+    private func sendCaptureIfReady() throws {
+        guard state != .closed, let revision = pendingRevision, dataChannel.readyState == .open else { return }
+        let data = try CaptureReady(revision: revision).encode()
+        guard dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false)) else { throw SessionError.creationFailed }
+        pendingRevision = nil
+        announced = true
+        announceTimeout?.cancel()
+        announceTimeout = nil
     }
 
     func makeOffer() async throws -> String {
@@ -88,13 +127,16 @@ final class HostMediaSession {
     func close() {
         guard state != .closed else { return }
         state = .closed
+        pendingRevision = nil
+        announceTimeout?.cancel()
+        announceTimeout = nil
         delegate.close()
         dataChannel.close()
         peer.close()
     }
 }
 
-private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, @unchecked Sendable {
+private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
     private let route: MediaRouteGate
     private let onFailure: @Sendable () -> Void
     private let gathering: AsyncStream<Void>
@@ -102,6 +144,7 @@ private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, @unch
     private let lock = NSLock()
     private var closed = false
     private var failureNotified = false
+    private var onChannelOpen: (@Sendable () -> Void)?
 
     init(route: MediaRouteGate, onFailure: @escaping @Sendable () -> Void) {
         self.route = route
@@ -129,6 +172,28 @@ private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, @unch
         if first { route.close(); continuation.finish() }
     }
 
+    func setOnChannelOpen(_ callback: @escaping @Sendable () -> Void) {
+        lock.withLock { onChannelOpen = callback }
+    }
+
+    private func fail() {
+        let notify = lock.withLock {
+            guard !closed, !failureNotified else { return false }
+            failureNotified = true
+            return true
+        }
+        if notify { route.close(); onFailure() }
+    }
+
+    func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
+        if dataChannel.readyState == .open {
+            let callback = lock.withLock { closed ? nil : onChannelOpen }
+            callback?()
+        }
+    }
+
+    func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) { fail() }
+
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
@@ -141,12 +206,7 @@ private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, @unch
     }
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         if newState == .failed || newState == .disconnected {
-            let notify = lock.withLock {
-                guard !closed, !failureNotified else { return false }
-                failureNotified = true
-                return true
-            }
-            if notify { route.close(); onFailure() }
+            fail()
         }
     }
     func peerConnection(_ peerConnection: RTCPeerConnection, didChangeLocalCandidate local: RTCIceCandidate,
