@@ -42,6 +42,7 @@
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター | 認証済みTLSでのSDP送受信 | Mac側待ち受けとAndroid接続処理でペアリング後、テスト文字列のOfferとAnswerを送受信 | 送受信に成功。WebRTCが生成した実際のSDP、ICE・DTLS接続、別端末のLAN・Tailscale経由は未検証。テスト用の鍵と一時テストコードは削除 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター、stasel/WebRTC 158.0.0・io.getstream:stream-webrtc-android 1.3.10 | 製品アプリへのWebRTC組み込み | Macアプリのビルド・署名検証とWebRTCファクトリーの生成、Androidアプリのエミュレーターテスト | 両OSでファクトリーの生成に成功。Macアプリにフレームワーク、Android APKに4 ABIのネイティブライブラリを同梱。製品アプリ内でのメディア接続、他OS・実機での動作は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | 製品の画面取得処理 | テストランナーに許可された画面収録権限でメインディスプレイを取得し、WebRTC映像トラックへのフレーム到達と停止を確認 | フレーム到達と停止後の受信停止に成功。画面内容の保存・転送は行っていない。アプリ画面からの起動、ウインドウ単位の取得、他OS・Intel・Androidへの転送は未検証 |
+| 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2 | 画面フレームのコンテンツ領域 | 取得したフレームの`contentRect`と`scaleFactor`を確認。通常の出力と正方形の出力を試した | 通常出力ではコンテンツが全体を占め、正方形出力では余白が生じた。実コンテンツ領域を使う座標変換と余白の拒否を単体テストした。別ディスプレイ・OS、回転、実際の入力座標の一致は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | 製品のWebRTCセッション | 映像トラックとDataChannelを持つOfferの生成、再生成・終了後のAnswerの拒否をテスト | Offerの生成と状態制御に成功。製品セッションとAndroid間のAnswer交換・接続・画面転送は未検証 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター | IMEの未確定文字列と確定文字列 | 一時的なテスト用IMEからInputConnectionへ変換途中の文字列と日本語・絵文字を含む確定文字列を送信 | 両方の変換途中イベントと確定文字列を受信し、エディターの結果も一致。元のIMEを復元。実際の日本語IME、Macへの転送および実機は未検証 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター、Androidアプリ初期版 | 接続先のローカル保存 | デバッグ版を起動し、接続先の追加、再起動後の表示と削除を操作 | 確認した範囲で成功。編集の保存、実機、API 26、ペアリングと接続は未検証 |

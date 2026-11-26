@@ -36,8 +36,12 @@ final class DisplayCaptureTests: XCTestCase {
         defer { track.remove(counter) }
         let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
         route.selected(localCandidate: "candidate:1 1 udp 1 127.0.0.1 1234 typ host")
-        let capture = try await DisplayCapture.start(display: display, source: source, route: route, onStopped: {})
+        let stoppedUnexpectedly = expectation(description: "capture remains stable")
+        stoppedUnexpectedly.isInverted = true
+        let capture = try await DisplayCapture.start(display: display, source: source, route: route) { stoppedUnexpectedly.fulfill() }
         try await Task.sleep(for: .seconds(2))
+        XCTAssertNotNil(capture.frameMapping)
+        await fulfillment(of: [stoppedUnexpectedly], timeout: 0.1)
         try await capture.stop()
         let countAfterStop = counter.value
         XCTAssertGreaterThan(countAfterStop, 0)

@@ -2,6 +2,7 @@ import CoreGraphics
 import CoreMedia
 import CoreVideo
 import Foundation
+import KomadoCore
 import ScreenCaptureKit
 import WebRTC
 
@@ -14,6 +15,7 @@ final class DisplayCapture {
     private let stream: SCStream
     private let bridge: DisplayFrameBridge
     private var stopped = false
+    var frameMapping: CaptureFrameMapping? { bridge.frameMapping }
 
     private init(stream: SCStream, bridge: DisplayFrameBridge) {
         self.stream = stream
@@ -67,6 +69,7 @@ final class DisplayCapture {
 private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var active = true
+    private var mapping: CaptureFrameMapping?
     private let source: RTCVideoSource
     private let capturer: RTCVideoCapturer
     private let route: MediaRouteGate
@@ -80,6 +83,7 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
     }
 
     func deactivate() { lock.withLock { active = false } }
+    var frameMapping: CaptureFrameMapping? { lock.withLock { active ? mapping : nil } }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         let notify = lock.withLock {
@@ -99,9 +103,28 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
         let timestamp = CMTimeConvertScale(sampleBuffer.presentationTimeStamp, timescale: 1_000_000_000, method: .default)
         guard timestamp.isNumeric else { return }
         let frame = RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: image), rotation: ._0, timeStampNs: timestamp.value)
-        lock.withLock {
-            guard active else { return }
+        let newMapping = Self.frameMapping(attachments: attachments.first!, image: image)
+        let invalidated = lock.withLock {
+            guard active else { return false }
+            if let mapping, mapping != newMapping {
+                active = false
+                route.close()
+                return true
+            }
+            if mapping == nil { mapping = newMapping }
             route.withAllowedFrame { source.capturer(capturer, didCapture: frame) }
+            return false
         }
+        if invalidated { onStopped() }
+    }
+
+    private static func frameMapping(attachments: [SCStreamFrameInfo: Any], image: CVPixelBuffer) -> CaptureFrameMapping? {
+        guard let dictionary = attachments[.contentRect] as? NSDictionary,
+              let rect = CGRect(dictionaryRepresentation: dictionary as CFDictionary),
+              let scale = attachments[.scaleFactor] as? CGFloat, scale.isFinite, scale > 0 else { return nil }
+        let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale,
+                            width: rect.width * scale, height: rect.height * scale)
+        return CaptureFrameMapping(frameSize: CGSize(width: CVPixelBufferGetWidth(image), height: CVPixelBufferGetHeight(image)),
+                                   contentRect: pixels)
     }
 }
