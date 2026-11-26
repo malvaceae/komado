@@ -6,7 +6,7 @@
 |---|---|---|
 | macOS | macOS 13以降 | 最低OSを13としたビルド済み。macOS 13での実行は未検証 |
 | Mac CPU / 配布 | Apple Silicon・Intel、Universal Binary | 両CPUを含む開発用アプリをビルド済み。Intel実機・配布は未検証 |
-| Android | Android 8.0 / API 26以降 | 最低APIを26としたビルド済み。API 26での実行は未検証 |
+| Android | Android 8.0 / API 26以降 | API 26・36のarm64エミュレーターで自動テスト済み。実機は未検証 |
 | Android ABI | arm64-v8a・armeabi-v7a | 未検証 |
 | Android ABI | x86・x86_64：依存が対応し追加実装が不要なら対応 | 未検証 |
 | 端末 | Androidスマートフォン・タブレット | 未検証 |
@@ -47,6 +47,7 @@
 | 2026-11-27 | 同上 | 確定文字列のキーイベント生成 | テスト用の送信先を使い、日本語・絵文字と長い文字列をUnicodeキーイベントとして生成 | イベント内の文字列を読み戻して一致を確認。イベントは投稿しておらず、実際のアプリへの入力、文字変換、フォーカス、画面ロック時の動作は未検証 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター、WebRTC | DTLSフィンガープリントの不一致 | エミュレーター内の2つのピアでOfferのフィンガープリントを改変して接続 | DataChannelは開かず接続が失敗し、Androidの製品セッションが失敗を通知した。Mac側の接続失敗通知は模擬テストのみ。Mac・Android間や実機・実ネットワークの改変試験は未実施 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター、WebRTC | 映像接続の待機期限 | Answer生成後に相手側が接続を進めない状態を作る | Android側で20秒後に失敗を通知して終了した。実機や高遅延ネットワークでは未検証 |
+| 2026-11-27 | Android 8.0 API 26 arm64エミュレーター、io.getstream:stream-webrtc-android 1.3.10 | 製品の認証・映像関連テスト | `:security:connectedDebugAndroidTest :app:connectedDebugAndroidTest`を実行 | 認証・プロトコル12件、アプリ13件が成功。エミュレーター内のWebRTC接続・生成映像の描画を含む。Macとの接続、実際のIME、実機、別ABIは未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | 製品のWebRTCセッション | 映像トラックとDataChannelを持つOfferの生成、再生成・終了後のAnswerの拒否をテスト | Offerの生成と状態制御に成功。製品セッションとAndroid間のAnswer交換・接続・画面転送は未検証 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター | IMEの未確定文字列と確定文字列 | 一時的なテスト用IMEからInputConnectionへ変換途中の文字列と日本語・絵文字を含む確定文字列を送信 | 両方の変換途中イベントと確定文字列を受信し、エディターの結果も一致。元のIMEを復元。実際の日本語IME、Macへの転送および実機は未検証 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター、Androidアプリ初期版 | 接続先のローカル保存 | デバッグ版を起動し、接続先の追加、再起動後の表示と削除を操作 | 確認した範囲で成功。編集の保存、実機、API 26、ペアリングと接続は未検証 |
