@@ -6,7 +6,7 @@
 
 ## 開発の進め方
 
-1. [開発計画書](development-plan.md)のPhase 0で、両側のWebRTCライブラリ、画面取得、Tailscale経由の接続と経路制御、入力、互換性を検証する。
+1. [開発計画書](development-plan.md)のPhase 0で、両側のWebRTCライブラリ、画面取得、同一LAN・Tailscale経由の接続、入力、互換性を検証する。
 2. 検証条件と結果を記録し、ライブラリ、最低対応OS、ABI、実現上の制約を決める。主要な選定とトレードオフは[ADR](decisions/README.md)に残す。
 3. Phase 0の完了条件を満たしたうえで、基本リモートデスクトップ、ウインドウモード、実用性向上、配布へ進む。音声など基本操作と独立した課題は記録したうえで後続フェーズに持ち越せる。
 4. プロトコルを定義した際は、両側の実装、[スキーマ・フィクスチャ](../protocol/README.md)、ドキュメントを合わせて更新する。
@@ -22,7 +22,7 @@
 
 ## 環境と手順の整備予定
 
-macOSはXcode / Swift / Swift Package Manager、AndroidはAndroid Studio / Kotlin / Gradle Kotlin DSLを候補とします。最新安定版の利用を基本とし、実際の対応状況を確認してバージョンを固定します。各端末にTailscaleが必要です。
+macOSはXcode / Swift / Swift Package Manager、AndroidはAndroid Studio / Kotlin / Gradle Kotlin DSLを候補とします。最新安定版の利用を基本とし、実際の対応状況を確認してバージョンを固定します。Tailscale経由で接続する場合は各端末にTailscaleが必要です。
 
 プロジェクト作成後、以下を実際に確認して追記します。
 

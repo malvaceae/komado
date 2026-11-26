@@ -10,12 +10,12 @@ Compose / IME / touch                       SwiftUI / AppKit
          │                                           │
          ├──── WebSocket over TLS: signaling ────────┤
          └──── WebRTC: video, audio, data ───────────┘
-                     Tailscale network
+                     同一LAN / Tailscale
                                             ScreenCaptureKit / VideoToolbox
                                             Accessibility / Core Graphics
 ```
 
-Tailscaleは各端末にインストールされた既存クライアントを利用します。macOS側でシグナリングサーバーを起動し、Android側から接続する計画です。komado専用のクラウド、VPN、STUN、TURNサーバーは原則設けません。Tailscaleの接続自体はDERPなどを経由する場合があります。
+同一LANでは直接接続し、Tailscaleを使う場合は各端末にインストールされた既存クライアントを利用します。macOS側でシグナリングサーバーを起動し、Android側から接続する計画です。komado専用のクラウド、VPN、STUN、TURNサーバーは原則設けません。Tailscaleの接続自体はDERPなどを経由する場合があります。
 
 1ホストにつき同時に操作できるクライアントは1台です。Androidには複数ホストを登録できます。
 
@@ -35,7 +35,7 @@ Tailscaleは各端末にインストールされた既存クライアントを�
 
 ## 技術検証の優先事項
 
-- Tailscale経由に通信を限定するためのインターフェース・ICE・経路制御が、両ライブラリで可能か。確認できない場合は接続を拒否する設計が必要。
+- 同一LANおよびTailscale経由でICE接続できるか。認証済みシグナリングとWebRTCの相手を安全に結び付けられるか。
 - ScreenCaptureKitのフレームをWebRTCへ渡せるか、H.264のハードウェア処理が実機で利用できるか。
 - ウインドウの列挙・取得・フォーカス・リサイズ、隠れた／最小化されたウインドウやメニューの挙動。
 - Android IMEの確定文字列と物理キーイベントを区別し、日本語や特殊キーを対象アプリに反映できるか。

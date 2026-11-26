@@ -8,7 +8,7 @@ komadoは、AndroidスマートフォンからMacを遠隔操作するための�
 
 スマートフォンの画面サイズや縦横比に適した操作環境を提供し、外出先からのプログラミング、AIコーディング、ターミナル操作、その他のMacアプリケーションの利用を快適に行えることを目指す。
 
-ネットワーク接続にはTailscaleを利用し、komado独自のクラウドインフラを必要としない構成とする。
+ネットワーク接続は同一LAN内の直接接続とTailscale経由の接続に対応し、komado独自のクラウドインフラを必要としない構成とする。
 
 ## 2. 基本方針
 
@@ -19,7 +19,7 @@ komadoは、AndroidスマートフォンからMacを遠隔操作するための�
 - デスクトップ全体およびウインドウ単位のリモート操作に対応する。
 - スマートフォンに適したUI・UXを重視する。
 - 映像の低遅延、高画質、省電力性を重視する。
-- ネットワーク接続には既存のTailscale環境を利用する。
+- 同一LAN内では直接接続し、外出先からの接続には既存のTailscale環境を利用する。
 - リアルタイム通信にはWebRTCを利用する。
 - OS標準APIおよび既存ライブラリを積極的に活用する。
 - 独自の映像コーデックや通信基盤は開発しない。
@@ -41,7 +41,7 @@ komadoは、AndroidスマートフォンからMacを遠隔操作するための�
 | クライアントOS | Android 8.0（API 26）以降 |
 | Android ABI | arm64-v8a / armeabi-v7a |
 | Android端末 | スマートフォン・タブレット |
-| ネットワーク | Tailscale |
+| ネットワーク | 同一LAN / Tailscale |
 | 同時接続 | 1ホストにつき1クライアント |
 
 Androidのx86およびx86_64についても、依存ライブラリが対応しており追加実装が不要であれば対応する。開発時のエミュレーター利用も考慮する。
@@ -106,7 +106,7 @@ Android Client
     ├─ MediaCodec
     └─ Touch / Keyboard / IME
     │
-    │ Tailscale
+    │ 同一LAN / Tailscale
     │
     ├─ WebRTC Video
     ├─ WebRTC Audio
@@ -127,7 +127,7 @@ macOS側でシグナリングサーバーを起動し、Android側から接続�
 
 映像、音声、操作イベントの通信はWebRTCで行う。
 
-Tailscaleが端末間のネットワーク接続を提供するため、komado独自の認証サーバー、VPNサーバー、STUNサーバー、TURNサーバーは原則として設置しない。
+同一LANまたはTailscaleが端末間のネットワーク接続を提供するため、komado独自の認証サーバー、VPNサーバー、STUNサーバー、TURNサーバーは原則として設置しない。
 
 ただし、Tailscale自体の接続状況によってはDERPなどの中継経路を利用する。
 
@@ -235,7 +235,7 @@ Streamのクラウドサービスは利用せず、ビルド済みWebRTCライ�
 
 | 項目 | 採用技術 |
 |---|---|
-| ネットワーク | Tailscale / WireGuard |
+| ネットワーク | 同一LAN / Tailscale（WireGuard） |
 | リアルタイム通信 | WebRTC |
 | 映像転送 | SRTP |
 | 映像コーデック | H.264 |
@@ -243,7 +243,7 @@ Streamのクラウドサービスは利用せず、ビルド済みWebRTCライ�
 | 操作イベント | WebRTC DataChannel |
 | シグナリング | WebSocket over TLS |
 | メッセージ形式 | JSON |
-| 接続先指定 | Tailscale IP / MagicDNS |
+| 接続先指定 | LAN IP / ホスト名 / Tailscale IP / MagicDNS |
 | 端末認証 | ペアリング方式 |
 
 WebRTCが提供する輻輳制御、パケットロス対策、ビットレート制御、暗号化などを利用し、独自実装は最小限にする。
@@ -407,7 +407,8 @@ MacBookの蓋を閉じた状態での動作は、macOSの電源管理やクラ�
 以下の方法でMacを登録できるようにする。
 
 - QRコードによるペアリング
-- Tailscale IPアドレスの手動入力
+- LANまたはTailscaleのIPアドレスの手動入力
+- LANのホスト名の手動入力
 - MagicDNSホスト名の手動入力
 
 ホストへの到達性を確認し、接続できない場合は原因に応じた案内を表示する。
@@ -567,7 +568,7 @@ Androidのバックグラウンドクリップボードアクセス制限を尊�
 ### 8.1. 接続フロー
 
 1. Android側で登録済みホストを選択する。
-2. Tailscale経由でmacOS側のシグナリングサーバーに接続する。
+2. 同一LANまたはTailscale経由でmacOS側のシグナリングサーバーに接続する。
 3. ペアリング済み端末であることを認証する。
 4. プロトコルバージョンと対応機能を交換する。
 5. WebRTCのSDP Offer / Answerを交換する。
@@ -598,7 +599,7 @@ macOS側でWebSocketサーバーを起動する。
 
 TLS証明書の信頼確立はペアリング処理と統合する。
 
-WebRTCのメディア通信についてもTailscale経由に限定できるよう、ICE Candidateの選択、VPNインターフェースの認識、ソケットの経路制御を検証する。
+WebRTCのメディア通信について、同一LANおよびTailscaleでのICE接続と通信経路を検証する。
 
 ### 8.3. 機能ネゴシエーション
 
@@ -750,12 +751,12 @@ ICE RestartおよびPeerConnectionの再生成を状況に応じて使い分け�
 
 ### 9.1. ネットワーク制限
 
-- Tailscale経由の通信を基本とする。
+- 同一LAN内の直接接続とTailscale経由の接続に対応する。
 - シグナリングサーバーをインターネットに公開しない。
-- 利用するネットワークインターフェースおよび接続経路を制限する。
+- 利用者が意図しないインターネットへのシグナリング公開を防ぐため、待ち受け範囲とアクセス制御を設計する。
 - Tailscale Grantsによる接続元・接続先の制限を推奨する。
 - WebRTCの動的UDPポートを考慮してアクセス制御を設計する。
-- 許可されたネットワーク経路を利用していることを確認できない場合は接続を拒否する。
+- 通信経路や送信元IPアドレスのみを端末認証の根拠としない。
 
 TailscaleのIPアドレス範囲に該当することだけを、正当な端末であることの証明として扱わない。
 
@@ -788,7 +789,7 @@ macOS側はKeychain、Android側はAndroid Keystoreで保護された鍵や暗�
 
 以下の暗号化方式を利用する。
 
-- TailscaleによるWireGuard暗号化
+- Tailscaleを利用する場合はWireGuard暗号化
 - シグナリング通信のTLS
 - WebRTCのDTLS / SRTP
 
@@ -968,8 +969,7 @@ komado/
 - [ ] Android API 26を最低対応APIとしたビルド
 - [ ] Android向けARM64・ARM32バイナリの確認
 - [ ] Android向けx86・x86_64バイナリの確認
-- [ ] Tailscale経由でのICE接続
-- [ ] Tailscale以外の経路を利用しない接続制御
+- [ ] 同一LANおよびTailscale経由でのICE接続
 - [ ] ScreenCaptureKitによる画面取得
 - [ ] WebRTCによる映像転送
 - [ ] H.264ハードウェアエンコード・デコード
@@ -983,7 +983,7 @@ komado/
 
 完了条件：
 
-Macの画面を実機Androidへ転送でき、Tailscale経由で操作イベントを送信できること。
+Macの画面を実機Androidへ転送でき、同一LANまたはTailscale経由で操作イベントを送信できること。
 
 主要な技術的制約を整理し、採用ライブラリと対応環境を確定すること。
 
@@ -1155,7 +1155,7 @@ macOS版とAndroid版の双方を再現可能な手順でビルド・配布で�
 - 一時切断
 - Tailscale停止・再起動
 - 未登録端末からの接続
-- Tailscale以外のネットワーク経路からの接続
+- 同一LAN内の未登録端末からの接続
 
 ### 13.5. 端末・OS状態のテスト
 
@@ -1272,7 +1272,7 @@ Intel Macおよび旧世代Androidへの対応は、初期開発の対象外と�
 
 | 項目 | 検証内容 |
 |---|---|
-| WebRTC over Tailscale | VPNインターフェースの認識、ICE Candidateの選択、通信経路 |
+| WebRTCの接続 | 同一LAN・TailscaleでのICE Candidateの選択、通信経路 |
 | WebRTCライブラリ | macOS・Android間の互換性、必要なAPIの提供状況 |
 | macOS互換性 | macOS 13以降でのAPI利用可否 |
 | Mac CPU互換性 | Apple Silicon・Intelでのビルドおよび動作 |
