@@ -27,6 +27,7 @@
 
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | ScreenCaptureKitからWebRTCへの映像フレーム | [CaptureProbe](../experiments/README.md#macosでの映像取得)でメインディスプレイを3秒間キャプチャし、映像トラックの受信数を確認 | 89フレームを受信。画面内容の保存や通信は行っていない。Intel実機・macOS 13・エンコード・転送は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2 | ウインドウ単位のキャプチャ・Accessibility操作 | 検証用の自プロセスのウインドウを取得し、AXで位置を変更・照合・復元後にキャプチャ | ウインドウを22フレーム取得。位置変更の照合と復元APIが成功。別アプリ、非アクティブ・最小化時、Intel実機およびmacOS 13は未検証 |
+| 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2 | CGEventによるキー・Unicode入力 | 検証用ウインドウを持つ自プロセスにPID指定でイベントを送信 | キー押下と日本語・絵文字を含むテスト文字列を受信。Android IME、他アプリ、フォーカス制御、ショートカット、キー解放は未検証 |
 | 2026-11-27 | Android 16 API 36、arm64エミュレーター、io.getstream:stream-webrtc-android 1.3.10 | WebRTCとSurfaceViewRenderer | Android検証アプリの起動・ログ確認 | 初期化に成功。実機、API 26、映像の受信・描画、相互接続は未検証 |
 
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター、stasel/WebRTC 158.0.0・io.getstream:stream-webrtc-android 1.3.10 | 異なるWebRTC配布物の接続 | [相互接続検証](../experiments/README.md#macosとandroidエミュレーターの相互接続) | 生成映像とメインディスプレイの実画面をそれぞれ10フレーム以上受信し、H.264とDataChannelの往復を確認。Tailscale経由、Android実機およびハードウェア処理は未検証 |
