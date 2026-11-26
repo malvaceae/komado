@@ -50,6 +50,7 @@
 | 2026-11-27 | Android 16 API 36、arm64エミュレーター、io.getstream:stream-webrtc-android 1.3.10 | WebRTCとSurfaceViewRenderer | Android検証アプリの起動・ログ確認 | 初期化に成功。実機、API 26、映像の受信・描画、相互接続は未検証 |
 | 2026-11-27 | Android 16 API 36、arm64エミュレーター、io.getstream:stream-webrtc-android 1.3.10 | 製品の映像描画処理 | 生成した映像フレームをWebRTC映像トラックからアプリのSurfaceViewRendererに渡し、描画イベントとリソース解放を確認 | 描画イベントを受信し、トラックの解除と描画リソースの解放に成功。Macからの受信、見た目、画面回転、Android実機では未検証 |
 | 2026-11-27 | 同上 | 製品のAndroid WebRTCセッション | エミュレーター内の送信側とOffer・Answerを交換し、選択されたローカル候補の確認、生成映像の受信、不正なOfferの拒否をテスト | 指定アドレスの選択後に映像を受信し、不正なOfferを拒否。Macの製品セッション、認証済みシグナリング、実機、ネットワーク変更時の動作は未検証 |
+| 2026-11-27 | Android 16 API 36、arm64エミュレーター | IMEの確定文字列処理 | InputConnectionに変換中・確定・変換終了・接続終了を模擬して渡す | 変換中は送らず、確定時に一度だけ通知し、送信失敗時と接続終了時の挙動を確認。実際のキーボードアプリ、画面、Macへの入力、Android実機は未検証 |
 
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター、stasel/WebRTC 158.0.0・io.getstream:stream-webrtc-android 1.3.10 | 異なるWebRTC配布物の接続 | [相互接続検証](../experiments/README.md#macosとandroidエミュレーターの相互接続) | 生成映像とメインディスプレイの実画面をそれぞれ10フレーム以上受信し、H.264とDataChannelの往復を確認。Tailscale経由、Android実機およびハードウェア処理は未検証 |
 | 2026-11-27 | 同上 | ICE候補を絞った相互接続 | 一時的な検証でMacのOfferをWi-Fiアドレスの候補、AndroidのAnswerをMacへの経路で選択されたアドレスの候補に絞り、生成映像とDataChannelを確認 | H.264映像を10フレーム以上受信し、DataChannelの往復に成功。SDPの候補を除くだけではWebRTCが別のインターフェースを使わないことを保証できない。Tailscale、別端末、製品アプリでの経路制限は未検証 |
