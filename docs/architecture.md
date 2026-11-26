@@ -1,21 +1,21 @@
 # アーキテクチャ
 
-この文書は[開発計画書](development-plan.md)の構成を開発用に整理したものです。各API・ライブラリの具体的な使い方と対応環境は未検証です。
+この文書は[開発計画書](development-plan.md)の構成を開発用に整理したものです。実装と検証の範囲は[互換性](compatibility.md)を参照してください。
 
 ## 構成
 
 ```text
 Android client                              macOS host
-Compose / IME / touch                       SwiftUI / AppKit
+登録・接続 / IME / touch                   SwiftUI / AppKit
          │                                           │
-         ├──── WebSocket over TLS: signaling ────────┤
+         ├──── フレーム付きTLS: signaling ──────────┤
          └──── WebRTC: video, audio, data ───────────┘
                      同一LAN / Tailscale
                                             ScreenCaptureKit / VideoToolbox
                                             Accessibility / Core Graphics
 ```
 
-同一LANでは直接接続し、Tailscaleを使う場合は各端末にインストールされた既存クライアントを利用します。macOS側でシグナリングサーバーを起動し、Android側から接続する計画です。komado専用のクラウド、VPN、STUN、TURNサーバーは原則設けません。Tailscaleの接続自体はDERPなどを経由する場合があります。
+同一LANでは直接接続し、Tailscaleを使う場合は各端末にインストールされた既存クライアントを利用します。macOS側のシグナリングサーバーとAndroid側の登録・接続確認を初期実装しています。シグナリングはTLS上の長さ付きフレームであり、WebSocketではありません。WebRTCによる画面・音声・操作は未実装です。komado専用のクラウド、VPN、STUN、TURNサーバーは原則設けません。Tailscaleの接続自体はDERPなどを経由する場合があります。
 
 1ホストにつき同時に操作できるクライアントは1台です。Androidには複数ホストを登録できます。
 
@@ -25,7 +25,7 @@ Compose / IME / touch                       SwiftUI / AppKit
 - **Android**：ホスト登録、表示対象の選択、映像表示、タッチ・キーボード・IME入力、接続状態の表示。
 - **共通**：バージョンと機能のネゴシエーション、メッセージ仕様、エラー、互換性テストデータ。
 
-候補技術の一覧は[開発計画書 §5](development-plan.md#5-技術スタック)を参照してください。両側のWebRTCライブラリは正式採用前に相互接続や必要なAPIを確認します。
+候補技術の一覧は[開発計画書 §5](development-plan.md#5-技術スタック)を参照してください。WebRTCライブラリは両アプリに組み込みましたが、認証後のメディア接続にはまだつながっていません。
 
 ## 操作対象と座標
 
