@@ -30,6 +30,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-pa
 
 Macアプリの開発用ビルドは次のコマンドで作成できます。`.build/komado.app`はローカル確認用のアドホック署名であり、配布用の署名や公証は行いません。
 
+macOSのローカルネットワーク権限は操作の種類により必要です。AppleはTCPの受信待ち受けには不要、ローカルネットワーク宛ての送信には必要と説明しています。配布時の署名と権限の扱いは[Appleの案内](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)に従って検証します。
+
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./macos/build-app.sh
 open macos/.build/komado.app

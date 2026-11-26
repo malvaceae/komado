@@ -13,5 +13,6 @@
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSLocalNetworkUsageDescription</key><string>Android端末との接続と画面転送にローカルネットワークを使用します。</string>
 </dict>
 </plist>
