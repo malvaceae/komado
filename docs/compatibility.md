@@ -49,6 +49,8 @@
 
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター、stasel/WebRTC 158.0.0・io.getstream:stream-webrtc-android 1.3.10 | 異なるWebRTC配布物の接続 | [相互接続検証](../experiments/README.md#macosとandroidエミュレーターの相互接続) | 生成映像とメインディスプレイの実画面をそれぞれ10フレーム以上受信し、H.264とDataChannelの往復を確認。Tailscale経由、Android実機およびハードウェア処理は未検証 |
 | 2026-11-27 | 同上 | ICE候補を絞った相互接続 | 一時的な検証でMacのOfferをWi-Fiアドレスの候補、AndroidのAnswerをMacへの経路で選択されたアドレスの候補に絞り、生成映像とDataChannelを確認 | H.264映像を10フレーム以上受信し、DataChannelの往復に成功。SDPの候補を除くだけではWebRTCが別のインターフェースを使わないことを保証できない。Tailscale、別端末、製品アプリでの経路制限は未検証 |
+| 2026-11-27 | 同上 | ICE接続後の選択候補 | 一時的な検証でWebRTCの統計から選択された候補を確認。別途MacのWi-FiアドレスへのTCP接続で相手のアドレスを取得 | 候補を絞らない場合はMac側の候補がWi-Fiと異なり、絞った場合は一致した。Android側の候補はpeer-reflexiveで、どちらの場合もTCP接続元とは異なった。エミュレーター内の結果であり、他環境の経路固定や接続元一致を保証しない |
+| 2026-11-27 | 同上 | 製品のSDP候補制限処理 | 検証用WebRTCが生成したOfferとAnswerを、両OSの実装でWi-Fi経路のアドレスに絞って交換 | 両実装の出力が一致し、生成映像の受信とDataChannelの往復に成功。製品のシグナリングとの接続、IPv6、Tailscale、別端末は未検証。候補制限はソケットの経路固定を保証しない |
 
 実画面の相互接続検証では、1280×800の映像でVideoToolboxが`kVTParameterErr`（-12902）を返し、エンコードされなかった。1152×720に縮小するとエンコード・受信に成功した。失敗時のH.264設定は`profile-level-id=42e01f`（Level 3.1）で、1280×800は4,000マクロブロックと、[WebRTCのLevel 3.1の上限](https://webrtc.googlesource.com/src/+/fb1c41a93d92d4188f068f437d80ef2c4b50c3a9/api/video_codecs/h264_profile_level_id.cc)である3,600を超えるため、これが一因の可能性がある。エラーの原因は確定しておらず、製品の解像度上限としては扱わない。
 
