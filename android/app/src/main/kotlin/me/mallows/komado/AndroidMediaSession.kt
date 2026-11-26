@@ -12,6 +12,7 @@ import me.mallows.komado.protocol.KeyboardTextCodec
 import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.protocol.KeyboardKeyCodec
 import org.webrtc.CandidatePairChangeEvent
+import org.webrtc.AudioTrack
 import org.webrtc.DataChannel
 import org.webrtc.EglBase
 import org.webrtc.IceCandidate
@@ -68,6 +69,16 @@ internal class AndroidMediaSession(
         }
         peer = try { factory.createPeerConnection(config, this) ?: throw IllegalStateException("Could not create media session") }
         catch (error: Throwable) {
+            factory.dispose()
+            egl.release()
+            throw error
+        }
+        try {
+            peer.setAudioPlayout(false)
+            peer.setAudioRecording(false)
+        } catch (error: Throwable) {
+            peer.close()
+            peer.dispose()
             factory.dispose()
             egl.release()
             throw error
@@ -183,7 +194,13 @@ internal class AndroidMediaSession(
         }
     }
     override fun onTrack(transceiver: RtpTransceiver) {
-        val track = transceiver.receiver.track() as? VideoTrack ?: return
+        val received = transceiver.receiver.track()
+        if (received is AudioTrack) {
+            runCatching { received.setEnabled(false) }
+            postIfOpen { fail() }
+            return
+        }
+        val track = received as? VideoTrack ?: return
         postIfOpen {
             if (remoteTrack == null) {
                 remoteTrack = track

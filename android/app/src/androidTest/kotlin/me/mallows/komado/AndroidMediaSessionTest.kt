@@ -19,6 +19,7 @@ import org.webrtc.IceCandidate
 import org.webrtc.JavaI420Buffer
 import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
+import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.RtpReceiver
 import org.webrtc.SdpObserver
@@ -35,6 +36,39 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class AndroidMediaSessionTest {
+    @Test fun rejectsUnexpectedAudioBeforeAnswering() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val factory = MediaFactory.create(instrumentation.targetContext)
+        val sender = factory.createPeerConnection(PeerConnection.RTCConfiguration(emptyList()), SenderObserver(CountDownLatch(1)))!!
+        val failed = CountDownLatch(1)
+        val answer = CompletableFuture<String>()
+        var receiver: AndroidMediaSession? = null
+        try {
+            assertTrue(sender.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO) != null)
+            val offer = CompletableFuture<SessionDescription>()
+            sender.createOffer(DescriptionObserver(created = offer), MediaConstraints())
+            val sdp = offer.get(10, TimeUnit.SECONDS).description
+            assertTrue(sdp.contains("m=audio "))
+            instrumentation.runOnMainSync {
+                receiver = AndroidMediaSession(instrumentation.targetContext, InetAddress.getByName("127.0.0.1"),
+                    object : AndroidMediaSession.Listener {
+                        override fun onAnswer(sdp: String) { answer.complete(sdp) }
+                        override fun onCaptureReady(revision: Long) = Unit
+                        override fun onVideo(track: VideoTrack?) = Unit
+                        override fun onFailure() { failed.countDown() }
+                    })
+                receiver!!.acceptOffer(sdp)
+            }
+            assertTrue("Unexpected audio did not close the session", failed.await(10, TimeUnit.SECONDS))
+            assertTrue("Unexpected audio must not receive an answer", !answer.isDone)
+        } finally {
+            instrumentation.runOnMainSync { receiver?.close() }
+            sender.close()
+            sender.dispose()
+            factory.dispose()
+        }
+    }
+
     @Test fun exchangesDescriptionsAndReceivesGeneratedVideo() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val address = DatagramSocket().use {
