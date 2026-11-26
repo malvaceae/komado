@@ -28,6 +28,10 @@
     <string name="screen_disconnected">画面への接続が終了しました。再接続するには接続先から画面を開いてください。</string>
     <string name="screen_closed">接続を終了しました。</string>
     <string name="close_screen">画面を閉じる</string>
+    <string name="video_description">Macの画面。ピンチで拡大・縮小、ドラッグまたは矢印キーで表示位置を移動します。</string>
+    <string name="zoom_in">拡大</string>
+    <string name="zoom_out">縮小</string>
+    <string name="zoom_reset">全体表示</string>
     <string name="connecting">接続中…</string>
     <string name="pair_instructions">Macに表示されたフィンガープリントを確認し、同じ値とペアリングコードを入力してください。</string>
     <string name="fingerprint">Macのフィンガープリント</string>

@@ -23,6 +23,8 @@ class VideoActivity : Activity() {
     private var connection: AuthenticatedHostConnection? = null
     private var media: AndroidMediaSession? = null
     private var renderer: RemoteVideoRenderer? = null
+    private var viewport: ZoomableVideoView? = null
+    private val zoomButtons = mutableListOf<Button>()
     private var captureRevision: Long? = null
     private var firstFrameShown = false
     private lateinit var status: TextView
@@ -47,11 +49,28 @@ class VideoActivity : Activity() {
                         }
                     }
                 }
-                override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) = Unit
+                override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) {
+                    runOnUiThread {
+                        if (active) {
+                            viewport?.setFrameSize(width, height, rotation)
+                            val valid = width > 0 && height > 0 && rotation in listOf(0, 90, 180, 270)
+                            zoomButtons.forEach { it.isEnabled = valid }
+                        }
+                    }
+                }
             })
             renderer = video
-            root.addView(video.view, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            viewport = ZoomableVideoView(this, video.view)
+            root.addView(viewport, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         } catch (_: Exception) { active = false; status.setText(R.string.screen_failed) }
+        val zoomControls = LinearLayout(this)
+        listOf(R.string.zoom_out to { viewport?.zoomBy(1.0 / 1.5) },
+            R.string.zoom_in to { viewport?.zoomBy(1.5) }, R.string.zoom_reset to { viewport?.resetZoom() }).forEach { (label, action) ->
+            val button = Button(this).apply { setText(label); isEnabled = false; setOnClickListener { action() } }
+            zoomButtons.add(button)
+            zoomControls.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        root.addView(zoomControls)
         root.addView(Button(this).apply { setText(R.string.close_screen); setOnClickListener { finish() } })
         setContentView(root)
         if (host == null || pairing == null || !active) {
@@ -123,6 +142,7 @@ class VideoActivity : Activity() {
         runCatching { media?.close() }
         media = null
         captureRevision = null
+        zoomButtons.forEach { it.isEnabled = false }
         runCatching { renderer?.close() }
         renderer = null
         if (::status.isInitialized) status.setText(

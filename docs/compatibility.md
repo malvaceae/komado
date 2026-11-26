@@ -54,6 +54,7 @@
 | 2026-11-27 | Android 8.0 API 26 arm64エミュレーター、io.getstream:stream-webrtc-android 1.3.10 | 製品の認証・映像関連テスト | `:security:connectedDebugAndroidTest :app:connectedDebugAndroidTest`を実行 | 認証・プロトコル12件、アプリ13件が成功。エミュレーター内のWebRTC接続・生成映像の描画を含む。Macとの接続、実際のIME、実機、別ABIは未検証 |
 | 2026-11-27 | Android 17 API 37 arm64エミュレーター | ローカルネットワーク権限 | 一時テストで権限なし・許可後のUDP送信と、ペアリング操作時の許可・拒否を確認 | 権限なしではUDP送信が`EPERM`で失敗し、許可後は成功。許可・拒否のどちらでもペアリング画面に進むことを確認。実機、Macとの接続、VPN・Tailscaleの権限拒否時の挙動と画面の見た目は未検証。一時テストコードは削除 |
 | 2026-11-27 | Android 17 API 37 arm64エミュレーター、ローカルネットワーク許可済み | 製品の認証・映像関連テスト | `:security:connectedDebugAndroidTest :app:connectedDebugAndroidTest`を実行 | 認証・プロトコル12件、アプリ15件が成功。エミュレーター内のWebRTC接続・生成映像の描画を含む。Macとの接続、実際のIME、実機、別ABIは未検証 |
+| 2026-11-27 | Android 8.0 API 26・Android 16 API 36、arm64エミュレーター | 映像の拡大・移動 | 表示領域に疑似タッチを送り、ピンチ・ドラッグ・拡大ボタン相当の変形とリセットを検査。表示範囲の計算はJVMでもテスト | 表示ビューの倍率と移動量が変化し、リセットされた。実際の映像の見た目・切り抜き、各種サイズや画面回転、Android実機、拡大中の操作座標は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | 製品のWebRTCセッション | 映像トラックとDataChannelを持つOfferの生成、再生成・終了後のAnswerの拒否をテスト | Offerの生成と状態制御に成功。製品セッションとAndroid間のAnswer交換・接続・画面転送は未検証 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター | IMEの未確定文字列と確定文字列 | 一時的なテスト用IMEからInputConnectionへ変換途中の文字列と日本語・絵文字を含む確定文字列を送信 | 両方の変換途中イベントと確定文字列を受信し、エディターの結果も一致。元のIMEを復元。実際の日本語IME、Macへの転送および実機は未検証 |
 | 2026-11-27 | Android 16 API 36 arm64エミュレーター、Androidアプリ初期版 | 接続先のローカル保存 | デバッグ版を起動し、接続先の追加、再起動後の表示と削除を操作 | 確認した範囲で成功。編集の保存、実機、API 26、ペアリングと接続は未検証 |
