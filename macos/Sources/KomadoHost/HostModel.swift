@@ -11,7 +11,9 @@ final class HostModel: ObservableObject {
     @Published private(set) var devices: [PairedDevice] = []
     @Published private(set) var identityError = false
     @Published private(set) var devicesError = false
-    @Published private(set) var running = false
+    @Published private(set) var running = false {
+        didSet { updateWaitingSleepActivity() }
+    }
     @Published private(set) var ready = false
     @Published private(set) var busy = false
     @Published private(set) var addresses: [String] = []
@@ -22,7 +24,14 @@ final class HostModel: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var screenPermission = CGPreflightScreenCaptureAccess()
     @Published var vpnAddress = ""
+    @Published var keepAwakeWhileListening: Bool {
+        didSet {
+            settings.set(keepAwakeWhileListening, forKey: Self.keepAwakeKey)
+            updateWaitingSleepActivity()
+        }
+    }
 
+    private let settings: UserDefaults
     private let identityStore: HostTLSIdentityStore
     private let registry: PairedDeviceRegistry
     private let pairing: PairingCoordinator
@@ -46,7 +55,9 @@ final class HostModel: ObservableObject {
     private var mediaTask: Task<Void, Never>?
     private var capture: DisplayCapture?
     private var sleepActivity: IdleSleepActivity?
+    private var waitingSleepActivity: IdleSleepActivity?
     private static let port: NWEndpoint.Port = 48365
+    private static let keepAwakeKey = "keepAwakeWhileListening"
 
     convenience init() {
         self.init(identityStore: HostTLSIdentityStore(), registry: PairedDeviceRegistry(),
@@ -54,7 +65,9 @@ final class HostModel: ObservableObject {
     }
 
     init(identityStore: HostTLSIdentityStore, registry: PairedDeviceRegistry,
-         pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator) {
+         pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator, settings: UserDefaults = .standard) {
+        self.settings = settings
+        self.keepAwakeWhileListening = settings.bool(forKey: Self.keepAwakeKey)
         self.identityStore = identityStore
         self.registry = registry
         self.pairing = pairing
@@ -64,6 +77,15 @@ final class HostModel: ObservableObject {
             Task { @MainActor [weak self] in await self?.networkChanged(current) }
         }
         monitor.start(queue: monitorQueue)
+    }
+
+    private func updateWaitingSleepActivity() {
+        if running && keepAwakeWhileListening {
+            if waitingSleepActivity == nil { waitingSleepActivity = IdleSleepActivity(reason: "komado waiting for connections") }
+        } else {
+            waitingSleepActivity?.end()
+            waitingSleepActivity = nil
+        }
     }
 
     func refresh() {

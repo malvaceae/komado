@@ -77,6 +77,7 @@ private struct HostView: View {
                         .disabled(model.running || model.busy)
                     Text("同一LANからの接続を受け付けます。VPNを使う場合は、このMacのVPNアドレスも入力してください。")
                         .foregroundStyle(.secondary)
+                    Toggle("待ち受け中の自動スリープを抑制", isOn: $model.keepAwakeWhileListening)
                     if model.running {
                         if model.sharingScreen {
                             Button("画面共有を停止") { Task { await model.stopSharing() } }
