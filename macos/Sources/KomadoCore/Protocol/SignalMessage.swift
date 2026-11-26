@@ -94,7 +94,7 @@ public enum SignalMessage: Equatable, Sendable {
     }
 
     // Foundation accepts a trailing comma in an array even though JSON forbids it.
-    private static func hasTrailingComma(_ data: Data) -> Bool {
+    static func hasTrailingComma(_ data: Data) -> Bool {
         var inString = false, escaped = false
         var previous: UInt8?
         for byte in data {
