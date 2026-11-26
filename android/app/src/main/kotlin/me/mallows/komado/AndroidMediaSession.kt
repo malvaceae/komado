@@ -186,6 +186,9 @@ internal class AndroidMediaSession(
     override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
         if (state == PeerConnection.IceConnectionState.FAILED || state == PeerConnection.IceConnectionState.DISCONNECTED) postIfOpen { fail() }
     }
+    override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
+        if (state == PeerConnection.PeerConnectionState.FAILED || state == PeerConnection.PeerConnectionState.DISCONNECTED) postIfOpen { fail() }
+    }
     override fun onDataChannel(dataChannel: DataChannel) {
         handler.post {
             if (state == State.CLOSED) dataChannel.dispose()

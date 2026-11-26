@@ -163,6 +163,65 @@ class AndroidMediaSessionTest {
         }
     }
 
+    @Test fun alteredDtlsFingerprintCannotOpenControlChannel() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val address = DatagramSocket().use {
+            it.connect(InetAddress.getByName("192.0.2.1"), 9)
+            it.localAddress
+        }
+        val egl = EglBase.create()
+        val factory = MediaFactory.create(instrumentation.targetContext, egl.eglBaseContext)
+        val gathered = CountDownLatch(1)
+        val connectionFailed = CountDownLatch(1)
+        val sender = factory.createPeerConnection(PeerConnection.RTCConfiguration(emptyList()),
+            SenderObserver(gathered, connectionFailed))!!
+        val channel = sender.createDataChannel("control", DataChannel.Init())!!
+        val answer = CompletableFuture<String>()
+        val receiverFailed = CountDownLatch(1)
+        var receiver: AndroidMediaSession? = null
+        try {
+            val offerFuture = CompletableFuture<SessionDescription>()
+            sender.createOffer(DescriptionObserver(created = offerFuture), MediaConstraints())
+            val setLocal = CompletableFuture<Unit>()
+            sender.setLocalDescription(DescriptionObserver(set = setLocal), offerFuture.get(10, TimeUnit.SECONDS))
+            setLocal.get(10, TimeUnit.SECONDS)
+            assertTrue(gathered.await(10, TimeUnit.SECONDS))
+            val offer = SdpCandidateFilter.restrict(sender.localDescription.description, address)
+            val fingerprint = Regex("(?m)^a=fingerprint:sha-256 ([0-9A-F]{2})")
+            assertTrue("No DTLS fingerprint in generated offer", fingerprint.containsMatchIn(offer))
+            val alteredOffer = fingerprint.replace(offer) { match ->
+                val firstByte = match.groupValues[1]
+                match.value.dropLast(2) + if (firstByte == "00") "01" else "00"
+            }
+            instrumentation.runOnMainSync {
+                receiver = AndroidMediaSession(instrumentation.targetContext, address, object : AndroidMediaSession.Listener {
+                    override fun onAnswer(sdp: String) { answer.complete(sdp) }
+                    override fun onCaptureReady(revision: Long) = Unit
+                    override fun onVideo(track: VideoTrack?) = Unit
+                    override fun onFailure() {
+                        receiverFailed.countDown()
+                        answer.completeExceptionally(IllegalStateException("Media session failed"))
+                    }
+                })
+                receiver.acceptOffer(alteredOffer)
+            }
+            val restrictedAnswer = SdpCandidateFilter.restrict(answer.get(20, TimeUnit.SECONDS), address)
+            val setRemote = CompletableFuture<Unit>()
+            sender.setRemoteDescription(DescriptionObserver(set = setRemote), SessionDescription(SessionDescription.Type.ANSWER, restrictedAnswer))
+            setRemote.get(10, TimeUnit.SECONDS)
+            assertTrue("DTLS mismatch did not fail connection", connectionFailed.await(20, TimeUnit.SECONDS))
+            assertTrue("Control channel opened with altered fingerprint", channel.state() != DataChannel.State.OPEN)
+            assertTrue("Receiver did not report failed connection", receiverFailed.await(10, TimeUnit.SECONDS))
+        } finally {
+            instrumentation.runOnMainSync { receiver?.close() }
+            channel.dispose()
+            sender.close()
+            sender.dispose()
+            factory.dispose()
+            egl.release()
+        }
+    }
+
     private class DescriptionObserver(
         private val created: CompletableFuture<SessionDescription>? = null,
         private val set: CompletableFuture<Unit>? = null,
@@ -173,7 +232,10 @@ class AndroidMediaSessionTest {
         override fun onSetFailure(error: String) { set?.completeExceptionally(IllegalStateException("Description failed")) }
     }
 
-    private class SenderObserver(private val gathered: CountDownLatch) : PeerConnection.Observer {
+    private class SenderObserver(private val gathered: CountDownLatch, private val failed: CountDownLatch? = null) : PeerConnection.Observer {
+        override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
+            if (state == PeerConnection.PeerConnectionState.FAILED) failed?.countDown()
+        }
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
             if (state == PeerConnection.IceGatheringState.COMPLETE) gathered.countDown()
         }

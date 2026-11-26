@@ -138,7 +138,7 @@ final class HostMediaSession {
     }
 }
 
-private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
+final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
     private let route: MediaRouteGate
     private let onFailure: @Sendable () -> Void
     private let onControl: (@Sendable (ControlInput) -> Void)?
@@ -217,6 +217,12 @@ private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDa
         if newState == .complete { continuation.yield(()) }
     }
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
+        if newState == .failed || newState == .disconnected {
+            fail()
+        }
+    }
+    @objc(peerConnection:didChangeConnectionState:)
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         if newState == .failed || newState == .disconnected {
             fail()
         }
