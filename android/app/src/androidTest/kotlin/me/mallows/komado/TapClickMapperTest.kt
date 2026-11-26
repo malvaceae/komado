@@ -20,4 +20,14 @@ class TapClickMapperTest {
         val second = mapper.click(0.0, 300.0, 400, 800, 400, 200, 0, 2)
         assertEquals(PointerClick(2, 2, 0, 0, PointerClick.Button.LEFT), second)
     }
+
+    @Test fun mapsZoomedAndPannedVideoAndRejectsInvalidTransforms() {
+        val mapper = TapClickMapper()
+        val click = mapper.click(100.0, 400.0, 400, 800, 400, 200, 0, 1, zoom = 2.0, panX = 100.0)
+        assertEquals(PointerClick(1, 1, 250_000, 500_000, PointerClick.Button.LEFT), click)
+        assertNull(mapper.click(100.0, 400.0, 400, 800, 400, 200, 0, 1, zoom = Double.NaN))
+        assertNull(mapper.click(100.0, 100.0, 400, 800, 400, 200, 0, 1, zoom = 2.0, panX = 100.0))
+        val next = mapper.click(100.0, 400.0, 400, 800, 400, 200, 0, 1, zoom = 2.0, panX = 100.0)
+        assertEquals(PointerClick(2, 1, 250_000, 500_000, PointerClick.Button.LEFT), next)
+    }
 }
