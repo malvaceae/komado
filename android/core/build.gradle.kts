@@ -16,3 +16,7 @@ kotlin {
 dependencies {
     testImplementation(kotlin("test-junit"))
 }
+
+tasks.withType<Test>().configureEach {
+    systemProperty("komado.fixtures", rootProject.file("../protocol/fixtures").absolutePath)
+}
