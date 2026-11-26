@@ -9,6 +9,8 @@ public enum SignalMessage: Equatable, Sendable {
     case proof(Data)
     case accepted(deviceID: UUID)
     case rejected
+    case offer(String)
+    case answer(String)
 
     public enum MessageError: Error, Equatable { case invalid }
 
@@ -38,6 +40,12 @@ public enum SignalMessage: Equatable, Sendable {
         case "rejected":
             guard fields.count == 2 else { throw MessageError.invalid }
             return .rejected
+        case "offer":
+            guard fields.count == 3, validSDP(fields[2]) else { throw MessageError.invalid }
+            return .offer(fields[2])
+        case "answer":
+            guard fields.count == 3, validSDP(fields[2]) else { throw MessageError.invalid }
+            return .answer(fields[2])
         default:
             throw MessageError.invalid
         }
@@ -58,6 +66,12 @@ public enum SignalMessage: Equatable, Sendable {
             fields = ["1", "proof", data.base64EncodedString()]
         case let .accepted(id): fields = ["1", "accepted", id.uuidString.lowercased()]
         case .rejected: fields = ["1", "rejected"]
+        case let .offer(sdp):
+            guard Self.validSDP(sdp) else { throw MessageError.invalid }
+            fields = ["1", "offer", sdp]
+        case let .answer(sdp):
+            guard Self.validSDP(sdp) else { throw MessageError.invalid }
+            fields = ["1", "answer", sdp]
         }
         let data = try JSONSerialization.data(withJSONObject: fields, options: [.withoutEscapingSlashes])
         guard try Self.decode(data) == self else { throw MessageError.invalid }
@@ -67,6 +81,11 @@ public enum SignalMessage: Equatable, Sendable {
     private static func validName(_ name: String) -> Bool {
         name.utf8.count <= 256 && !name.trimmingCharacters(in: CharacterSet(charactersIn: " ")).isEmpty &&
             !name.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+    }
+
+    private static func validSDP(_ sdp: String) -> Bool {
+        sdp.utf8.count <= 12_288 && sdp.hasPrefix("v=0\r\n") &&
+            !sdp.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) && ![9, 10, 13].contains($0.value) }
     }
 
     // Foundation accepts a trailing comma in an array even though JSON forbids it.

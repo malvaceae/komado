@@ -15,6 +15,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.DataInputStream
+import java.io.IOException
 import java.net.InetAddress
 import java.net.Socket
 import java.security.KeyFactory
@@ -81,6 +82,10 @@ class AuthenticatedHostConnectionTest {
                         }
                         assertTrue(verified)
                         send(socket, SignalMessage.Accepted(id))
+                        if (index == 0) {
+                            send(socket, SignalMessage.Offer("v=0\r\ns=offer\r\n"))
+                            assertEquals("v=0\r\ns=answer\r\n", (receive(socket) as SignalMessage.Answer).sdp)
+                        }
                     }
                 }
             }
@@ -88,6 +93,10 @@ class AuthenticatedHostConnectionTest {
                 val paired = AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint,
                     "Android test", token, key)
                 assertEquals(id, paired.deviceID)
+                assertThrows(IOException::class.java) { paired.sendAnswer("v=0\r\ns=answer\r\n") }
+                assertEquals("v=0\r\ns=offer\r\n", paired.receiveOffer())
+                paired.sendAnswer("v=0\r\ns=answer\r\n")
+                assertThrows(IOException::class.java) { paired.sendAnswer("v=0\r\ns=answer\r\n") }
                 paired.close()
                 val reconnected = AuthenticatedHostConnection.reconnect("127.0.0.1", server.localPort, fingerprint, id, key)
                 assertEquals(id, reconnected.deviceID)

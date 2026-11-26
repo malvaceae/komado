@@ -18,6 +18,8 @@ sealed interface SignalMessage {
     data class Proof(val signatureDER: ByteArray) : SignalMessage
     data class Accepted(val deviceID: UUID) : SignalMessage
     data object Rejected : SignalMessage
+    data class Offer(val sdp: String) : SignalMessage
+    data class Answer(val sdp: String) : SignalMessage
 }
 
 object SignalMessageCodec {
@@ -66,6 +68,14 @@ object SignalMessageCodec {
                     if (fields.size != 2) throw MessageException()
                     SignalMessage.Rejected
                 }
+                "offer" -> {
+                    if (fields.size != 3 || !validSDP(fields[2])) throw MessageException()
+                    SignalMessage.Offer(fields[2])
+                }
+                "answer" -> {
+                    if (fields.size != 3 || !validSDP(fields[2])) throw MessageException()
+                    SignalMessage.Answer(fields[2])
+                }
                 else -> throw MessageException()
             }
         } catch (_: MessageException) {
@@ -93,6 +103,14 @@ object SignalMessageCodec {
             }
             is SignalMessage.Accepted -> listOf("1", "accepted", message.deviceID.toString())
             SignalMessage.Rejected -> listOf("1", "rejected")
+            is SignalMessage.Offer -> {
+                if (!validSDP(message.sdp)) throw MessageException()
+                listOf("1", "offer", message.sdp)
+            }
+            is SignalMessage.Answer -> {
+                if (!validSDP(message.sdp)) throw MessageException()
+                listOf("1", "answer", message.sdp)
+            }
         }
         val output = StringWriter()
         JsonWriter(output).use { writer ->
@@ -110,6 +128,13 @@ object SignalMessageCodec {
         val bytes = name.toByteArray(Charsets.UTF_8)
         return name.trim(' ').isNotEmpty() && bytes.size <= 256 &&
             String(bytes, Charsets.UTF_8) == name && name.none { it.isISOControl() }
+    }
+
+    private fun validSDP(sdp: String): Boolean {
+        if (sdp.length > 12_288 || !sdp.startsWith("v=0\r\n")) return false
+        val bytes = sdp.toByteArray(Charsets.UTF_8)
+        return bytes.size <= 12_288 && String(bytes, Charsets.UTF_8) == sdp &&
+            sdp.none { it.isISOControl() && it != '\t' && it != '\n' && it != '\r' }
     }
 
     private fun parseUUID(value: String): UUID {

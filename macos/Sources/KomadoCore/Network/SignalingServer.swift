@@ -18,13 +18,14 @@ public struct ListenerBinding {
 
 /// A bounded TLS listener for the initial device handshake. All listeners share
 /// one active connection and the same pairing and authentication coordinators.
-/// Later WebRTC signaling is not yet implemented; unexpected messages close
-/// the connection. Callers must stop and recreate the server on path changes.
+/// A single authenticated SDP offer/answer exchange is supported; unexpected
+/// messages close the connection. Recreate the server on path changes.
 public actor SignalingServer {
-    public enum ServerError: Error, Equatable { case invalidBindings, alreadyStarted, removalBusy }
+    public enum ServerError: Error, Equatable { case invalidBindings, alreadyStarted, removalBusy, noConnection }
     public enum Event: Sendable {
         case listening(interfaceName: String, address: String, port: UInt16)
         case authenticated(PairedDevice)
+        case answer(PairedDevice, String)
         case disconnected
         case throttled
         case failed
@@ -114,6 +115,12 @@ public actor SignalingServer {
         if let current = active { await current.session.close() }
     }
 
+    /// Sends one SDP offer only after the active device has authenticated.
+    public func sendOffer(_ sdp: String) async throws {
+        guard let current = active, !stopped, !removing else { throw ServerError.noConnection }
+        try await current.session.sendOffer(sdp)
+    }
+
     /// Blocks new sessions and disconnects the current one before removing the
     /// device. All registration removal must use this while the server is active.
     @discardableResult
@@ -162,6 +169,7 @@ public actor SignalingServer {
         let handshake = ServerHandshake(sessionID: id, pairing: pairing, authentication: authentication)
         let session = SignalingSession(connection: connection, handshake: handshake, queue: queue,
                                        onAuthenticated: { [weak self] device in await self?.authenticated(id: id, device: device) },
+                                       onAnswer: { [weak self] device, sdp in await self?.answer(id: id, device: device, sdp: sdp) },
                                        onClosed: { [weak self] in await self?.sessionClosed(id: id) })
         active = (id, session)
         await session.start()
@@ -170,6 +178,11 @@ public actor SignalingServer {
     private func authenticated(id: UUID, device: PairedDevice) {
         guard !stopped, active?.id == id else { return }
         onEvent(.authenticated(device))
+    }
+
+    private func answer(id: UUID, device: PairedDevice, sdp: String) {
+        guard !stopped, active?.id == id else { return }
+        onEvent(.answer(device, sdp))
     }
 
     private func sessionClosed(id: UUID) {

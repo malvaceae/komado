@@ -265,6 +265,7 @@ final class HostModel: ObservableObject {
             invitationExpiry = nil
             invitationCleanup = Task { try? await pairing.cancelInvitation() }
             refresh()
+        case .answer: break
         case .disconnected: connectedDevice = nil
         case .throttled: error = "接続試行が多いため、一時的に新しい接続を待機しています。"
         case .failed:

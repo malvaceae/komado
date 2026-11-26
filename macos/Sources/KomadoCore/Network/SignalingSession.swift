@@ -1,26 +1,32 @@
 import Foundation
 import Network
 
-/// One TLS connection. Only the initial authenticated handshake is handled;
-/// later signaling messages are not yet supported and are rejected.
+/// One TLS connection with an authenticated, one-off SDP offer/answer exchange.
 actor SignalingSession {
+    enum SessionError: Error { case notAuthenticated, unexpectedState }
+    private enum MediaState { case idle, awaitingAnswer, complete }
     private let connection: NWConnection
     private let handshake: ServerHandshake
     private let queue: DispatchQueue
     private let onAuthenticated: @Sendable (PairedDevice) async -> Void
+    private let onAnswer: @Sendable (PairedDevice, String) async -> Void
     private let onClosed: @Sendable () async -> Void
     private var decoder = SignalFrame.Decoder()
     private var timeout: Task<Void, Never>?
     private var closed = false
     private var ready = false
+    private var device: PairedDevice?
+    private var mediaState: MediaState = .idle
 
     init(connection: NWConnection, handshake: ServerHandshake, queue: DispatchQueue,
          onAuthenticated: @escaping @Sendable (PairedDevice) async -> Void,
+         onAnswer: @escaping @Sendable (PairedDevice, String) async -> Void,
          onClosed: @escaping @Sendable () async -> Void) {
         self.connection = connection
         self.handshake = handshake
         self.queue = queue
         self.onAuthenticated = onAuthenticated
+        self.onAnswer = onAnswer
         self.onClosed = onClosed
     }
 
@@ -44,6 +50,20 @@ actor SignalingSession {
         connection.cancel()
         await handshake.disconnect()
         await onClosed()
+    }
+
+    func sendOffer(_ sdp: String) throws {
+        guard !closed, device != nil else { throw SessionError.notAuthenticated }
+        guard mediaState == .idle else { throw SessionError.unexpectedState }
+        let encoded = try SignalFrame.encode(SignalMessage.offer(sdp).encode())
+        mediaState = .awaitingAnswer
+        timeout = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            await self?.close()
+        }
+        connection.send(content: encoded, completion: .contentProcessed { [weak self] error in
+            if error != nil { Task { await self?.close() } }
+        })
     }
 
     private func stateChanged(_ state: NWConnection.State) async {
@@ -78,6 +98,15 @@ actor SignalingSession {
                     return
                 }
                 let message = try SignalMessage.decode(frame)
+                if let device {
+                    guard case let .answer(sdp) = message, mediaState == .awaitingAnswer else { await close(); return }
+                    mediaState = .complete
+                    timeout?.cancel()
+                    timeout = nil
+                    await onAnswer(device, sdp)
+                    if !closed { receive() }
+                    return
+                }
                 let response = await handshake.receive(message)
                 guard !closed else { return }
                 guard let response else { await close(); return }
@@ -98,8 +127,9 @@ actor SignalingSession {
         if case .accepted = response {
             timeout?.cancel()
             timeout = nil
-            guard let device = await handshake.authenticatedDevice(), !closed else { await close(); return }
-            await onAuthenticated(device)
+            guard let authenticated = await handshake.authenticatedDevice(), !closed else { await close(); return }
+            device = authenticated
+            await onAuthenticated(authenticated)
         }
         if !closed { receive() }
     }

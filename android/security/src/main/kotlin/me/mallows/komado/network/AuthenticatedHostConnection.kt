@@ -23,7 +23,40 @@ class AuthenticatedHostConnection private constructor(
     private val socket: SSLSocket,
     val deviceID: UUID,
 ) : Closeable {
-    override fun close() = socket.close()
+    private enum class MediaState { EXPECTING_OFFER, OFFER_RECEIVED, ANSWER_SENT }
+    private val mediaLock = Any()
+    private var mediaState = MediaState.EXPECTING_OFFER
+    @Volatile private var closed = false
+
+    /** Waits for the authenticated host's SDP offer. Call from a background thread. */
+    fun receiveOffer(): String = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.EXPECTING_OFFER) throw IOException("Unexpected signaling state")
+        try {
+            val offer = receive(socket) as? SignalMessage.Offer ?: throw IOException("Expected SDP offer")
+            mediaState = MediaState.OFFER_RECEIVED
+            offer.sdp
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        }
+    }
+
+    /** Sends one SDP answer to the authenticated host. */
+    fun sendAnswer(sdp: String) = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.OFFER_RECEIVED) throw IOException("Unexpected signaling state")
+        try {
+            send(socket, SignalMessage.Answer(sdp))
+            mediaState = MediaState.ANSWER_SENT
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        }
+    }
+
+    override fun close() {
+        closed = true
+        socket.close()
+    }
 
     companion object {
         private const val TIMEOUT_MILLIS = 10_000
@@ -78,6 +111,7 @@ class AuthenticatedHostConnection private constructor(
                     socket.startHandshake()
                     val deviceID = handshake(socket)
                     if (transport.isClosed) throw IOException("Authentication timed out")
+                    socket.soTimeout = 30_000
                     return AuthenticatedHostConnection(socket, deviceID)
                 } catch (error: Exception) {
                     runCatching { socket.close() }

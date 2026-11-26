@@ -9,10 +9,15 @@ private final class ServerTestBox: @unchecked Sendable {
     private let lock = NSLock()
     private var interface: NWInterface?
     private var port: UInt16?
+    private var authenticationCount = 0
+    private var answer: String?
     func setInterface(_ value: NWInterface?) { lock.withLock { interface = value } }
     func getInterface() -> NWInterface? { lock.withLock { interface } }
     func setPort(_ value: UInt16) { lock.withLock { port = value } }
     func getPort() -> UInt16? { lock.withLock { port } }
+    func nextAuthentication() -> Int { lock.withLock { authenticationCount += 1; return authenticationCount } }
+    func setAnswer(_ value: String) { lock.withLock { answer = value } }
+    func getAnswer() -> String? { lock.withLock { answer } }
 }
 
 private final class ServerTestPeer: @unchecked Sendable {
@@ -123,6 +128,8 @@ final class SignalingServerTests: XCTestCase {
         let listening = expectation(description: "listening")
         let authenticated = expectation(description: "two authenticated connections")
         authenticated.expectedFulfillmentCount = 2
+        let firstAuthenticated = expectation(description: "first connection authenticated")
+        let answerReceived = expectation(description: "SDP answer")
         let disconnected = expectation(description: "four disconnections")
         disconnected.expectedFulfillmentCount = 4
         let server = try SignalingServer.create(identity: identity.identity,
@@ -130,7 +137,10 @@ final class SignalingServerTests: XCTestCase {
             port: .any, pairing: pairing, authentication: auth) { event in
                 switch event {
                 case let .listening(_, _, port): box.setPort(port); listening.fulfill()
-                case .authenticated: authenticated.fulfill()
+                case .authenticated:
+                    if box.nextAuthentication() == 1 { firstAuthenticated.fulfill() }
+                    authenticated.fulfill()
+                case let .answer(_, sdp): box.setAnswer(sdp); answerReceived.fulfill()
                 case .disconnected: disconnected.fulfill()
                 default: break
                 }
@@ -138,6 +148,10 @@ final class SignalingServerTests: XCTestCase {
         try await server.start()
         await fulfillment(of: [listening], timeout: 10)
         let port = try XCTUnwrap(box.getPort()).asPort()
+        do {
+            try await server.sendOffer("v=0\r\n")
+            XCTFail("Offer must not be sent without an authenticated connection")
+        } catch { }
         let key = P256.Signing.PrivateKey()
         let first = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
         try await first.start()
@@ -146,6 +160,18 @@ final class SignalingServerTests: XCTestCase {
         let signature = try key.signature(for: Data("komado.device-auth.v1\0".utf8) + challenge).derRepresentation
         try await first.send(.proof(signature))
         guard case let .accepted(deviceID) = try await first.receive() else { return XCTFail("Expected acceptance") }
+        await fulfillment(of: [firstAuthenticated], timeout: 10)
+        let offer = "v=0\r\ns=offer\r\n", answer = "v=0\r\ns=answer\r\n"
+        try await server.sendOffer(offer)
+        let receivedOffer = try await first.receive()
+        XCTAssertEqual(receivedOffer, .offer(offer))
+        try await first.send(.answer(answer))
+        await fulfillment(of: [answerReceived], timeout: 10)
+        XCTAssertEqual(box.getAnswer(), answer)
+        do {
+            try await server.sendOffer(offer)
+            XCTFail("A second offer must not be accepted")
+        } catch { }
         first.connection.cancel()
         // The server permits the next connection after it observes this close.
         await server.disconnectCurrent()
