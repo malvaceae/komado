@@ -58,6 +58,8 @@ Macの画面取得処理には、WebRTCの選択候補がシグナリングの�
 
 ユーザーセッションの切り替え、Macのスリープ前、ログアウト・電源オフ要求、ディスプレイのスリープ、ディスプレイ構成の変更が通知された場合は、まず画面フレームを止めてから接続を終了する。[スリープ前](https://developer.apple.com/documentation/appkit/nsworkspace/willsleepnotification)と[ログアウト・電源オフ要求](https://developer.apple.com/documentation/appkit/nsworkspace/willpoweroffnotification)の通知にはNSWorkspaceの通知センターを使う。通知を模擬したテストは実施したが、実際の画面ロック・スリープやディスプレイの抜き差しは未検証であり、これらの通知だけですべてのロック状態を検出できるとは扱わない。
 
+AppKitの保護データが利用不可になる通知でも同様に画面転送を停止する。これは保護データの状態に関する通知であり、画面のロック状態と同一とは扱わない。[Appleの技術サポートによる説明](https://developer.apple.com/forums/thread/850327)も両者が直接結び付くとは述べていない。通知を模擬したテストは実施したが、実際のロックによる通知の発生や網羅性は未検証である。
+
 Appleが公開する[ウインドウサーバーのセッション情報](https://developer.apple.com/documentation/coregraphics/window-server-session-properties)にはコンソール上のセッションやログイン完了を示す値があるが、それらを画面がロックされていない証拠には使わない。
 
 ScreenCaptureKitが空白・中断・停止状態を通知した場合や、フレームの状態を取得できない場合も転送を停止する。状態ごとの判定はテストしたが、画面ロック時にどの通知が届くかは未確認である。

@@ -16,6 +16,7 @@ final class ScreenEnvironmentMonitor: @unchecked Sendable {
             (workspace, NSWorkspace.willPowerOffNotification),
             (workspace, NSWorkspace.screensDidSleepNotification),
             (application, NSApplication.didChangeScreenParametersNotification),
+            (application, Notification.Name.NSApplicationProtectedDataWillBecomeUnavailable),
         ] {
             let token = center.addObserver(forName: name, object: nil, queue: nil) { _ in onChange() }
             registrations.append((center, token))
