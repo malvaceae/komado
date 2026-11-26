@@ -2,7 +2,7 @@
 
 ## 現状
 
-macOSの共通コードをSwift Packageとして実装しています。製品版のmacOSアプリとAndroidアプリ、CI・配布手順はまだ整備されていません。技術検証用のコードは[検証手順](../experiments/README.md)を参照してください。
+macOSの共通コードをSwift Packageとして、Androidの共通コードをKotlinのJVMモジュールとして実装しています。製品版のmacOSアプリとAndroidアプリ、CI・配布手順はまだ整備されていません。技術検証用のコードは[検証手順](../experiments/README.md)を参照してください。
 
 ## 開発の進め方
 
@@ -20,7 +20,7 @@ macOSの共通コードをSwift Packageとして実装しています。製品�
 - Android SDK、Java、Androidエミュレーターがある。Android実機はADBに接続されていない。
 - [macOSのWebRTC検証用プログラム](../experiments/README.md)を追加し、Apple Silicon上でビルド・起動を確認した。候補のWebRTC配布物について、含まれるCPU・ABIとAndroidのminSdk宣言を確認した。結果と検証範囲は[互換性](compatibility.md)を参照する。ライブラリの相互接続や採用は未確定。
 
-## macOS共通コードのテスト
+## 共通コードのテスト
 
 XcodeのCommand Line Toolsが選択されている場合も含め、Xcodeを指定して実行できます。
 
@@ -28,7 +28,13 @@ XcodeのCommand Line Toolsが選択されている場合も含め、Xcodeを指�
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path macos
 ```
 
-`CaptureGeometry`はCore Graphicsのグローバル座標（ポイント単位）のキャプチャ領域と正規化座標から入力先の座標を求め、無効な座標や現在と異なるキャプチャリビジョンを拒否します。対象のフォーカス確認や実際の入力送信はまだ実装していません。
+Android側はJDKを用いて実行します。
+
+```sh
+./android/gradlew -p android :core:test
+```
+
+Androidの`VideoViewport`は映像をアスペクト比を維持して表示した際の余白、倍率、移動を考慮し、表示範囲内のタッチを正規化します。macOSの`CaptureGeometry`はCore Graphicsのグローバル座標（ポイント単位）のキャプチャ領域と正規化座標から入力先の座標を求め、無効な座標や現在と異なるキャプチャリビジョンを拒否します。実際の映像表示との座標の一致、対象のフォーカス確認、入力送信はまだ実装・検証していません。
 
 ## 環境と手順の整備予定
 
