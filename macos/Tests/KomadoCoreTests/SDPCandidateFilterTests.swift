@@ -29,4 +29,12 @@ final class SDPCandidateFilterTests: XCTestCase {
         XCTAssertTrue(output.contains("a=candidate:1"))
         XCTAssertTrue(output.contains("c=IN IP6 2001:db8::1\r\n"))
     }
+
+    func testSelectedLocalCandidateMustMatchAddress() {
+        let address = NWEndpoint.Host.ipv4(IPv4Address("192.168.1.5")!)
+        let candidate = "candidate:1 1 udp 1 192.168.1.5 54321 typ host generation 0"
+        XCTAssertTrue(SDPCandidateFilter.permitsSelectedLocalCandidate(candidate, on: address))
+        XCTAssertFalse(SDPCandidateFilter.permitsSelectedLocalCandidate(candidate.replacingOccurrences(of: "192.168.1.5", with: "10.0.0.1"), on: address))
+        XCTAssertFalse(SDPCandidateFilter.permitsSelectedLocalCandidate(candidate + "\r\na=candidate:2", on: address))
+    }
 }

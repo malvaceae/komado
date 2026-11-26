@@ -6,6 +6,13 @@ import Network
 public enum SDPCandidateFilter {
     public enum FilterError: Error { case invalidSDP, invalidAddress, noCandidate }
 
+    /// A selected local candidate must still use the signaling address. This
+    /// check is meaningful only after WebRTC reports the selected pair.
+    public static func permitsSelectedLocalCandidate(_ candidate: String, on address: NWEndpoint.Host) -> Bool {
+        guard candidate.hasPrefix("candidate:"), !candidate.contains("\r"), !candidate.contains("\n") else { return false }
+        return (try? restrict("v=0\r\na=\(candidate)\r\n", to: address)) != nil
+    }
+
     public static func restrict(_ sdp: String, to address: NWEndpoint.Host) throws -> String {
         let target: Data
         let connectionLine: String

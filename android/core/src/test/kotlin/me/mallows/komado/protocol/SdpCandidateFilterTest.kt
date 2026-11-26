@@ -32,4 +32,12 @@ class SdpCandidateFilterTest {
         val address = result.lineSequence().first { it.startsWith("c=IN IP6 ") }.substringAfterLast(' ')
         assertEquals(InetAddress.getByName("2001:db8::1"), InetAddress.getByName(address))
     }
+
+    @Test fun selectedLocalCandidateMustMatchAddress() {
+        val address = InetAddress.getByName("192.168.1.5")
+        val candidate = "candidate:1 1 udp 1 192.168.1.5 54321 typ host generation 0"
+        assertTrue(SdpCandidateFilter.permitsSelectedLocalCandidate(candidate, address))
+        assertTrue(!SdpCandidateFilter.permitsSelectedLocalCandidate(candidate.replace("192.168.1.5", "10.0.0.1"), address))
+        assertTrue(!SdpCandidateFilter.permitsSelectedLocalCandidate(candidate + "\r\na=candidate:2", address))
+    }
 }

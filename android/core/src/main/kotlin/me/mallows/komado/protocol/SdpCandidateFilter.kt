@@ -7,6 +7,17 @@ import java.net.InetAddress
 object SdpCandidateFilter {
     class FilterException : Exception()
 
+    /** Use only with the local candidate reported by WebRTC's selected pair callback. */
+    fun permitsSelectedLocalCandidate(candidate: String, address: InetAddress): Boolean {
+        if (!candidate.startsWith("candidate:") || '\r' in candidate || '\n' in candidate) return false
+        return try {
+            restrict("v=0\r\na=$candidate\r\n", address)
+            true
+        } catch (_: FilterException) {
+            false
+        }
+    }
+
     fun restrict(sdp: String, address: InetAddress): String {
         if (sdp.toByteArray(Charsets.UTF_8).size > 12_288 || !sdp.startsWith("v=0\r\n") || !sdp.endsWith("\r\n") ||
             sdp.any { (it.code < 32 && it != '\t' && it != '\r' && it != '\n') || it.code == 127 }) throw FilterException()
