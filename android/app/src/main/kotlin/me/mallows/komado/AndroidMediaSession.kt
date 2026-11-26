@@ -94,6 +94,9 @@ internal class AndroidMediaSession(
         val answer = peer.localDescription?.description ?: return fail()
         state = State.ANSWER_READY
         handler.removeCallbacks(timeout)
+        // Gathering is complete, but the remote peer might never finish DTLS or
+        // announce a capture. Bound that phase independently as well.
+        handler.postDelayed(timeout, 20_000)
         listener.onAnswer(answer)
     }
 
@@ -211,6 +214,7 @@ internal class AndroidMediaSession(
                             if (captureRevision != null) fail() else {
                                 val revision = try { CaptureReadyCodec.decode(data) } catch (_: Exception) { fail(); return@postIfOpen }
                                 captureRevision = revision
+                                handler.removeCallbacks(timeout)
                                 listener.onCaptureReady(revision)
                             }
                         }

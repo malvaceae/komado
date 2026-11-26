@@ -222,6 +222,50 @@ class AndroidMediaSessionTest {
         }
     }
 
+    @Test fun unansweredMediaConnectionTimesOut() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val address = DatagramSocket().use {
+            it.connect(InetAddress.getByName("192.0.2.1"), 9)
+            it.localAddress
+        }
+        val egl = EglBase.create()
+        val factory = MediaFactory.create(instrumentation.targetContext, egl.eglBaseContext)
+        val gathered = CountDownLatch(1)
+        val sender = factory.createPeerConnection(PeerConnection.RTCConfiguration(emptyList()), SenderObserver(gathered))!!
+        val channel = sender.createDataChannel("control", DataChannel.Init())!!
+        val answer = CountDownLatch(1)
+        val failed = CountDownLatch(1)
+        var receiver: AndroidMediaSession? = null
+        try {
+            val offerFuture = CompletableFuture<SessionDescription>()
+            sender.createOffer(DescriptionObserver(created = offerFuture), MediaConstraints())
+            val setLocal = CompletableFuture<Unit>()
+            sender.setLocalDescription(DescriptionObserver(set = setLocal), offerFuture.get(10, TimeUnit.SECONDS))
+            setLocal.get(10, TimeUnit.SECONDS)
+            assertTrue(gathered.await(10, TimeUnit.SECONDS))
+            val offer = SdpCandidateFilter.restrict(sender.localDescription.description, address)
+            instrumentation.runOnMainSync {
+                receiver = AndroidMediaSession(instrumentation.targetContext, address, object : AndroidMediaSession.Listener {
+                    override fun onAnswer(sdp: String) { answer.countDown() }
+                    override fun onCaptureReady(revision: Long) = Unit
+                    override fun onVideo(track: VideoTrack?) = Unit
+                    override fun onFailure() { failed.countDown() }
+                })
+                receiver.acceptOffer(offer)
+            }
+            assertTrue("Answer was not generated", answer.await(10, TimeUnit.SECONDS))
+            assertTrue("Stalled media connection was not closed", failed.await(25, TimeUnit.SECONDS))
+            assertTrue(channel.state() != DataChannel.State.OPEN)
+        } finally {
+            instrumentation.runOnMainSync { receiver?.close() }
+            channel.dispose()
+            sender.close()
+            sender.dispose()
+            factory.dispose()
+            egl.release()
+        }
+    }
+
     private class DescriptionObserver(
         private val created: CompletableFuture<SessionDescription>? = null,
         private val set: CompletableFuture<Unit>? = null,
