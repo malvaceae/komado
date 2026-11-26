@@ -20,18 +20,9 @@ Xcode、JDK、Android SDK Platform 37、Androidエミュレーター、adbが必
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build --package-path experiments/macos-webrtc --product ExchangeProbe
 ./experiments/android-webrtc/gradlew -p experiments/android-webrtc :app:assembleDebug :app:lintDebug
 python3 experiments/run-exchange-probe.py emulator-5554
+python3 experiments/run-exchange-probe.py emulator-5554 --screen
 ```
 
-`emulator-5554`は対象エミュレーターのシリアルに置き換えます。このスクリプトは実機を拒否し、検証用アプリをインストールして起動します。macOSとエミュレーターでのみ生成映像と固定メッセージをやり取りし、Android側で10フレーム以上の受信とDataChannelによる応答を確認します。受信コーデックも表示します。
+`emulator-5554`はローカルの対象エミュレーターのシリアルに置き換えます。このスクリプトは実機を拒否し、検証用アプリをインストールして起動します。最初は生成映像を使い、`--screen`では画面収録権限がある場合にメインディスプレイを5秒間キャプチャしてエミュレーターへ送信します。いずれもAndroid側で10フレーム以上の受信と固定メッセージのDataChannelによる応答を確認し、受信コーデックを表示します。実画面の検証は1280×720の範囲に収まるよう縦横比を維持して縮小します。これは検証用の設定であり、製品の画質上限ではありません。
 
-シグナリング情報はMacの一時ディレクトリとAndroidアプリのプライベート領域の間でadbを使って受け渡し、終了時に削除します。待ち受け用のシグナリングサーバーは起動しません。映像通信はエミュレーターのネットワークを使用します。この検証は認証・Tailscale経路制限の実装や検証ではなく、実際の画面や入力イベントを送信するものではありません。
-
-## macOSのICE候補の確認
-
-Tailscale接続中のMacで、上記の`ExchangeProbe`をビルドした後に実行します。
-
-```sh
-python3 experiments/check-macos-ice.py
-```
-
-通常設定、WebRTCのオプションでWi-Fi・Ethernet・携帯・ループバックを除外した場合、VPNを除外した場合について、ICE候補のインターフェースを比較します。IPアドレスやSDPは表示せず、一時ファイルは終了時に削除します。インターフェース名はローカルの情報とTailscaleのアドレスから判定し、WebRTCが報告するネットワーク種別も表示します。候補がTailscaleのアドレスに一致することだけでは、実際の経路や接続先の正当性を保証できません。
+シグナリング情報はMacの一時ディレクトリとAndroidアプリのプライベート領域の間でadbを使って受け渡し、終了時に削除します。待ち受け用のシグナリングサーバーは起動しません。映像通信はエミュレーターのネットワークを使用します。この検証は製品用の認証・暗号化済みシグナリングの実装や検証ではなく、入力イベントは送信しません。`--screen`の映像は検証用エミュレーターに表示し、ファイルには保存しません。
