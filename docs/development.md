@@ -2,7 +2,7 @@
 
 ## 現状
 
-macOSの共通コードをSwift Packageとして、Androidの共通コードをKotlinのJVMモジュールとして実装しています。Androidアプリには接続先の名前とアドレスを端末内に保存・編集・削除する初期画面があります。保存はペアリングではなく、接続機能も未実装です。製品版のmacOSアプリ、CI・配布手順はまだ整備されていません。技術検証用のコードは[検証手順](../experiments/README.md)を参照してください。
+macOSの共通コードをSwift Packageとして、Androidの共通コードをKotlinのJVMモジュールとして実装しています。macOSにはメニューバー常駐アプリの初期実装があり、Macの確認情報と登録端末を表示します。Androidアプリには接続先の名前とアドレスを端末内に保存・編集・削除する初期画面があります。アドレスの保存はペアリングではなく、両アプリとも接続機能は未実装です。CI・配布手順はまだ整備されていません。技術検証用のコードは[検証手順](../experiments/README.md)を参照してください。
 
 ## 開発の進め方
 
@@ -26,6 +26,13 @@ XcodeのCommand Line Toolsが選択されている場合も含め、Xcodeを指�
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path macos
+```
+
+Macアプリの開発用ビルドは次のコマンドで作成できます。`.build/komado.app`はローカル確認用のアドホック署名であり、配布用の署名や公証は行いません。
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./macos/build-app.sh
+open macos/.build/komado.app
 ```
 
 Android側はJDKを用いて実行します。
