@@ -21,6 +21,7 @@ class VideoActivity : Activity() {
     private var media: AndroidMediaSession? = null
     private var renderer: RemoteVideoRenderer? = null
     private var captureRevision: Long? = null
+    private var firstFrameShown = false
     private lateinit var status: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,7 +34,14 @@ class VideoActivity : Activity() {
         root.addView(status)
         try {
             val video = RemoteVideoRenderer(this, object : RendererCommon.RendererEvents {
-                override fun onFirstFrameRendered() { runOnUiThread { if (active) status.setText(R.string.screen_connected) } }
+                override fun onFirstFrameRendered() {
+                    runOnUiThread {
+                        if (active) {
+                            firstFrameShown = true
+                            status.setText(R.string.screen_connected)
+                        }
+                    }
+                }
                 override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) = Unit
             })
             renderer = video
@@ -108,7 +116,9 @@ class VideoActivity : Activity() {
         captureRevision = null
         runCatching { renderer?.close() }
         renderer = null
-        if (::status.isInitialized) status.setText(if (failed) R.string.screen_failed else R.string.screen_closed)
+        if (::status.isInitialized) status.setText(
+            if (!failed) R.string.screen_closed else if (firstFrameShown) R.string.screen_disconnected else R.string.screen_failed
+        )
     }
 
     private fun hexBytes(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()

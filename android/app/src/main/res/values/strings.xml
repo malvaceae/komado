@@ -25,6 +25,7 @@
     <string name="screen_waiting">画面を接続中…</string>
     <string name="screen_connected">画面を表示中</string>
     <string name="screen_failed">画面に接続できませんでした。Macの待ち受けと画面収録の許可を確認してください。</string>
+    <string name="screen_disconnected">画面への接続が終了しました。再接続するには接続先から画面を開いてください。</string>
     <string name="screen_closed">接続を終了しました。</string>
     <string name="close_screen">画面を閉じる</string>
     <string name="connecting">接続中…</string>
