@@ -1,0 +1,106 @@
+import Foundation
+import Network
+
+/// One TLS connection. Only the initial authenticated handshake is handled;
+/// later signaling messages are not yet supported and are rejected.
+actor SignalingSession {
+    private let connection: NWConnection
+    private let handshake: ServerHandshake
+    private let queue: DispatchQueue
+    private let onAuthenticated: @Sendable (PairedDevice) async -> Void
+    private let onClosed: @Sendable () async -> Void
+    private var decoder = SignalFrame.Decoder()
+    private var timeout: Task<Void, Never>?
+    private var closed = false
+    private var ready = false
+
+    init(connection: NWConnection, handshake: ServerHandshake, queue: DispatchQueue,
+         onAuthenticated: @escaping @Sendable (PairedDevice) async -> Void,
+         onClosed: @escaping @Sendable () async -> Void) {
+        self.connection = connection
+        self.handshake = handshake
+        self.queue = queue
+        self.onAuthenticated = onAuthenticated
+        self.onClosed = onClosed
+    }
+
+    func start() {
+        guard !closed else { return }
+        connection.stateUpdateHandler = { [weak self] state in
+            Task { await self?.stateChanged(state) }
+        }
+        timeout = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            await self?.close()
+        }
+        connection.start(queue: queue)
+    }
+
+    func close() async {
+        guard !closed else { return }
+        closed = true
+        timeout?.cancel()
+        timeout = nil
+        connection.cancel()
+        await handshake.disconnect()
+        await onClosed()
+    }
+
+    private func stateChanged(_ state: NWConnection.State) async {
+        guard !closed else { return }
+        switch state {
+        case .ready where !ready:
+            ready = true
+            receive()
+        case .failed, .cancelled:
+            await close()
+        default: break
+        }
+    }
+
+    private func receive() {
+        guard !closed else { return }
+        connection.receive(minimumIncompleteLength: 1, maximumLength: SignalFrame.maximumChunk) { [weak self] data, _, complete, error in
+            Task { await self?.received(data: data, complete: complete, error: error) }
+        }
+    }
+
+    private func received(data: Data?, complete: Bool, error: NWError?) async {
+        guard !closed else { return }
+        guard error == nil else { await close(); return }
+        if let data, !data.isEmpty {
+            do {
+                let frames = try decoder.append(data)
+                // The peer must wait for each response; pipelining isn't supported.
+                guard frames.count <= 1 else { await close(); return }
+                guard let frame = frames.first else {
+                    if complete { await close() } else { receive() }
+                    return
+                }
+                let message = try SignalMessage.decode(frame)
+                let response = await handshake.receive(message)
+                guard !closed else { return }
+                guard let response else { await close(); return }
+                let encoded = try SignalFrame.encode(response.encode())
+                connection.send(content: encoded, completion: .contentProcessed { [weak self] error in
+                    Task { await self?.sent(response: response, error: error) }
+                })
+            } catch { await close() }
+        } else if complete {
+            _ = try? decoder.finish()
+            await close()
+        } else { receive() }
+    }
+
+    private func sent(response: SignalMessage, error: NWError?) async {
+        guard !closed else { return }
+        guard error == nil, response != .rejected else { await close(); return }
+        if case .accepted = response {
+            timeout?.cancel()
+            timeout = nil
+            guard let device = await handshake.authenticatedDevice(), !closed else { await close(); return }
+            await onAuthenticated(device)
+        }
+        if !closed { receive() }
+    }
+}
