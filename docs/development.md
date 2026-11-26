@@ -32,9 +32,12 @@ Android側はJDKを用いて実行します。
 
 ```sh
 ./android/gradlew -p android :core:test
+ANDROID_SERIAL=emulator-5554 ./android/gradlew -p android :security:connectedDebugAndroidTest :security:lintDebug
 ```
 
-Androidの`VideoViewport`は映像をアスペクト比を維持して表示した際の余白、倍率、移動を考慮し、表示範囲内のタッチを正規化します。macOSの`CaptureGeometry`はCore Graphicsのグローバル座標（ポイント単位）のキャプチャ領域と正規化座標から入力先の座標を求め、無効な座標や現在と異なるキャプチャリビジョンを拒否します。実際の映像表示との座標の一致、対象のフォーカス確認、入力送信はまだ実装・検証していません。
+後者は起動済みのエミュレーターが必要です。シリアルは対象の環境に合わせて指定します。
+
+Androidの`VideoViewport`は映像をアスペクト比を維持して表示した際の余白、倍率、移動を考慮し、表示範囲内のタッチを正規化します。macOSの`CaptureGeometry`はCore Graphicsのグローバル座標（ポイント単位）のキャプチャ領域と正規化座標から入力先の座標を求め、無効な座標や現在と異なるキャプチャリビジョンを拒否します。実際の映像表示との座標の一致、対象のフォーカス確認、入力送信はまだ実装・検証していません。端末認証については[署名プリミティブ](protocol.md#端末署名のプリミティブ初期実装)を実装していますが、認証フロー全体は未実装です。
 
 ## 環境と手順の整備予定
 

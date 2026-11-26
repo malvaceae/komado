@@ -38,3 +38,9 @@ JSONを使い、`type`、`requestId`、`sequence`、`payload`を共通フィー�
 - 音声、クリップボード、再接続の対応機能と許可条件。
 
 仕様が定まった範囲から[protocol/](../protocol/README.md)にJSON Schemaと共通の正常・異常系フィクスチャを追加し、両実装で検証します。アプリのバージョンとプロトコルのバージョンは分けて管理します。
+
+## 端末署名のプリミティブ（初期実装）
+
+Android KeystoreでP-256鍵を生成し、`SHA256withECDSA`で署名します。署名対象はUTF-8の`komado.device-auth.v1`にNULバイトを1つ付けたものと、32バイトのチャレンジを順に連結したバイト列です。公開鍵はX.509 SubjectPublicKeyInfoのDER、署名はECDSAのDER形式とし、macOSのCryptoKitで検証します。[共通フィクスチャ](../protocol/fixtures/device-auth-valid.json)はテスト用の公開鍵・チャレンジ・署名です。
+
+これは署名処理のみの実装です。ホストによる暗号学的に安全な乱数でのチャレンジ生成、セッションとの紐付け、一度限りの利用、期限、ペアリング時の公開鍵登録・失効、TLSを含む認証フローは未実装です。署名の検証だけで端末認証が完了したものとして扱いません。通信メッセージやスキーマも未確定です。
