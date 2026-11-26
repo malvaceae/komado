@@ -7,6 +7,9 @@ import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerClickCodec
 import me.mallows.komado.protocol.KeyboardText
 import me.mallows.komado.protocol.KeyboardTextCodec
+import me.mallows.komado.protocol.KeyboardKey
+import me.mallows.komado.protocol.KeyboardKeyCodec
+import me.mallows.komado.protocol.SpecialKey
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -47,6 +50,7 @@ class AndroidMediaSessionTest {
         val channel = sender.createDataChannel("control", DataChannel.Init())!!
         val clickReceived = CompletableFuture<PointerClick>()
         val textReceived = CompletableFuture<KeyboardText>()
+        val keyReceived = CompletableFuture<KeyboardKey>()
         channel.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) = Unit
             override fun onStateChange() = Unit
@@ -55,8 +59,12 @@ class AndroidMediaSessionTest {
                 buffer.data.get(bytes)
                 val click = runCatching { PointerClickCodec.decode(bytes) }.getOrNull()
                 if (click != null) clickReceived.complete(click)
-                else runCatching { KeyboardTextCodec.decode(bytes) }.onSuccess { textReceived.complete(it) }
-                    .onFailure { textReceived.completeExceptionally(it) }
+                else {
+                    val text = runCatching { KeyboardTextCodec.decode(bytes) }.getOrNull()
+                    if (text != null) textReceived.complete(text)
+                    else runCatching { KeyboardKeyCodec.decode(bytes) }.onSuccess { keyReceived.complete(it) }
+                        .onFailure { keyReceived.completeExceptionally(it) }
+                }
             }
         })
         val answer = CompletableFuture<String>()
@@ -108,6 +116,7 @@ class AndroidMediaSessionTest {
             assertTrue("Capture revision was not received", captureReady.await(5, TimeUnit.SECONDS))
             val click = PointerClick(1, 1, 500_000, 500_000, PointerClick.Button.LEFT)
             val text = KeyboardText(2, 1, "日本語")
+            val key = KeyboardKey(3, 1, SpecialKey.ESCAPE, 1)
             instrumentation.runOnMainSync {
                 val current = requireNotNull(receiver)
                 assertTrue(!current.sendClick(click.copy(captureRevision = 2)))
@@ -116,9 +125,13 @@ class AndroidMediaSessionTest {
                 assertTrue(!current.sendText(text.copy(captureRevision = 2)))
                 assertTrue(current.sendText(text))
                 assertTrue(!current.sendText(text))
+                assertTrue(!current.sendKey(key.copy(captureRevision = 2)))
+                assertTrue(current.sendKey(key))
+                assertTrue(!current.sendKey(key))
             }
             assertTrue(clickReceived.get(5, TimeUnit.SECONDS) == click)
             assertTrue(textReceived.get(5, TimeUnit.SECONDS) == text)
+            assertTrue(keyReceived.get(5, TimeUnit.SECONDS) == key)
             source.capturerObserver.onCapturerStarted(true)
             for (i in 0 until 50) {
                 val frame = VideoFrame(JavaI420Buffer.allocate(320, 240), 0, System.nanoTime())

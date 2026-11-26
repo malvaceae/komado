@@ -4,12 +4,13 @@ import KomadoCore
 enum ControlInput: Equatable, Sendable {
     case click(PointerClick)
     case text(KeyboardText)
+    case key(KeyboardKey)
 
     var sequence: UInt64 {
-        switch self { case let .click(value): value.sequence; case let .text(value): value.sequence }
+        switch self { case let .click(value): value.sequence; case let .text(value): value.sequence; case let .key(value): value.sequence }
     }
     var captureRevision: UInt64 {
-        switch self { case let .click(value): value.captureRevision; case let .text(value): value.captureRevision }
+        switch self { case let .click(value): value.captureRevision; case let .text(value): value.captureRevision; case let .key(value): value.captureRevision }
     }
 }
 
@@ -33,6 +34,7 @@ final class ControlInputGate: @unchecked Sendable {
         let input: ControlInput
         if let click = try? PointerClick.decode(data) { input = .click(click) }
         else if let text = try? KeyboardText.decode(data) { input = .text(text) }
+        else if let key = try? KeyboardKey.decode(data) { input = .key(key) }
         else { return nil }
         return lock.withLock {
             guard !closed, revision == input.captureRevision, input.sequence > sequence else { return nil }

@@ -9,6 +9,8 @@ import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerClickCodec
 import me.mallows.komado.protocol.KeyboardText
 import me.mallows.komado.protocol.KeyboardTextCodec
+import me.mallows.komado.protocol.KeyboardKey
+import me.mallows.komado.protocol.KeyboardKeyCodec
 import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.DataChannel
 import org.webrtc.EglBase
@@ -130,6 +132,10 @@ internal class AndroidMediaSession(
 
     fun sendText(text: KeyboardText): Boolean {
         return sendInput(text.sequence, text.captureRevision) { KeyboardTextCodec.encode(text) }
+    }
+
+    fun sendKey(key: KeyboardKey): Boolean {
+        return sendInput(key.sequence, key.captureRevision) { KeyboardKeyCodec.encode(key) }
     }
 
     private fun sendInput(sequence: Long, revision: Long, encode: () -> ByteArray): Boolean {
