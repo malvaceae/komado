@@ -8,8 +8,10 @@ struct KomadoHostApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        MenuBarExtra("komado", systemImage: "macwindow") {
-            Text(model.running ? (model.ready ? "接続待機中" : "準備中") : "停止中")
+        MenuBarExtra(model.sharingScreen ? "画面を共有中" : "komado",
+                     systemImage: model.sharingScreen ? "rectangle.on.rectangle" : "macwindow") {
+            Text(model.running ? (model.connectedDevice != nil ? "接続中" : (model.ready ? "接続待機中" : "準備中")) : "停止中")
+            if model.sharingScreen { Text("画面を共有中") }
             if let device = model.connectedDevice { Text("接続中: \(device)") }
             Divider()
             Button("komadoを開く") {
@@ -42,8 +44,9 @@ private struct HostView: View {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("komado").font(.largeTitle.bold())
-                    Text(model.running ? (model.ready ? "接続待機中" : "準備中") : "停止中")
+                    Text(model.running ? (model.connectedDevice != nil ? "接続中" : (model.ready ? "接続待機中" : "準備中")) : "停止中")
                         .foregroundStyle(.secondary)
+                    if model.sharingScreen { Label("画面を共有中", systemImage: "rectangle.on.rectangle") }
                 }
                 if let error = model.error {
                     Text(error).foregroundStyle(.red)

@@ -16,6 +16,7 @@ final class HostModel: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var addresses: [String] = []
     @Published private(set) var connectedDevice: String?
+    @Published private(set) var sharingScreen = false
     @Published private(set) var networkReady = false
     @Published private(set) var invitation: String?
     @Published private(set) var error: String?
@@ -352,6 +353,7 @@ final class HostModel: ObservableObject {
                       let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) else {
                     throw HostMediaSession.SessionError.creationFailed
                 }
+                self.sharingScreen = true
                 let captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route) { [weak self] in
                     Task { @MainActor [weak self] in self?.mediaFailed(id: id) }
                 }
@@ -379,6 +381,7 @@ final class HostModel: ObservableObject {
         mediaTask = nil
         mediaRoute?.close()
         mediaRoute = nil
+        sharingScreen = false
         screenMonitor = nil
         mediaSession?.close()
         mediaSession = nil
