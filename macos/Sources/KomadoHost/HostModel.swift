@@ -41,6 +41,7 @@ final class HostModel: ObservableObject {
     private var mediaConnection: UUID?
     private var mediaSession: HostMediaSession?
     private var mediaRoute: MediaRouteGate?
+    private var screenMonitor: ScreenEnvironmentMonitor?
     private var mediaTask: Task<Void, Never>?
     private var capture: DisplayCapture?
     private static let port: NWEndpoint.Port = 48365
@@ -324,6 +325,10 @@ final class HostModel: ObservableObject {
             let session = try HostMediaSession(route: route, onFailure: failed)
             mediaRoute = route
             mediaSession = session
+            screenMonitor = ScreenEnvironmentMonitor {
+                route.close()
+                failed()
+            }
             mediaTask = Task { [weak self] in
                 do {
                     let offer = try await session.makeOffer()
@@ -371,6 +376,7 @@ final class HostModel: ObservableObject {
         mediaTask = nil
         mediaRoute?.close()
         mediaRoute = nil
+        screenMonitor = nil
         mediaSession?.close()
         mediaSession = nil
         if let current = capture {
