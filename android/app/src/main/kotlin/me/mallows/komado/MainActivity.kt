@@ -18,12 +18,15 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import me.mallows.komado.network.AuthenticatedHostConnection
+import me.mallows.komado.protocol.PairingInvitation
 import me.mallows.komado.security.DeviceSigningKey
 import java.util.UUID
 import java.util.concurrent.Executors
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private val store by lazy { HostStore(applicationContext) }
     private val executor = Executors.newSingleThreadExecutor()
     private var hosts = emptyList<Host>()
@@ -32,7 +35,21 @@ class MainActivity : Activity() {
     private var pendingNetworkAction: (() -> Unit)? = null
     private lateinit var list: LinearLayout
     private lateinit var addButton: Button
+    private lateinit var scanButton: Button
     private lateinit var status: TextView
+    private val scanner = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val invitation = ScannedPairing.take()
+        if (result.resultCode == Activity.RESULT_OK) {
+            if (invitation == null) toast(R.string.scan_expired)
+            else withLocalNetworkPermission { confirmScannedPairing(invitation) }
+        }
+    }
+    private val localNetworkPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val action = pendingNetworkAction
+        pendingNetworkAction = null
+        if (!granted) toast(R.string.local_network_denied)
+        action?.invoke()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +69,14 @@ class MainActivity : Activity() {
             setOnClickListener { editHost(null) }
         }
         root.addView(addButton)
+        scanButton = Button(this).apply {
+            setText(R.string.scan_pairing)
+            setOnClickListener {
+                ScannedPairing.clear()
+                scanner.launch(Intent(this@MainActivity, PairingScannerActivity::class.java))
+            }
+        }
+        root.addView(scanButton)
         setContentView(root)
         refresh()
     }
@@ -77,6 +102,7 @@ class MainActivity : Activity() {
         }
         status.setText(if (busy) R.string.connecting else R.string.connection_unavailable)
         addButton.isEnabled = readable && !busy
+        scanButton.isEnabled = readable && !busy
         list.removeAllViews()
         if (!readable || hosts.isEmpty()) {
             list.addView(TextView(this).apply {
@@ -122,16 +148,7 @@ class MainActivity : Activity() {
             return
         }
         pendingNetworkAction = action
-        requestPermissions(arrayOf(Manifest.permission.ACCESS_LOCAL_NETWORK), LOCAL_NETWORK_REQUEST)
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != LOCAL_NETWORK_REQUEST) return
-        val action = pendingNetworkAction
-        pendingNetworkAction = null
-        if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) toast(R.string.local_network_denied)
-        action?.invoke()
+        localNetworkPermission.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
     }
 
     private fun editHost(existing: Host?) {
@@ -212,6 +229,39 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
+    private fun confirmScannedPairing(invitation: PairingInvitation) {
+        val fields = fields()
+        fields.addView(TextView(this).apply { setText(R.string.scan_confirm); setPadding(0, 0, 0, dp(12)) })
+        val name = field(R.string.host_name, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES, "Mac")
+        val address = field(R.string.host_address, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI, invitation.host)
+        val port = field(R.string.port, InputType.TYPE_CLASS_NUMBER, invitation.port.toString())
+        fields.addView(name)
+        fields.addView(address)
+        fields.addView(port)
+        val dialog = AlertDialog.Builder(this).setTitle(R.string.pair).setView(fields)
+            .setNegativeButton(R.string.cancel, null).setPositiveButton(R.string.pair, null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val hostName = name.text.toString().trim()
+                val hostAddress = address.text.toString().trim()
+                val hostPort = port.text.toString().toIntOrNull()
+                when {
+                    !HostStore.validName(hostName) -> name.error = getString(R.string.invalid_name)
+                    !HostStore.validAddress(hostAddress) -> address.error = getString(R.string.invalid_address)
+                    hostPort == null || hostPort !in 1..65535 -> port.error = getString(R.string.invalid_port)
+                    else -> {
+                        val host = Host(UUID.randomUUID().toString(), hostName, hostAddress, hostPort)
+                        if (runCatching { store.save(null, host) }.getOrDefault(false)) {
+                            dialog.dismiss()
+                            startPairing(host, invitation.fingerprint, invitation.token)
+                        } else toast(R.string.save_error)
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
+
     private fun startPairing(host: Host, pinText: String, tokenText: String) {
         if (busy) return
         busy = true
@@ -284,7 +334,5 @@ class MainActivity : Activity() {
     private fun hexBytes(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     private fun toast(message: Int) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-
-    companion object { private const val LOCAL_NETWORK_REQUEST = 101 }
 
 }

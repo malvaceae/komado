@@ -41,6 +41,7 @@ private struct HostView: View {
     @ObservedObject var model: HostModel
     @State private var deviceToRemove: PairedDevice?
     @State private var confirmRemoval = false
+    @State private var selectedEndpoint = ""
 
     var body: some View {
         ScrollView {
@@ -110,9 +111,26 @@ private struct HostView: View {
                     Button("ペアリング情報を発行") { Task { await model.issueInvitation() } }
                         .disabled(!model.ready || model.busy || model.connectedDevice != nil)
                     if let invitation = model.invitation {
-                        Text("Androidに上記のアドレスとポート、確認情報、次のコードを入力してください。有効期限は2分です。")
+                        Text("AndroidでQRコードを読み取るか、上記の接続先・確認情報と次のコードを入力してください。有効期限は2分です。")
                             .foregroundStyle(.secondary)
                         Text(invitation).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                        if !model.pairingEndpoints.isEmpty {
+                            Picker("QRコードの接続先", selection: Binding(
+                                get: { model.pairingEndpoints.first(where: { $0.id == selectedEndpoint })?.id ?? model.pairingEndpoints.first?.id ?? "" },
+                                set: { selectedEndpoint = $0 }
+                            )) {
+                                ForEach(model.pairingEndpoints) { endpoint in
+                                    Text(endpoint.displayName).tag(endpoint.id)
+                                }
+                            }
+                            if let image = pairingImage(invitation: invitation) {
+                                Image(decorative: image, scale: 1)
+                                    .resizable().interpolation(.none).aspectRatio(contentMode: .fit)
+                                    .frame(width: 256, height: 256)
+                                Text("QRコードには一時コードが含まれます。信頼できる端末で読み取ってください。")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
                 Divider()
@@ -145,5 +163,14 @@ private struct HostView: View {
         } message: { device in
             Text("\(device.name)の登録を削除し、現在の接続を切断します。")
         }
+    }
+
+    private func pairingImage(invitation: String) -> CGImage? {
+        guard let endpoint = model.pairingEndpoints.first(where: { $0.id == selectedEndpoint }) ?? model.pairingEndpoints.first,
+              let fingerprint = model.fingerprint else { return nil }
+        let payload = PairingInvitation(host: endpoint.address, port: endpoint.port,
+            fingerprint: fingerprint.replacingOccurrences(of: ":", with: ""), token: invitation)
+        guard let data = try? payload.encode() else { return nil }
+        return PairingQRCode.image(for: data)
     }
 }

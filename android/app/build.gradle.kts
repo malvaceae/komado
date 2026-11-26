@@ -6,6 +6,11 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":security"))
     implementation("io.getstream:stream-webrtc-android:1.3.10")
+    implementation("androidx.activity:activity:1.13.0")
+    implementation("androidx.camera:camera-camera2:1.6.2")
+    implementation("androidx.camera:camera-lifecycle:1.6.2")
+    implementation("androidx.camera:camera-view:1.6.2")
+    implementation("com.google.zxing:core:3.5.4")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
 }

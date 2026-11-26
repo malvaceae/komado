@@ -5,6 +5,17 @@ import Network
 import ScreenCaptureKit
 import SwiftUI
 
+struct PairingEndpoint: Hashable, Identifiable {
+    let interfaceName: String
+    let address: String
+    let port: UInt16
+    var id: String { "\(interfaceName)|\(address)|\(port)" }
+    var displayName: String {
+        let host = address.contains(":") ? "[\(address)]" : address
+        return "\(interfaceName): \(host):\(port)"
+    }
+}
+
 @MainActor
 final class HostModel: ObservableObject {
     @Published private(set) var fingerprint: String?
@@ -17,6 +28,7 @@ final class HostModel: ObservableObject {
     @Published private(set) var ready = false
     @Published private(set) var busy = false
     @Published private(set) var addresses: [String] = []
+    @Published private(set) var pairingEndpoints: [PairingEndpoint] = []
     @Published private(set) var connectedDevice: String?
     @Published private(set) var sharingScreen = false
     @Published private(set) var networkReady = false
@@ -145,6 +157,7 @@ final class HostModel: ObservableObject {
             bindings = selected
             listening.removeAll()
             addresses = []
+            pairingEndpoints = []
             connectedDevice = nil
             connectedSession = nil
             ready = false
@@ -177,6 +190,7 @@ final class HostModel: ObservableObject {
         running = false
         ready = false
         addresses = []
+        pairingEndpoints = []
         connectedDevice = nil
         connectedSession = nil
         invitation = nil
@@ -304,9 +318,9 @@ final class HostModel: ObservableObject {
         guard generation == eventGeneration else { return }
         switch event {
         case let .listening(interfaceName, address, port):
-            let host = address.contains(":") ? "[\(address)]" : address
-            let item = "\(interfaceName): \(host):\(port)"
-            if listening.insert(item).inserted { addresses.append(item) }
+            let endpoint = PairingEndpoint(interfaceName: interfaceName, address: address, port: port)
+            let item = endpoint.displayName
+            if listening.insert(item).inserted { addresses.append(item); pairingEndpoints.append(endpoint) }
             ready = listening.count == bindings.count
         case let .authenticated(id, device):
             connectedSession = id
