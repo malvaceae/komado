@@ -37,6 +37,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./macos/build-app.sh
 open macos/.build/komado.app
 ```
 
+Apple SiliconとIntelの両方を含む開発用アプリは、`./macos/build-app.sh --universal`でビルドできます。生成したバイナリのアーキテクチャは`lipo -archs macos/.build/komado.app/Contents/MacOS/KomadoHost`で確認できます。対応OSや各実機での動作は、ビルドとは別に確認が必要です。
+
 Android側はJDKを用いて実行します。
 
 ```sh

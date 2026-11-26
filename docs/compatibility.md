@@ -4,9 +4,9 @@
 
 | 対象 | 初期候補 | 状態 |
 |---|---|---|
-| macOS | macOS 13以降 | 未検証 |
-| Mac CPU / 配布 | Apple Silicon・Intel、Universal Binary | 未検証 |
-| Android | Android 8.0 / API 26以降 | 未検証 |
+| macOS | macOS 13以降 | 最低OSを13としたビルド済み。macOS 13での実行は未検証 |
+| Mac CPU / 配布 | Apple Silicon・Intel、Universal Binary | 両CPUを含む開発用アプリをビルド済み。Intel実機・配布は未検証 |
+| Android | Android 8.0 / API 26以降 | 最低APIを26としたビルド済み。API 26での実行は未検証 |
 | Android ABI | arm64-v8a・armeabi-v7a | 未検証 |
 | Android ABI | x86・x86_64：依存が対応し追加実装が不要なら対応 | 未検証 |
 | 端末 | Androidスマートフォン・タブレット | 未検証 |
@@ -22,10 +22,10 @@
 |---|---|---|---|---|
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Command Line ToolsのmacOS 27.0 SDK | macOS 13をターゲットとするScreenCaptureKitの基本API | Swiftの型検査（arm64 / x86_64） | 両ターゲットで成功。アプリのビルド・実行やmacOS 13実機の検証ではない |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2 | macOS 13を最低対象としたUniversal Binary | CaptureProbeをarm64 / x86_64向けに同時ビルドし、lipoとMach-Oヘッダーを確認 | 2アーキテクチャを含み、両方の最低macOSは13.0。Intel MacおよびmacOS 13での実行は未検証 |
+| 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | 製品の開発用アプリのUniversal Binary | `build-app.sh --universal`でビルドし、実行ファイルと同梱フレームワークのアーキテクチャ、最低OS、アドホック署名を確認 | 両方ともarm64とx86_64を含み、最低OSは13.0。Intel Mac・macOS 13での実行、配布用署名・公証は未検証 |
 | 2026-11-27 | stasel/WebRTC 158.0.0 | macOS向けバイナリのCPU | 配布XCFrameworkのInfo.plist確認 | macOS用にarm64とx86_64を含む |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | macOS 13を最低対象にしたWebRTCライブラリの導入 | 初期化確認用プログラムのビルド・実行 | arm64でビルド・実行、RTCPeerConnectionFactoryの生成に成功。x86_64でもビルド成功。生成バイナリと両WebRTCスライスの最低macOSは13.0と確認。macOS 13・Intelでの実行やAndroidとの相互接続は未検証 |
 | 2026-11-27 | io.getstream:stream-webrtc-android 1.3.10 | Android ABIと最低APIの宣言 | Maven CentralのAARの内容・マニフェスト確認 | arm64-v8a、armeabi-v7a、x86、x86_64のネイティブライブラリを含み、minSdkVersion 21を宣言。ビルド・実行・Android API 26での動作は未検証 |
-
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2、stasel/WebRTC 158.0.0 | ScreenCaptureKitからWebRTCへの映像フレーム | [CaptureProbe](../experiments/README.md#macosでの映像取得)でメインディスプレイを3秒間キャプチャし、映像トラックの受信数を確認 | 89フレームを受信。画面内容の保存や通信は行っていない。Intel実機・macOS 13・エンコード・転送は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2 | ウインドウ単位のキャプチャ・Accessibility操作 | 検証用の自プロセスのウインドウを取得し、AXで位置を変更・照合・復元後にキャプチャ | ウインドウを22フレーム取得。位置変更の照合と復元APIが成功。別アプリ、非アクティブ・最小化時、Intel実機およびmacOS 13は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Xcode 27.2 | CGEventによるキー・Unicode入力 | 検証用ウインドウを持つ自プロセスにPID指定でイベントを送信 | キー押下と日本語・絵文字を含むテスト文字列を受信。Android IME、他アプリ、フォーカス制御、ショートカット、キー解放は未検証 |
@@ -54,7 +54,6 @@
 | 2026-11-27 | Android 16 API 36、arm64エミュレーター、io.getstream:stream-webrtc-android 1.3.10 | 製品の映像描画処理 | 生成した映像フレームをWebRTC映像トラックからアプリのSurfaceViewRendererに渡し、描画イベントとリソース解放を確認 | 描画イベントを受信し、トラックの解除と描画リソースの解放に成功。Macからの受信、見た目、画面回転、Android実機では未検証 |
 | 2026-11-27 | 同上 | 製品のAndroid WebRTCセッション | エミュレーター内の送信側とOffer・Answerを交換し、選択されたローカル候補の確認、生成映像の受信、不正なOfferの拒否をテスト | 指定アドレスの選択後に映像を受信し、不正なOfferを拒否。Macの製品セッション、認証済みシグナリング、実機、ネットワーク変更時の動作は未検証 |
 | 2026-11-27 | Android 16 API 36、arm64エミュレーター | IMEの確定文字列処理 | InputConnectionに変換中・確定・変換終了・接続終了を模擬して渡す | 変換中は送らず、確定時に一度だけ通知し、送信失敗時と接続終了時の挙動を確認。実際のキーボードアプリ、画面、Macへの入力、Android実機は未検証 |
-
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 16 API 36 arm64エミュレーター、stasel/WebRTC 158.0.0・io.getstream:stream-webrtc-android 1.3.10 | 異なるWebRTC配布物の接続 | [相互接続検証](../experiments/README.md#macosとandroidエミュレーターの相互接続) | 生成映像とメインディスプレイの実画面をそれぞれ10フレーム以上受信し、H.264とDataChannelの往復を確認。Tailscale経由、Android実機およびハードウェア処理は未検証 |
 | 2026-11-27 | 同上 | ICE候補を絞った相互接続 | 一時的な検証でMacのOfferをWi-Fiアドレスの候補、AndroidのAnswerをMacへの経路で選択されたアドレスの候補に絞り、生成映像とDataChannelを確認 | H.264映像を10フレーム以上受信し、DataChannelの往復に成功。SDPの候補を除くだけではWebRTCが別のインターフェースを使わないことを保証できない。Tailscale、別端末、製品アプリでの経路制限は未検証 |
 | 2026-11-27 | 同上 | ICE接続後の選択候補 | 一時的な検証でWebRTCの統計から選択された候補を確認。別途MacのWi-FiアドレスへのTCP接続で相手のアドレスを取得 | 候補を絞らない場合はMac側の候補がWi-Fiと異なり、絞った場合は一致した。Android側の候補はpeer-reflexiveで、どちらの場合もTCP接続元とは異なった。エミュレーター内の結果であり、他環境の経路固定や接続元一致を保証しない |
