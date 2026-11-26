@@ -9,7 +9,9 @@ import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -183,11 +185,16 @@ class MainActivity : Activity() {
         val fields = fields()
         fields.addView(TextView(this).apply { setText(R.string.pair_instructions); setPadding(0, 0, 0, dp(12)) })
         val fingerprint = field(R.string.fingerprint, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
-        val invitation = field(R.string.invitation, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
+        val invitation = field(R.string.invitation, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS).apply {
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+            isSaveEnabled = false
+            imeOptions = imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        }
         fields.addView(fingerprint)
         fields.addView(invitation)
         val dialog = AlertDialog.Builder(this).setTitle(R.string.pair).setView(fields)
             .setNegativeButton(R.string.cancel, null).setPositiveButton(R.string.pair, null).create()
+        dialog.setOnDismissListener { invitation.text.clear() }
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val pinText = normalizeHex(fingerprint.text.toString())
