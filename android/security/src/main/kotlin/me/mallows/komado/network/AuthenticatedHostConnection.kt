@@ -3,6 +3,7 @@ package me.mallows.komado.network
 import me.mallows.komado.protocol.SignalFrame
 import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.protocol.SignalMessageCodec
+import me.mallows.komado.protocol.SdpCandidateFilter
 import me.mallows.komado.security.DeviceSigningKey
 import me.mallows.komado.security.HostCertificateTrustManager
 import java.io.Closeable
@@ -45,7 +46,8 @@ class AuthenticatedHostConnection private constructor(
     fun sendAnswer(sdp: String) = synchronized(mediaLock) {
         if (closed || mediaState != MediaState.OFFER_RECEIVED) throw IOException("Unexpected signaling state")
         try {
-            send(socket, SignalMessage.Answer(sdp))
+            val restricted = SdpCandidateFilter.restrict(sdp, socket.localAddress)
+            send(socket, SignalMessage.Answer(restricted))
             mediaState = MediaState.ANSWER_SENT
         } catch (error: Exception) {
             runCatching { close() }

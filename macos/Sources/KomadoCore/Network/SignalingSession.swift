@@ -55,7 +55,9 @@ actor SignalingSession {
     func sendOffer(_ sdp: String) throws {
         guard !closed, device != nil else { throw SessionError.notAuthenticated }
         guard mediaState == .idle else { throw SessionError.unexpectedState }
-        let encoded = try SignalFrame.encode(SignalMessage.offer(sdp).encode())
+        guard case let .hostPort(host, _) = connection.currentPath?.localEndpoint else { throw SDPCandidateFilter.FilterError.invalidAddress }
+        let restricted = try SDPCandidateFilter.restrict(sdp, to: host)
+        let encoded = try SignalFrame.encode(SignalMessage.offer(restricted).encode())
         mediaState = .awaitingAnswer
         timeout = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(30)) } catch { return }

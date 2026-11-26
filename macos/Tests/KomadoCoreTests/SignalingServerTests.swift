@@ -161,10 +161,18 @@ final class SignalingServerTests: XCTestCase {
         try await first.send(.proof(signature))
         guard case let .accepted(deviceID) = try await first.receive() else { return XCTFail("Expected acceptance") }
         await fulfillment(of: [firstAuthenticated], timeout: 10)
-        let offer = "v=0\r\ns=offer\r\n", answer = "v=0\r\ns=answer\r\n"
+        let localCandidate = "a=candidate:1 1 udp 1 \(address) 54321 typ host\r\n"
+        let otherCandidate = "a=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n"
+        let offer = "v=0\r\ns=offer\r\nc=IN IP4 192.0.2.5\r\n" + localCandidate + otherCandidate
+        let expectedOffer = "v=0\r\ns=offer\r\nc=IN IP4 \(address)\r\n" + localCandidate
+        let answer = "v=0\r\ns=answer\r\n"
+        do {
+            try await server.sendOffer("v=0\r\n" + otherCandidate)
+            XCTFail("Offer without a candidate for the signaling address must be rejected")
+        } catch { }
         try await server.sendOffer(offer)
         let receivedOffer = try await first.receive()
-        XCTAssertEqual(receivedOffer, .offer(offer))
+        XCTAssertEqual(receivedOffer, .offer(expectedOffer))
         try await first.send(.answer(answer))
         await fulfillment(of: [answerReceived], timeout: 10)
         XCTAssertEqual(box.getAnswer(), answer)

@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import me.mallows.komado.protocol.SignalFrame
 import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.protocol.SignalMessageCodec
+import me.mallows.komado.protocol.SdpCandidateFilter
 import me.mallows.komado.security.DeviceSigningKey
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -84,7 +85,12 @@ class AuthenticatedHostConnectionTest {
                         send(socket, SignalMessage.Accepted(id))
                         if (index == 0) {
                             send(socket, SignalMessage.Offer("v=0\r\ns=offer\r\n"))
-                            assertEquals("v=0\r\ns=answer\r\n", (receive(socket) as SignalMessage.Answer).sdp)
+                            val expected = "v=0\r\ns=answer\r\nc=IN IP4 127.0.0.1\r\n" +
+                                "a=candidate:1 1 udp 1 127.0.0.1 54321 typ host\r\n"
+                            assertEquals(expected, (receive(socket) as SignalMessage.Answer).sdp)
+                        } else {
+                            send(socket, SignalMessage.Offer("v=0\r\ns=offer\r\n"))
+                            assertThrows(java.io.EOFException::class.java) { receive(socket) }
                         }
                     }
                 }
@@ -95,11 +101,18 @@ class AuthenticatedHostConnectionTest {
                 assertEquals(id, paired.deviceID)
                 assertThrows(IOException::class.java) { paired.sendAnswer("v=0\r\ns=answer\r\n") }
                 assertEquals("v=0\r\ns=offer\r\n", paired.receiveOffer())
-                paired.sendAnswer("v=0\r\ns=answer\r\n")
+                paired.sendAnswer("v=0\r\ns=answer\r\nc=IN IP4 192.0.2.5\r\n" +
+                    "a=candidate:1 1 udp 1 127.0.0.1 54321 typ host\r\n" +
+                    "a=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n")
                 assertThrows(IOException::class.java) { paired.sendAnswer("v=0\r\ns=answer\r\n") }
                 paired.close()
                 val reconnected = AuthenticatedHostConnection.reconnect("127.0.0.1", server.localPort, fingerprint, id, key)
                 assertEquals(id, reconnected.deviceID)
+                reconnected.receiveOffer()
+                assertThrows(SdpCandidateFilter.FilterException::class.java) {
+                    reconnected.sendAnswer("v=0\r\na=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n")
+                }
+                assertThrows(IOException::class.java) { reconnected.receiveOffer() }
                 reconnected.close()
                 task.get(20, TimeUnit.SECONDS)
             } finally {
