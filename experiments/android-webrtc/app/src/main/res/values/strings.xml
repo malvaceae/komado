@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Komado WebRTC Probe</string>
+    <string name="initializing">WebRTCを初期化しています</string>
+    <string name="initialized">WebRTCと映像描画の初期化に成功しました</string>
+    <string name="initialization_failed">WebRTCの初期化に失敗しました</string>
+    <string name="library_load_failed">WebRTCライブラリの読み込みに失敗しました</string>
+</resources>

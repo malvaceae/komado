@@ -14,5 +14,10 @@ let package = Package(
             // SwiftPMの実行ファイルと同じディレクトリに置かれるフレームワークを読む。
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path"])]
         ),
+        .executableTarget(
+            name: "CaptureProbe",
+            dependencies: [.product(name: "WebRTC", package: "WebRTC")],
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path"])]
+        ),
     ]
 )

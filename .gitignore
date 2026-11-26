@@ -1,3 +1,6 @@
 .DS_Store
 .build/
 .swiftpm/
+.gradle/
+local.properties
+**/build/
