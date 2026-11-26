@@ -17,6 +17,7 @@ class MainActivity : Activity() {
     private var eglBase: EglBase? = null
     private var renderer: SurfaceViewRenderer? = null
     private var factory: PeerConnectionFactory? = null
+    private var receiverProbe: ReceiverProbe? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,6 +41,9 @@ class MainActivity : Activity() {
                 .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl.eglBaseContext, true, true))
                 .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext))
                 .createPeerConnectionFactory()
+            if (intent.getBooleanExtra("exchangeProbe", false)) {
+                receiverProbe = ReceiverProbe(this, requireNotNull(factory), view).also { it.start() }
+            }
             status.setText(R.string.initialized)
             Log.i("KomadoProbe", "WebRTC and renderer initialized")
         } catch (error: Exception) {
@@ -52,6 +56,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        receiverProbe?.close()
         renderer?.release()
         factory?.dispose()
         eglBase?.release()

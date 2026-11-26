@@ -18,7 +18,7 @@
 
 - Xcode 27.2が`/Applications/Xcode.app`にインストールされ、macOS 27.2 SDKを認識できる。システムの選択先はCommand Line Toolsのため、Xcodeのツールを使うコマンドには`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`を指定できる。
 - Android SDK、Java、Androidエミュレーターがある。Android実機はADBに接続されていない。
-- [macOSのWebRTC検証用プログラム](../experiments/macos-webrtc/README.md)を追加し、Apple Silicon上でビルド・起動を確認した。候補のWebRTC配布物について、含まれるCPU・ABIとAndroidのminSdk宣言を確認した。結果と検証範囲は[互換性](compatibility.md)を参照する。ライブラリの相互接続や採用は未確定。
+- [macOSのWebRTC検証用プログラム](../experiments/README.md)を追加し、Apple Silicon上でビルド・起動を確認した。候補のWebRTC配布物について、含まれるCPU・ABIとAndroidのminSdk宣言を確認した。結果と検証範囲は[互換性](compatibility.md)を参照する。ライブラリの相互接続や採用は未確定。
 
 ## 環境と手順の整備予定
 
