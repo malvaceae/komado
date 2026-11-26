@@ -39,5 +39,10 @@ class SdpCandidateFilterTest {
         assertTrue(SdpCandidateFilter.permitsSelectedLocalCandidate(candidate, address))
         assertTrue(!SdpCandidateFilter.permitsSelectedLocalCandidate(candidate.replace("192.168.1.5", "10.0.0.1"), address))
         assertTrue(!SdpCandidateFilter.permitsSelectedLocalCandidate(candidate + "\r\na=candidate:2", address))
+        val reflexive = "candidate:3 1 udp 1 203.0.113.1 1234 typ prflx raddr 192.168.1.5 rport 54321"
+        assertTrue(SdpCandidateFilter.permitsSelectedLocalCandidate(reflexive, address))
+        assertTrue(!SdpCandidateFilter.permitsSelectedLocalCandidate(reflexive.replace("192.168.1.5", "10.0.0.1"), address))
+        assertTrue(!SdpCandidateFilter.permitsSelectedLocalCandidate(reflexive + " raddr 192.168.1.5", address))
+        assertTrue(!SdpCandidateFilter.permitsSelectedLocalCandidate(reflexive.replace("rport 54321", "rport 0"), address))
     }
 }

@@ -10,8 +10,19 @@ object SdpCandidateFilter {
     /** Use only with the local candidate reported by WebRTC's selected pair callback. */
     fun permitsSelectedLocalCandidate(candidate: String, address: InetAddress): Boolean {
         if (!candidate.startsWith("candidate:") || '\r' in candidate || '\n' in candidate) return false
+        val parts = candidate.split(' ')
+        if (parts.size < 8 || parts.any { it.isEmpty() }) return false
+        val base = if (parts[7] == "host") candidate else {
+            if (parts[7] != "prflx" || (parts.size - 8) % 2 != 0 || numericAddress(parts[4]) == null ||
+                parts[5].toIntOrNull()?.let { it in 1..65535 } != true) return false
+            val extensions = (8 until parts.size step 2).map { parts[it] to parts[it + 1] }
+            val related = extensions.filter { it.first == "raddr" }.map { it.second }
+            val relatedPorts = extensions.filter { it.first == "rport" }.map { it.second }
+            if (related.size != 1 || relatedPorts.size != 1 || relatedPorts[0].toIntOrNull()?.let { it in 1..65535 } != true) return false
+            parts.take(8).toMutableList().apply { this[4] = related[0]; this[5] = relatedPorts[0]; this[7] = "host" }.joinToString(" ")
+        }
         return try {
-            restrict("v=0\r\na=$candidate\r\n", address)
+            restrict("v=0\r\na=$base\r\n", address)
             true
         } catch (_: FilterException) {
             false

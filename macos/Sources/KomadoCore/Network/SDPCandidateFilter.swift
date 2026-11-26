@@ -10,7 +10,26 @@ public enum SDPCandidateFilter {
     /// check is meaningful only after WebRTC reports the selected pair.
     public static func permitsSelectedLocalCandidate(_ candidate: String, on address: NWEndpoint.Host) -> Bool {
         guard candidate.hasPrefix("candidate:"), !candidate.contains("\r"), !candidate.contains("\n") else { return false }
-        return (try? restrict("v=0\r\na=\(candidate)\r\n", to: address)) != nil
+        let parts = candidate.split(separator: " ", omittingEmptySubsequences: false)
+        guard parts.count >= 8, !parts.contains("") else { return false }
+        if parts[7] == "host" {
+            return (try? restrict("v=0\r\na=\(candidate)\r\n", to: address)) != nil
+        }
+        // A local peer-reflexive address can be a NAT mapping. Only its
+        // related/base address can be compared with the signaling socket.
+        guard parts[7] == "prflx", (parts.count - 8).isMultiple(of: 2),
+              numericAddress(String(parts[4])) != nil,
+              let port = UInt16(parts[5]), port > 0 else { return false }
+        let extensions = stride(from: 8, to: parts.count, by: 2).map { (parts[$0], parts[$0 + 1]) }
+        let related = extensions.filter { $0.0 == "raddr" }.map(\.1)
+        let relatedPorts = extensions.filter { $0.0 == "rport" }.map(\.1)
+        guard related.count == 1, relatedPorts.count == 1,
+              let relatedPort = UInt16(relatedPorts[0]), relatedPort > 0 else { return false }
+        var base = Array(parts.prefix(8))
+        base[4] = related[0]
+        base[5] = relatedPorts[0]
+        base[7] = "host"
+        return (try? restrict("v=0\r\na=\(base.joined(separator: " "))\r\n", to: address)) != nil
     }
 
     public static func restrict(_ sdp: String, to address: NWEndpoint.Host) throws -> String {

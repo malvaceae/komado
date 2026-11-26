@@ -36,5 +36,10 @@ final class SDPCandidateFilterTests: XCTestCase {
         XCTAssertTrue(SDPCandidateFilter.permitsSelectedLocalCandidate(candidate, on: address))
         XCTAssertFalse(SDPCandidateFilter.permitsSelectedLocalCandidate(candidate.replacingOccurrences(of: "192.168.1.5", with: "10.0.0.1"), on: address))
         XCTAssertFalse(SDPCandidateFilter.permitsSelectedLocalCandidate(candidate + "\r\na=candidate:2", on: address))
+        let reflexive = "candidate:3 1 udp 1 203.0.113.1 1234 typ prflx raddr 192.168.1.5 rport 54321"
+        XCTAssertTrue(SDPCandidateFilter.permitsSelectedLocalCandidate(reflexive, on: address))
+        XCTAssertFalse(SDPCandidateFilter.permitsSelectedLocalCandidate(reflexive.replacingOccurrences(of: "192.168.1.5", with: "10.0.0.1"), on: address))
+        XCTAssertFalse(SDPCandidateFilter.permitsSelectedLocalCandidate(reflexive + " raddr 192.168.1.5", on: address))
+        XCTAssertFalse(SDPCandidateFilter.permitsSelectedLocalCandidate(reflexive.replacingOccurrences(of: "rport 54321", with: "rport 0"), on: address))
     }
 }
