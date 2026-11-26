@@ -3,6 +3,8 @@ package me.mallows.komado
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import me.mallows.komado.protocol.SdpCandidateFilter
+import me.mallows.komado.protocol.PointerClick
+import me.mallows.komado.protocol.PointerClickCodec
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +43,17 @@ class AndroidMediaSessionTest {
         val source = factory.createVideoSource(true)
         val track = factory.createVideoTrack("test-screen", source)
         val channel = sender.createDataChannel("control", DataChannel.Init())!!
+        val clickReceived = CompletableFuture<PointerClick>()
+        channel.registerObserver(object : DataChannel.Observer {
+            override fun onBufferedAmountChange(previousAmount: Long) = Unit
+            override fun onStateChange() = Unit
+            override fun onMessage(buffer: DataChannel.Buffer) {
+                val bytes = ByteArray(buffer.data.remaining())
+                buffer.data.get(bytes)
+                runCatching { PointerClickCodec.decode(bytes) }.onSuccess { clickReceived.complete(it) }
+                    .onFailure { clickReceived.completeExceptionally(it) }
+            }
+        })
         val answer = CompletableFuture<String>()
         val remoteVideo = CompletableFuture<VideoTrack>()
         val frames = CountDownLatch(1)
@@ -75,6 +88,7 @@ class AndroidMediaSessionTest {
                         remoteVideo.completeExceptionally(IllegalStateException("Media session failed"))
                     }
                 })
+                assertTrue(!receiver.sendClick(PointerClick(1, 1, 500_000, 500_000, PointerClick.Button.LEFT)))
                 receiver.acceptOffer(restrictedOffer)
             }
             val restrictedAnswer = SdpCandidateFilter.restrict(answer.get(20, TimeUnit.SECONDS), address)
@@ -87,6 +101,14 @@ class AndroidMediaSessionTest {
             assertTrue("Control channel did not open", channel.state() == DataChannel.State.OPEN)
             assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap("[\"1\",\"capture.ready\",\"1\"]".toByteArray()), false)))
             assertTrue("Capture revision was not received", captureReady.await(5, TimeUnit.SECONDS))
+            val click = PointerClick(1, 1, 500_000, 500_000, PointerClick.Button.LEFT)
+            instrumentation.runOnMainSync {
+                val current = requireNotNull(receiver)
+                assertTrue(!current.sendClick(click.copy(captureRevision = 2)))
+                assertTrue(current.sendClick(click))
+                assertTrue(!current.sendClick(click))
+            }
+            assertTrue(clickReceived.get(5, TimeUnit.SECONDS) == click)
             source.capturerObserver.onCapturerStarted(true)
             for (i in 0 until 50) {
                 val frame = VideoFrame(JavaI420Buffer.allocate(320, 240), 0, System.nanoTime())
@@ -99,6 +121,7 @@ class AndroidMediaSessionTest {
             assertTrue("Duplicate capture notification was not rejected", failed.await(5, TimeUnit.SECONDS))
         } finally {
             instrumentation.runOnMainSync { receiver?.close() }
+            channel.unregisterObserver()
             channel.dispose()
             sender.close()
             sender.dispose()

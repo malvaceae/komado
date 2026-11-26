@@ -5,6 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import me.mallows.komado.protocol.SdpCandidateFilter
 import me.mallows.komado.protocol.CaptureReadyCodec
+import me.mallows.komado.protocol.PointerClick
+import me.mallows.komado.protocol.PointerClickCodec
 import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.DataChannel
 import org.webrtc.EglBase
@@ -19,6 +21,7 @@ import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.VideoTrack
 import java.net.InetAddress
+import java.nio.ByteBuffer
 
 /** One receiving peer; callbacks and lifetime management use the main thread. */
 internal class AndroidMediaSession(
@@ -44,7 +47,8 @@ internal class AndroidMediaSession(
     private var selectedRouteAllowed = false
     private var remoteTrack: VideoTrack? = null
     private var trackShown = false
-    private var captureReady = false
+    private var captureRevision: Long? = null
+    private var lastSentSequence = 0L
     private var channel: DataChannel? = null
     private val timeout = Runnable { fail() }
 
@@ -114,6 +118,17 @@ internal class AndroidMediaSession(
         }
     }
 
+    /** The UI must separately authorize input and map it to the current capture. */
+    fun sendClick(click: PointerClick): Boolean {
+        checkMainThread()
+        if (state != State.ANSWER_READY || captureRevision != click.captureRevision ||
+            click.sequence <= lastSentSequence || !selectedRouteAllowed) return false
+        val current = channel ?: return false
+        if (current.state() != DataChannel.State.OPEN) return false
+        val data = try { PointerClickCodec.encode(click) } catch (_: Exception) { return false }
+        return current.send(DataChannel.Buffer(ByteBuffer.wrap(data), false)).also { if (it) lastSentSequence = click.sequence }
+    }
+
     private fun fail() {
         if (state == State.CLOSED) return
         close()
@@ -181,9 +196,9 @@ internal class AndroidMediaSession(
                         val data = ByteArray(buffer.data.remaining())
                         buffer.data.get(data)
                         postIfOpen {
-                            if (captureReady) fail() else {
+                            if (captureRevision != null) fail() else {
                                 val revision = try { CaptureReadyCodec.decode(data) } catch (_: Exception) { fail(); return@postIfOpen }
-                                captureReady = true
+                                captureRevision = revision
                                 listener.onCaptureReady(revision)
                             }
                         }

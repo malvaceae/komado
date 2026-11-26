@@ -21,9 +21,10 @@ final class HostMediaSession {
     private var announced = false
     private var announceTimeout: Task<Void, Never>?
 
-    init(route: MediaRouteGate, onFailure: @escaping @Sendable () -> Void) throws {
+    init(route: MediaRouteGate, onClick: (@Sendable (PointerClick) -> Void)? = nil,
+         onFailure: @escaping @Sendable () -> Void) throws {
         let factory = MediaFactory.create()
-        let delegate = HostPeerDelegate(route: route, onFailure: onFailure)
+        let delegate = HostPeerDelegate(route: route, onClick: onClick, onFailure: onFailure)
         let configuration = RTCConfiguration()
         configuration.iceServers = []
         configuration.sdpSemantics = .unifiedPlan
@@ -73,6 +74,7 @@ final class HostMediaSession {
     private func sendCaptureIfReady() throws {
         guard state != .closed, let revision = pendingRevision, dataChannel.readyState == .open else { return }
         let data = try CaptureReady(revision: revision).encode()
+        guard delegate.enableControl(revision: revision) else { throw SessionError.unexpectedState }
         guard dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false)) else { throw SessionError.creationFailed }
         pendingRevision = nil
         announced = true
@@ -139,15 +141,18 @@ final class HostMediaSession {
 private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
     private let route: MediaRouteGate
     private let onFailure: @Sendable () -> Void
+    private let onClick: (@Sendable (PointerClick) -> Void)?
     private let gathering: AsyncStream<Void>
     private let continuation: AsyncStream<Void>.Continuation
     private let lock = NSLock()
     private var closed = false
     private var failureNotified = false
+    private let control = ControlClickGate()
     private var onChannelOpen: (@Sendable () -> Void)?
 
-    init(route: MediaRouteGate, onFailure: @escaping @Sendable () -> Void) {
+    init(route: MediaRouteGate, onClick: (@Sendable (PointerClick) -> Void)?, onFailure: @escaping @Sendable () -> Void) {
         self.route = route
+        self.onClick = onClick
         self.onFailure = onFailure
         (gathering, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
     }
@@ -169,12 +174,14 @@ private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDa
 
     func close() {
         let first = lock.withLock { if closed { return false }; closed = true; return true }
-        if first { route.close(); continuation.finish() }
+        if first { control.close(); route.close(); continuation.finish() }
     }
 
     func setOnChannelOpen(_ callback: @escaping @Sendable () -> Void) {
         lock.withLock { onChannelOpen = callback }
     }
+
+    func enableControl(revision: UInt64) -> Bool { control.enable(revision: revision) }
 
     private func fail() {
         let notify = lock.withLock {
@@ -182,7 +189,7 @@ private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDa
             failureNotified = true
             return true
         }
-        if notify { route.close(); onFailure() }
+        if notify { control.close(); route.close(); onFailure() }
     }
 
     func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
@@ -192,7 +199,12 @@ private final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDa
         }
     }
 
-    func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) { fail() }
+    func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
+        guard let click = control.accept(buffer.data, binary: buffer.isBinary) else { fail(); return }
+        let callback = lock.withLock { closed ? nil : onClick }
+        guard let callback else { fail(); return }
+        callback(click)
+    }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
