@@ -95,13 +95,24 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid,
+        guard type == .screen else { return }
+        guard sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
                 as? [[SCStreamFrameInfo: Any]],
-              let status = attachments.first?[.status] as? Int, SCFrameStatus(rawValue: status) == .complete,
-              let image = sampleBuffer.imageBuffer else { return }
+              let statusValue = attachments.first?[.status] as? Int, let status = SCFrameStatus(rawValue: statusValue) else {
+            stopForUnusableFrame()
+            return
+        }
+        switch CaptureFrameStatusPolicy.action(for: status) {
+        case .ignore: return
+        case .stop:
+            stopForUnusableFrame()
+            return
+        case .deliver: break
+        }
+        guard let image = sampleBuffer.imageBuffer else { stopForUnusableFrame(); return }
         let timestamp = CMTimeConvertScale(sampleBuffer.presentationTimeStamp, timescale: 1_000_000_000, method: .default)
-        guard timestamp.isNumeric else { return }
+        guard timestamp.isNumeric else { stopForUnusableFrame(); return }
         let frame = RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: image), rotation: ._0, timeStampNs: timestamp.value)
         let newMapping = Self.frameMapping(attachments: attachments.first!, image: image)
         let invalidated = lock.withLock {
@@ -118,6 +129,16 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
         if invalidated { onStopped() }
     }
 
+    private func stopForUnusableFrame() {
+        let notify = lock.withLock {
+            guard active else { return false }
+            active = false
+            route.close()
+            return true
+        }
+        if notify { onStopped() }
+    }
+
     private static func frameMapping(attachments: [SCStreamFrameInfo: Any], image: CVPixelBuffer) -> CaptureFrameMapping? {
         guard let dictionary = attachments[.contentRect] as? NSDictionary,
               let rect = CGRect(dictionaryRepresentation: dictionary as CFDictionary),
@@ -126,5 +147,17 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
                             width: rect.width * scale, height: rect.height * scale)
         return CaptureFrameMapping(frameSize: CGSize(width: CVPixelBufferGetWidth(image), height: CVPixelBufferGetHeight(image)),
                                    contentRect: pixels)
+    }
+}
+
+enum CaptureFrameStatusPolicy {
+    enum Action { case deliver, ignore, stop }
+    static func action(for status: SCFrameStatus) -> Action {
+        switch status {
+        case .complete: return .deliver
+        case .idle, .started: return .ignore
+        case .blank, .suspended, .stopped: return .stop
+        @unknown default: return .stop
+        }
     }
 }
