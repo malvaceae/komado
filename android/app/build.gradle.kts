@@ -3,6 +3,7 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":core"))
     implementation(project(":security"))
     implementation("io.getstream:stream-webrtc-android:1.3.10")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
