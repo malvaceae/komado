@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.DisplayInfo
+import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.security.DeviceSigningKey
 import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
@@ -25,7 +26,7 @@ class VideoActivity : Activity() {
     private var connection: AuthenticatedHostConnection? = null
     private var media: AndroidMediaSession? = null
     private var renderer: RemoteVideoRenderer? = null
-    private var displayDialog: AlertDialog? = null
+    private var targetDialog: AlertDialog? = null
     private var viewport: ZoomableVideoView? = null
     private val zoomButtons = mutableListOf<Button>()
     private var captureRevision: Long? = null
@@ -89,7 +90,18 @@ class VideoActivity : Activity() {
                 }
                 if (!keep) { established.close(); return@execute }
                 runCatching { HostStore(applicationContext).recordConnection(host, System.currentTimeMillis()) }
-                if (intent.getBooleanExtra(CHOOSE_DISPLAY, false)) {
+                if (intent.getBooleanExtra(CHOOSE_WINDOW, false)) {
+                    val windows = try { established.listWindows() } catch (_: Exception) {
+                        runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.window_selection_failed) } }
+                        return@execute
+                    }
+                    runOnUiThread {
+                        if (active) {
+                            if (windows.isEmpty()) { stopSession(failed = true); status.setText(R.string.no_windows) }
+                            else chooseWindow(established, windows)
+                        }
+                    }
+                } else if (intent.getBooleanExtra(CHOOSE_DISPLAY, false)) {
                     val displays = try { established.listDisplays() } catch (_: Exception) {
                         runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.screen_selection_failed) } }
                         return@execute
@@ -104,16 +116,25 @@ class VideoActivity : Activity() {
         val labels = displays.mapIndexed { index, display ->
             getString(R.string.screen_option, index + 1, display.width, display.height)
         }.toTypedArray()
-        displayDialog = AlertDialog.Builder(this).setTitle(R.string.select_screen).setItems(labels) { _, index ->
-            displayDialog = null
+        targetDialog = AlertDialog.Builder(this).setTitle(R.string.select_screen).setItems(labels) { _, index ->
+            targetDialog = null
             if (active) executor.execute { startMedia(established, displays[index].id) }
         }.setNegativeButton(R.string.cancel) { _, _ -> finish() }
             .setOnCancelListener { finish() }.show()
     }
 
-    private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?) {
+    private fun chooseWindow(established: AuthenticatedHostConnection, windows: List<WindowInfo>) {
+        val labels = windows.map { getString(R.string.window_option, it.application, it.title) }.toTypedArray()
+        targetDialog = AlertDialog.Builder(this).setTitle(R.string.select_window).setItems(labels) { _, index ->
+            targetDialog = null
+            if (active) executor.execute { startMedia(established, null, windows[index].id) }
+        }.setNegativeButton(R.string.cancel) { _, _ -> finish() }
+            .setOnCancelListener { finish() }.show()
+    }
+
+    private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?, windowId: Long? = null) {
         try {
-            established.requestMedia(displayId)
+            established.requestMedia(displayId, windowId)
             val offer = established.receiveOffer()
             runOnUiThread {
                 if (!active) return@runOnUiThread
@@ -166,8 +187,8 @@ class VideoActivity : Activity() {
             old
         }
         runCatching { current?.close() }
-        displayDialog?.dismiss()
-        displayDialog = null
+        targetDialog?.dismiss()
+        targetDialog = null
         runCatching { media?.close() }
         media = null
         captureRevision = null
@@ -185,5 +206,6 @@ class VideoActivity : Activity() {
     companion object {
         const val HOST_ID = "me.mallows.komado.host_id"
         const val CHOOSE_DISPLAY = "me.mallows.komado.choose_display"
+        const val CHOOSE_WINDOW = "me.mallows.komado.choose_window"
     }
 }

@@ -56,6 +56,7 @@ final class DisplayCaptureTests: XCTestCase {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: CGRect(x: 40, y: 40, width: 320, height: 240),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.title = "komado capture test"
         window.contentView = NSTextField(labelWithString: "komado")
         window.orderFront(nil)
@@ -78,11 +79,14 @@ final class DisplayCaptureTests: XCTestCase {
         defer { track.remove(counter) }
         let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
         route.selected(localCandidate: "candidate:1 1 udp 1 127.0.0.1 1234 typ host")
-        let capture = try await DisplayCapture.start(window: capturedWindow, source: source, route: route) {}
+        let stopped = expectation(description: "closed window stops capture")
+        let capture = try await DisplayCapture.start(window: capturedWindow, source: source, route: route) { stopped.fulfill() }
         try await Task.sleep(for: .seconds(2))
+        XCTAssertGreaterThan(counter.value, 0)
+        window.close()
+        await fulfillment(of: [stopped], timeout: 10)
         try await capture.stop()
         let countAfterStop = counter.value
-        XCTAssertGreaterThan(countAfterStop, 0)
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertEqual(counter.value, countAfterStop)
     }

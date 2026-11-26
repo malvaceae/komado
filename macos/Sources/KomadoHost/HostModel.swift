@@ -31,6 +31,7 @@ final class HostModel: ObservableObject {
     @Published private(set) var pairingEndpoints: [PairingEndpoint] = []
     @Published private(set) var connectedDevice: String?
     @Published private(set) var sharingScreen = false
+    @Published private(set) var sharingWindow = false
     @Published private(set) var sharingDisplayName: String?
     @Published private(set) var networkReady = false
     @Published private(set) var invitation: String?
@@ -62,7 +63,7 @@ final class HostModel: ObservableObject {
     private var mediaID = UUID()
     private var connectedSession: UUID?
     private var mediaConnection: UUID?
-    private var mediaDisplayID: UInt32?
+    private var mediaTarget: MediaTarget?
     private var mediaSession: HostMediaSession?
     private var mediaRoute: MediaRouteGate?
     private var screenMonitor: ScreenEnvironmentMonitor?
@@ -333,8 +334,8 @@ final class HostModel: ObservableObject {
             invitationExpiry = nil
             invitationCleanup = Task { try? await pairing.cancelInvitation() }
             refresh()
-        case let .mediaRequested(id, _, address, display):
-            Task { [weak self] in await self?.startMedia(address: address, connection: id, display: display) }
+        case let .mediaRequested(id, _, address, target):
+            Task { [weak self] in await self?.startMedia(address: address, connection: id, target: target) }
         case let .answer(id, _, sdp):
             if mediaConnection == id { applyAnswer(sdp) }
         case let .disconnected(id):
@@ -350,7 +351,7 @@ final class HostModel: ObservableObject {
         }
     }
 
-    private func startMedia(address: NWEndpoint.Host, connection: UUID, display: UInt32?) async {
+    private func startMedia(address: NWEndpoint.Host, connection: UUID, target: MediaTarget) async {
         guard let server, await server.isActive(sessionID: connection), self.server === server, running else { return }
         if mediaConnection != nil && mediaConnection != connection { stopMedia() }
         guard mediaSession == nil else { return }
@@ -363,7 +364,7 @@ final class HostModel: ObservableObject {
         let id = UUID()
         mediaID = id
         mediaConnection = connection
-        mediaDisplayID = display
+        mediaTarget = target
         let failed: @Sendable () -> Void = { [weak self] in
             Task { @MainActor [weak self] in self?.mediaFailed(id: id) }
         }
@@ -393,19 +394,38 @@ final class HostModel: ObservableObject {
             do {
                 try await session.applyAnswer(sdp)
                 guard let self, self.mediaID == id, !Task.isCancelled else { return }
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                guard self.mediaID == id, !Task.isCancelled,
-                      let display = content.displays.first(where: { $0.displayID == (self.mediaDisplayID ?? CGMainDisplayID()) }) else {
-                    throw HostMediaSession.SessionError.creationFailed
-                }
-                let screen = NSScreen.screens.first {
-                    ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID
-                }
-                self.sharingDisplayName = screen?.localizedName ??
-                    "\(CGDisplayPixelsWide(display.displayID)) × \(CGDisplayPixelsHigh(display.displayID)) px"
-                self.sharingScreen = true
-                let captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route) { [weak self] in
+                guard let target = self.mediaTarget else { throw HostMediaSession.SessionError.creationFailed }
+                let onScreenOnly: Bool
+                if case .window = target { onScreenOnly = false } else { onScreenOnly = true }
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: onScreenOnly)
+                guard self.mediaID == id, !Task.isCancelled else { return }
+                let onStopped: @Sendable () -> Void = { [weak self] in
                     Task { @MainActor [weak self] in self?.mediaFailed(id: id) }
+                }
+                let captured: DisplayCapture
+                switch target {
+                case .mainDisplay, .display:
+                    let displayID: UInt32
+                    if case let .display(value) = target { displayID = value } else { displayID = CGMainDisplayID() }
+                    guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+                        throw HostMediaSession.SessionError.creationFailed
+                    }
+                    let screen = NSScreen.screens.first {
+                        ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID
+                    }
+                    self.sharingDisplayName = screen?.localizedName ??
+                        "\(CGDisplayPixelsWide(display.displayID)) × \(CGDisplayPixelsHigh(display.displayID)) px"
+                    self.sharingWindow = false
+                    self.sharingScreen = true
+                    captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, onStopped: onStopped)
+                case let .window(info, processID):
+                    guard let window = content.windows.first(where: {
+                        WindowCatalog.matches(window: $0, info: info, processID: processID)
+                    }) else { throw HostMediaSession.SessionError.creationFailed }
+                    self.sharingDisplayName = "\(info.application) — \(info.title)"
+                    self.sharingWindow = true
+                    self.sharingScreen = true
+                    captured = try await DisplayCapture.start(window: window, source: session.videoSource, route: route, onStopped: onStopped)
                 }
                 guard self.mediaID == id, !Task.isCancelled else { try? await captured.stop(); return }
                 self.capture = captured
@@ -427,12 +447,13 @@ final class HostModel: ObservableObject {
     private func stopMedia() {
         mediaID = UUID()
         mediaConnection = nil
-        mediaDisplayID = nil
+        mediaTarget = nil
         mediaTask?.cancel()
         mediaTask = nil
         mediaRoute?.close()
         mediaRoute = nil
         sharingScreen = false
+        sharingWindow = false
         sharingDisplayName = nil
         screenMonitor = nil
         mediaSession?.close()

@@ -11,6 +11,7 @@ import java.nio.charset.CodingErrorAction
 import java.util.UUID
 
 data class DisplayInfo(val id: Long, val width: Int, val height: Int)
+data class WindowInfo(val id: Long, val width: Int, val height: Int, val application: String, val title: String)
 
 /** Decoding validates message structure, not the sender or session state. */
 sealed interface SignalMessage {
@@ -24,6 +25,9 @@ sealed interface SignalMessage {
     data class StartDisplay(val id: Long) : SignalMessage
     data object ListDisplays : SignalMessage
     data class Displays(val values: List<DisplayInfo>) : SignalMessage
+    data class ListWindows(val offset: Int) : SignalMessage
+    data class Windows(val next: Int, val values: List<WindowInfo>) : SignalMessage
+    data class StartWindow(val id: Long) : SignalMessage
     data class Offer(val sdp: String) : SignalMessage
     data class Answer(val sdp: String) : SignalMessage
 }
@@ -92,6 +96,26 @@ object SignalMessageCodec {
                     if (values.map { it.id }.toSet().size != values.size) throw MessageException()
                     SignalMessage.Displays(values)
                 }
+                "window.list" -> {
+                    if (fields.size != 3) throw MessageException()
+                    SignalMessage.ListWindows(nonnegativeInteger(fields[2], 512).toInt())
+                }
+                "window.listed" -> {
+                    if (fields.size !in 3..163 || (fields.size - 3) % 5 != 0) throw MessageException()
+                    val next = nonnegativeInteger(fields[2], 512).toInt()
+                    val values = (3 until fields.size step 5).map { i ->
+                        if (!validWindowLabel(fields[i + 3]) || !validWindowLabel(fields[i + 4])) throw MessageException()
+                        WindowInfo(positiveInteger(fields[i], 4_294_967_295L),
+                            positiveInteger(fields[i + 1], 65_535).toInt(), positiveInteger(fields[i + 2], 65_535).toInt(),
+                            fields[i + 3], fields[i + 4])
+                    }
+                    if ((values.isEmpty() && next != 0) || values.map { it.id }.toSet().size != values.size) throw MessageException()
+                    SignalMessage.Windows(next, values)
+                }
+                "window.start" -> {
+                    if (fields.size != 3) throw MessageException()
+                    SignalMessage.StartWindow(positiveInteger(fields[2], 4_294_967_295L))
+                }
                 "offer" -> {
                     if (fields.size != 3 || !validSDP(fields[2])) throw MessageException()
                     SignalMessage.Offer(fields[2])
@@ -134,6 +158,14 @@ object SignalMessageCodec {
                 if (message.values.size !in 1..64) throw MessageException()
                 listOf("1", "display.listed") + message.values.flatMap { listOf(it.id.toString(), it.width.toString(), it.height.toString()) }
             }
+            is SignalMessage.ListWindows -> listOf("1", "window.list", message.offset.toString())
+            is SignalMessage.Windows -> {
+                if (message.values.size > 32 || message.values.any { !validWindowLabel(it.application) || !validWindowLabel(it.title) }) throw MessageException()
+                listOf("1", "window.listed", message.next.toString()) + message.values.flatMap {
+                    listOf(it.id.toString(), it.width.toString(), it.height.toString(), it.application, it.title)
+                }
+            }
+            is SignalMessage.StartWindow -> listOf("1", "window.start", message.id.toString())
             is SignalMessage.Offer -> {
                 if (!validSDP(message.sdp)) throw MessageException()
                 listOf("1", "offer", message.sdp)
@@ -164,6 +196,14 @@ object SignalMessageCodec {
     private fun positiveInteger(value: String, maximum: Long): Long {
         if (value.isEmpty() || value.length > 10 || value.startsWith('0') || value.any { it !in '0'..'9' }) throw MessageException()
         return value.toLongOrNull()?.takeIf { it in 1..maximum } ?: throw MessageException()
+    }
+
+    private fun nonnegativeInteger(value: String, maximum: Long): Long =
+        if (value == "0") 0 else positiveInteger(value, maximum)
+
+    private fun validWindowLabel(value: String): Boolean {
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        return bytes.size in 1..96 && String(bytes, Charsets.UTF_8) == value && value.none { it.isISOControl() }
     }
 
     private fun validSDP(sdp: String): Boolean {

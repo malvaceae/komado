@@ -38,4 +38,18 @@ final class SignalMessageTests: XCTestCase {
         XCTAssertThrowsError(try SignalMessage.displays([DisplayInfo(id: 1, width: 65_536, height: 1)]).encode())
         XCTAssertThrowsError(try SignalMessage.startDisplay(0).encode())
     }
+
+    func testWindowPageBoundariesAndLabels() throws {
+        let windows = (1...32).map { WindowInfo(id: UInt32($0), width: 800, height: 600,
+                                                  application: String(repeating: "ア", count: 32), title: "ウインドウ") }
+        let page = SignalMessage.windows(next: 32, values: windows)
+        XCTAssertEqual(try SignalMessage.decode(page.encode()), page)
+        XCTAssertEqual(try SignalMessage.decode(SignalMessage.windows(next: 0, values: []).encode()), .windows(next: 0, values: []))
+        XCTAssertThrowsError(try SignalMessage.windows(next: 1, values: []).encode())
+        XCTAssertThrowsError(try SignalMessage.windows(next: 0, values: windows + [windows[0]]).encode())
+        XCTAssertThrowsError(try SignalMessage.windows(next: 0, values: [windows[0], windows[0]]).encode())
+        XCTAssertThrowsError(try SignalMessage.windows(next: 0, values: [WindowInfo(id: 1, width: 1, height: 1,
+                                                                                    application: "a", title: String(repeating: "あ", count: 33))]).encode())
+        XCTAssertThrowsError(try SignalMessage.listWindows(513).encode())
+    }
 }

@@ -25,7 +25,7 @@ public actor SignalingServer {
     public enum Event: Sendable {
         case listening(interfaceName: String, address: String, port: UInt16)
         case authenticated(UUID, PairedDevice)
-        case mediaRequested(UUID, PairedDevice, NWEndpoint.Host, UInt32?)
+        case mediaRequested(UUID, PairedDevice, NWEndpoint.Host, MediaTarget)
         case answer(UUID, PairedDevice, String)
         case disconnected(UUID)
         case throttled
@@ -179,7 +179,7 @@ public actor SignalingServer {
         let handshake = ServerHandshake(sessionID: id, pairing: pairing, authentication: authentication)
         let session = SignalingSession(connection: connection, handshake: handshake, queue: queue,
                                        onAuthenticated: { [weak self] device in await self?.authenticated(id: id, device: device) },
-                                       onMediaRequested: { [weak self] device, host, display in await self?.mediaRequested(id: id, device: device, host: host, display: display) },
+                                       onMediaRequested: { [weak self] device, host, target in await self?.mediaRequested(id: id, device: device, host: host, target: target) },
                                        onAnswer: { [weak self] device, sdp in await self?.answer(id: id, device: device, sdp: sdp) },
                                        onClosed: { [weak self] in await self?.sessionClosed(id: id) })
         active = (id, session)
@@ -196,9 +196,9 @@ public actor SignalingServer {
         onEvent(.answer(id, device, sdp))
     }
 
-    private func mediaRequested(id: UUID, device: PairedDevice, host: NWEndpoint.Host, display: UInt32?) {
+    private func mediaRequested(id: UUID, device: PairedDevice, host: NWEndpoint.Host, target: MediaTarget) {
         guard !stopped, active?.id == id else { return }
-        onEvent(.mediaRequested(id, device, host, display))
+        onEvent(.mediaRequested(id, device, host, target))
     }
 
     private func sessionClosed(id: UUID) {

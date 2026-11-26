@@ -9,7 +9,7 @@ actor SignalingSession {
     private let handshake: ServerHandshake
     private let queue: DispatchQueue
     private let onAuthenticated: @Sendable (PairedDevice) async -> Void
-    private let onMediaRequested: @Sendable (PairedDevice, NWEndpoint.Host, UInt32?) async -> Void
+    private let onMediaRequested: @Sendable (PairedDevice, NWEndpoint.Host, MediaTarget) async -> Void
     private let onAnswer: @Sendable (PairedDevice, String) async -> Void
     private let onClosed: @Sendable () async -> Void
     private var decoder = SignalFrame.Decoder()
@@ -19,10 +19,13 @@ actor SignalingSession {
     private var device: PairedDevice?
     private var mediaState: MediaState = .idle
     private var displaySnapshot: [DisplayInfo]?
+    private var windowSnapshot: [WindowSelection]?
+    private var nextWindowOffset: UInt16? = 0
+    private var sentWindowCount = 0
 
     init(connection: NWConnection, handshake: ServerHandshake, queue: DispatchQueue,
          onAuthenticated: @escaping @Sendable (PairedDevice) async -> Void,
-         onMediaRequested: @escaping @Sendable (PairedDevice, NWEndpoint.Host, UInt32?) async -> Void,
+         onMediaRequested: @escaping @Sendable (PairedDevice, NWEndpoint.Host, MediaTarget) async -> Void,
          onAnswer: @escaping @Sendable (PairedDevice, String) async -> Void,
          onClosed: @escaping @Sendable () async -> Void) {
         self.connection = connection
@@ -111,28 +114,56 @@ actor SignalingSession {
                         let response = try SignalFrame.encode(SignalMessage.displays(displays).encode())
                         displaySnapshot = displays
                         connection.send(content: response, completion: .contentProcessed { [weak self] error in
-                            Task { await self?.sentDisplayList(error: error) }
+                            Task { await self?.sentCatalog(error: error) }
                         })
                         return
                     }
-                    let displayID: UInt32?
+                    if case let .listWindows(offset) = message, mediaState == .idle {
+                        guard nextWindowOffset == offset else { await close(); return }
+                        let snapshot: [WindowSelection]
+                        if let current = windowSnapshot { snapshot = current }
+                        else {
+                            guard offset == 0 else { await close(); return }
+                            snapshot = try await WindowCatalog.all()
+                            guard !closed, mediaState == .idle else { return }
+                            windowSnapshot = snapshot
+                        }
+                        let start = Int(offset), end = min(Int(offset) + 32, snapshot.count)
+                        guard start <= end else { await close(); return }
+                        let next = end < snapshot.count ? UInt16(end) : 0
+                        nextWindowOffset = next == 0 ? nil : next
+                        sentWindowCount = end
+                        let response = try SignalFrame.encode(SignalMessage.windows(next: next,
+                            values: snapshot[start..<end].map(\.info)).encode())
+                        connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                            Task { await self?.sentCatalog(error: error) }
+                        })
+                        return
+                    }
+                    let target: MediaTarget?
                     let startsMedia: Bool
                     switch message {
-                    case .startMedia: displayID = nil; startsMedia = true
+                    case .startMedia: target = .mainDisplay; startsMedia = true
                     case let .startDisplay(id):
                         guard let snapshot = displaySnapshot, snapshot.contains(where: { $0.id == id }),
                               try DisplayCatalog.active() == snapshot else { await close(); return }
-                        displayID = id; startsMedia = true
-                    default: displayID = nil; startsMedia = false
+                        target = .display(id); startsMedia = true
+                    case let .startWindow(id):
+                        guard let snapshot = windowSnapshot,
+                              let selected = snapshot.prefix(sentWindowCount).first(where: { $0.info.id == id }),
+                              try await WindowCatalog.matches(selected),
+                              !closed else { await close(); return }
+                        target = .window(info: selected.info, processID: selected.processID); startsMedia = true
+                    default: target = nil; startsMedia = false
                     }
-                    if startsMedia && mediaState == .idle {
+                    if startsMedia && mediaState == .idle, let target {
                         guard case let .hostPort(host, _) = connection.currentPath?.localEndpoint else { await close(); return }
                         mediaState = .preparingOffer
                         timeout = Task { [weak self] in
                             do { try await Task.sleep(for: .seconds(30)) } catch { return }
                             await self?.close()
                         }
-                        await onMediaRequested(device, host, displayID)
+                        await onMediaRequested(device, host, target)
                         if !closed { receive() }
                         return
                     }
@@ -158,7 +189,7 @@ actor SignalingSession {
         } else { receive() }
     }
 
-    private func sentDisplayList(error: NWError?) async {
+    private func sentCatalog(error: NWError?) async {
         guard !closed else { return }
         guard error == nil else { await close(); return }
         receive()

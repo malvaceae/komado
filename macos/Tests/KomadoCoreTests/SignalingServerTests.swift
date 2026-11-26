@@ -142,8 +142,8 @@ final class SignalingServerTests: XCTestCase {
         let mediaRequested = expectation(description: "media requested")
         let selectedMediaRequested = expectation(description: "selected display requested")
         let answerReceived = expectation(description: "SDP answer")
-        let disconnected = expectation(description: "seven disconnections")
-        disconnected.expectedFulfillmentCount = 7
+        let disconnected = expectation(description: "nine disconnections")
+        disconnected.expectedFulfillmentCount = 9
         let server = try SignalingServer.create(identity: identity.identity,
             bindings: [ListenerBinding(scope: .localLink, interface: interface, address: address)],
             port: .any, pairing: pairing, authentication: auth) { event in
@@ -154,8 +154,10 @@ final class SignalingServerTests: XCTestCase {
                     let count = box.nextAuthentication()
                     if count == 1 { firstAuthenticated.fulfill() }
                     if count <= 2 { authenticated.fulfill() }
-                case let .mediaRequested(id, _, _, display):
+                case let .mediaRequested(id, _, _, target):
                     box.setMediaSession(id)
+                    let display: UInt32?
+                    if case let .display(id) = target { display = id } else { display = nil }
                     if box.noteMedia(display) == 1 { mediaRequested.fulfill() } else { selectedMediaRequested.fulfill() }
                 case let .answer(_, _, sdp): box.setAnswer(sdp); answerReceived.fulfill()
                 case .disconnected: disconnected.fulfill()
@@ -182,6 +184,18 @@ final class SignalingServerTests: XCTestCase {
         guard case let .displays(displays) = try await first.receive(), let display = displays.first else {
             return XCTFail("Expected a nonempty display list")
         }
+        var offset: UInt16 = 0
+        var windowIDs = Set<UInt32>()
+        repeat {
+            try await first.send(.listWindows(offset))
+            guard case let .windows(next, values) = try await first.receive() else { return XCTFail("Expected window page") }
+            for window in values { XCTAssertTrue(windowIDs.insert(window.id).inserted) }
+            if next != 0 {
+                XCTAssertEqual(values.count, 32)
+                XCTAssertEqual(Int(next), windowIDs.count)
+            }
+            offset = next
+        } while offset != 0
         let localCandidate = "a=candidate:1 1 udp 1 \(address) 54321 typ host\r\n"
         let otherCandidate = "a=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n"
         let offer = "v=0\r\ns=offer\r\nc=IN IP4 192.0.2.5\r\n" + localCandidate + otherCandidate
@@ -286,6 +300,31 @@ final class SignalingServerTests: XCTestCase {
         let unknownStillActive = await server.isActive(sessionID: unknownID)
         XCTAssertFalse(unknownStillActive, "A display not present in the list must be rejected")
         unknown.connection.cancel()
+        let unknownWindow = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
+        try await unknownWindow.start()
+        try await unknownWindow.send(.authenticate(deviceID: deviceID))
+        guard case let .challenge(windowChallenge) = try await unknownWindow.receive() else { return XCTFail("Expected challenge") }
+        let windowSignature = try key.signature(for: Data("komado.device-auth.v1\0".utf8) + windowChallenge).derRepresentation
+        try await unknownWindow.send(.proof(windowSignature))
+        let windowAccepted = try await unknownWindow.receive()
+        XCTAssertEqual(windowAccepted, .accepted(deviceID: deviceID))
+        let windowAuthDeadline = Date().addingTimeInterval(5)
+        while box.getLastAuthenticated() == unknownID && Date() < windowAuthDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let unknownWindowID = try XCTUnwrap(box.getLastAuthenticated())
+        XCTAssertNotEqual(unknownWindowID, unknownID)
+        try await unknownWindow.send(.listWindows(0))
+        guard case let .windows(_, firstPage) = try await unknownWindow.receive() else { return XCTFail("Expected window page") }
+        let absentWindow = try XCTUnwrap((UInt32(1)...33).first { candidate in !firstPage.contains { $0.id == candidate } })
+        try await unknownWindow.send(.startWindow(absentWindow))
+        let windowCloseDeadline = Date().addingTimeInterval(5)
+        while await server.isActive(sessionID: unknownWindowID) && Date() < windowCloseDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let unknownWindowStillActive = await server.isActive(sessionID: unknownWindowID)
+        XCTAssertFalse(unknownWindowStillActive, "A window not delivered to the peer must be rejected")
+        unknownWindow.connection.cancel()
         let removed = try await server.removeDevice(id: deviceID)
         XCTAssertTrue(removed)
         let third = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
@@ -309,6 +348,13 @@ final class SignalingServerTests: XCTestCase {
         let unauthenticatedResponse = try await unauthenticated.receive()
         XCTAssertEqual(unauthenticatedResponse, .rejected)
         unauthenticated.connection.cancel()
+        await server.disconnectCurrent()
+        let unauthenticatedWindows = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
+        try await unauthenticatedWindows.start()
+        try await unauthenticatedWindows.send(.listWindows(0))
+        let unauthenticatedWindowResponse = try await unauthenticatedWindows.receive()
+        XCTAssertEqual(unauthenticatedWindowResponse, .rejected)
+        unauthenticatedWindows.connection.cancel()
         await fulfillment(of: [disconnected], timeout: 10)
         XCTAssertEqual(try registry.all().count, 0)
         await server.stop()

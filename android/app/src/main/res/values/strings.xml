@@ -36,6 +36,10 @@
     <string name="select_screen">画面を選択</string>
     <string name="screen_option">画面 %1$d（%2$d × %3$d px）</string>
     <string name="screen_selection_failed">画面一覧を取得できませんでした。Macの状態とアプリのバージョンを確認してください。</string>
+    <string name="select_window">ウインドウを選択</string>
+    <string name="window_option">%1$s — %2$s</string>
+    <string name="window_selection_failed">ウインドウ一覧を取得できませんでした。Macの画面収録の許可とアプリのバージョンを確認してください。</string>
+    <string name="no_windows">表示できるウインドウがありません。</string>
     <string name="screen_waiting">画面を接続中…</string>
     <string name="screen_connected">画面を表示中</string>
     <string name="screen_failed">画面に接続できませんでした。Macの待ち受けと画面収録の許可を確認してください。</string>

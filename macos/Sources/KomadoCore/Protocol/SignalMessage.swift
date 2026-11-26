@@ -11,6 +11,21 @@ public struct DisplayInfo: Equatable, Sendable {
     }
 }
 
+public struct WindowInfo: Equatable, Sendable {
+    public let id: UInt32
+    public let width: UInt32
+    public let height: UInt32
+    public let application: String
+    public let title: String
+    public init(id: UInt32, width: UInt32, height: UInt32, application: String, title: String) {
+        self.id = id
+        self.width = width
+        self.height = height
+        self.application = application
+        self.title = title
+    }
+}
+
 /// Version 1 signaling messages. A successfully decoded message is still
 /// untrusted until it has been accepted by the authenticated session state.
 public enum SignalMessage: Equatable, Sendable {
@@ -24,6 +39,9 @@ public enum SignalMessage: Equatable, Sendable {
     case startDisplay(UInt32)
     case listDisplays
     case displays([DisplayInfo])
+    case listWindows(UInt16)
+    case windows(next: UInt16, values: [WindowInfo])
+    case startWindow(UInt32)
     case offer(String)
     case answer(String)
 
@@ -74,6 +92,28 @@ public enum SignalMessage: Equatable, Sendable {
                 displays.append(DisplayInfo(id: UInt32(id), width: UInt32(width), height: UInt32(height)))
             }
             return .displays(displays)
+        case "window.list":
+            guard fields.count == 3, let offset = nonnegativeInteger(fields[2], max: 512) else { throw MessageError.invalid }
+            return .listWindows(UInt16(offset))
+        case "window.listed":
+            guard fields.count >= 3, fields.count <= 163, (fields.count - 3).isMultiple(of: 5),
+                  let next = nonnegativeInteger(fields[2], max: 512) else { throw MessageError.invalid }
+            var windows: [WindowInfo] = []
+            var ids = Set<UInt32>()
+            for i in stride(from: 3, to: fields.count, by: 5) {
+                guard let id = positiveInteger(fields[i], max: UInt64(UInt32.max)),
+                      let width = positiveInteger(fields[i + 1], max: 65_535),
+                      let height = positiveInteger(fields[i + 2], max: 65_535),
+                      validWindowLabel(fields[i + 3]), validWindowLabel(fields[i + 4]),
+                      ids.insert(UInt32(id)).inserted else { throw MessageError.invalid }
+                windows.append(WindowInfo(id: UInt32(id), width: UInt32(width), height: UInt32(height),
+                                          application: fields[i + 3], title: fields[i + 4]))
+            }
+            guard !windows.isEmpty || next == 0 else { throw MessageError.invalid }
+            return .windows(next: UInt16(next), values: windows)
+        case "window.start":
+            guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
+            return .startWindow(UInt32(id))
         case "offer":
             guard fields.count == 3, validSDP(fields[2]) else { throw MessageError.invalid }
             return .offer(fields[2])
@@ -108,6 +148,17 @@ public enum SignalMessage: Equatable, Sendable {
         case let .displays(displays):
             guard (1...64).contains(displays.count) else { throw MessageError.invalid }
             fields = ["1", "display.listed"] + displays.flatMap { [String($0.id), String($0.width), String($0.height)] }
+        case let .listWindows(offset):
+            guard offset <= 512 else { throw MessageError.invalid }
+            fields = ["1", "window.list", String(offset)]
+        case let .windows(next, values):
+            guard next <= 512, values.count <= 32 else { throw MessageError.invalid }
+            fields = ["1", "window.listed", String(next)] + values.flatMap {
+                [String($0.id), String($0.width), String($0.height), $0.application, $0.title]
+            }
+        case let .startWindow(id):
+            guard id > 0 else { throw MessageError.invalid }
+            fields = ["1", "window.start", String(id)]
         case let .offer(sdp):
             guard Self.validSDP(sdp) else { throw MessageError.invalid }
             fields = ["1", "offer", sdp]
@@ -130,6 +181,17 @@ public enum SignalMessage: Equatable, Sendable {
               value.utf8.allSatisfy({ (48...57).contains($0) }), let number = UInt64(value),
               (1...max).contains(number) else { return nil }
         return number
+    }
+
+    private static func nonnegativeInteger(_ value: String, max: UInt64) -> UInt64? {
+        if value == "0" { return 0 }
+        return positiveInteger(value, max: max)
+    }
+
+    private static func validWindowLabel(_ value: String) -> Bool {
+        (1...96).contains(value.utf8.count) && !value.unicodeScalars.contains {
+            $0.value < 32 || (0x7f...0x9f).contains($0.value)
+        }
     }
 
     private static func validSDP(_ sdp: String) -> Bool {

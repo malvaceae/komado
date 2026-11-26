@@ -5,6 +5,7 @@ import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.protocol.SignalMessageCodec
 import me.mallows.komado.protocol.SdpCandidateFilter
 import me.mallows.komado.protocol.DisplayInfo
+import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.security.DeviceSigningKey
 import me.mallows.komado.security.HostCertificateTrustManager
 import java.io.Closeable
@@ -31,18 +32,52 @@ class AuthenticatedHostConnection private constructor(
     private val mediaLock = Any()
     private var mediaState = MediaState.IDLE
     private var displaysRequested = false
+    private var windowsRequested = false
     @Volatile private var closed = false
 
     /** Request one media session after device authentication. */
-    fun requestMedia(displayId: Long? = null) = synchronized(mediaLock) {
+    fun requestMedia(displayId: Long? = null, windowId: Long? = null) = synchronized(mediaLock) {
         if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
         try {
-            send(socket, if (displayId == null) SignalMessage.StartMedia else SignalMessage.StartDisplay(displayId))
+            if (displayId != null && windowId != null) throw IOException("Conflicting capture targets")
+            val request = when {
+                displayId != null -> SignalMessage.StartDisplay(displayId)
+                windowId != null -> SignalMessage.StartWindow(windowId)
+                else -> SignalMessage.StartMedia
+            }
+            send(socket, request)
             mediaState = MediaState.EXPECTING_OFFER
         } catch (error: Exception) {
             runCatching { close() }
             throw error
         }
+    }
+
+    /** Fetches one bounded snapshot in pages; the total wait is limited. */
+    fun listWindows(): List<WindowInfo> = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE || windowsRequested) throw IOException("Unexpected signaling state")
+        windowsRequested = true
+        val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        try {
+            val windows = mutableListOf<WindowInfo>()
+            val ids = mutableSetOf<Long>()
+            var offset = 0
+            do {
+                send(socket, SignalMessage.ListWindows(offset))
+                val page = receive(socket) as? SignalMessage.Windows ?: throw IOException("Expected window list")
+                if (page.values.any { !ids.add(it.id) }) throw IOException("Duplicate window")
+                windows.addAll(page.values)
+                if (windows.size > 512) throw IOException("Window list too large")
+                if (page.next != 0 && (page.values.size != 32 || page.next != windows.size || page.next >= 512)) {
+                    throw IOException("Invalid window pagination")
+                }
+                offset = page.next
+            } while (offset != 0)
+            windows
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        } finally { timeout.cancel(false) }
     }
 
     /** Queries the authenticated host once before starting media. */
