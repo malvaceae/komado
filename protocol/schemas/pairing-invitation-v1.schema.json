@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:komado:pairing-invitation:v1",
+  "title": "komado QR pairing invitation v1",
+  "type": "array",
+  "prefixItems": [
+    { "const": "1" },
+    { "const": "pairing" },
+    { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[A-Za-z0-9._:%-]+$" },
+    { "type": "string", "minLength": 1, "maxLength": 5, "pattern": "^[1-9][0-9]*$" },
+    { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9A-F]{64}$" },
+    { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9A-F]{64}$" }
+  ],
+  "minItems": 6,
+  "maxItems": 6,
+  "items": false,
+  "description": "Port range and total UTF-8 byte length are checked by implementations. The final field is a secret."
+}
