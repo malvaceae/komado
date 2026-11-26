@@ -25,6 +25,8 @@
     <string name="save_error">接続先を保存できませんでした。</string>
     <string name="not_paired">未ペアリング</string>
     <string name="paired">ペアリング済み</string>
+    <string name="last_connected">最終認証: %1$s</string>
+    <string name="never_connected">認証履歴なし</string>
     <string name="pair">ペアリング</string>
     <string name="check_connection">接続を確認</string>
     <string name="view_screen">画面を見る</string>

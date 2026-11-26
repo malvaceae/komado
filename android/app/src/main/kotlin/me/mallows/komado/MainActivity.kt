@@ -24,6 +24,8 @@ import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.PairingInvitation
 import me.mallows.komado.security.DeviceSigningKey
 import java.util.UUID
+import java.util.Date
+import java.text.DateFormat
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
@@ -114,8 +116,12 @@ class MainActivity : ComponentActivity() {
         hosts.forEach { host ->
             list.addView(Button(this).apply {
                 val destination = if (host.address.contains(':')) "[${host.address}]:${host.port}" else "${host.address}:${host.port}"
-                text = getString(R.string.host_description, host.name, destination,
+                val details = getString(R.string.host_description, host.name, destination,
                     getString(if (host.pairing == null) R.string.not_paired else R.string.paired))
+                val last = host.lastConnectedAt?.let {
+                    getString(R.string.last_connected, DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)))
+                } ?: getString(R.string.never_connected)
+                text = "$details\n$last"
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
                 isAllCaps = false
                 isEnabled = !busy
@@ -172,7 +178,8 @@ class MainActivity : ComponentActivity() {
                     !HostStore.validAddress(hostAddress) -> address.error = getString(R.string.invalid_address)
                     hostPort == null || hostPort !in 1..65535 -> port.error = getString(R.string.invalid_port)
                     else -> {
-                        val host = Host(existing?.id ?: UUID.randomUUID().toString(), hostName, hostAddress, hostPort, existing?.pairing)
+                        val host = Host(existing?.id ?: UUID.randomUUID().toString(), hostName, hostAddress, hostPort,
+                            existing?.pairing, existing?.lastConnectedAt)
                         val saved = runCatching { store.save(existing, host) }.getOrDefault(false)
                         if (saved) dialog.dismiss() else toast(R.string.save_error)
                         refresh()
@@ -279,7 +286,9 @@ class MainActivity : ComponentActivity() {
                     deviceName, token, key)
                 val deviceID = connection.deviceID.toString()
                 connection.close()
-                saved = repository.pair(host, Pairing(deviceID, pinText, alias))
+                val pairing = Pairing(deviceID, pinText, alias)
+                saved = repository.pair(host, pairing)
+                if (saved) runCatching { repository.recordConnection(host.copy(pairing = pairing), System.currentTimeMillis()) }
             } catch (_: Exception) {
                 // Do not log addresses, invitation codes, or authentication details.
             } finally {
@@ -299,6 +308,7 @@ class MainActivity : ComponentActivity() {
             val success = runCatching {
                 AuthenticatedHostConnection.reconnect(host.address, host.port, hexBytes(pairing.fingerprint),
                     UUID.fromString(pairing.deviceID), DeviceSigningKey(pairing.keyAlias)).use { }
+                runCatching { HostStore(applicationContext).recordConnection(host, System.currentTimeMillis()) }
             }.isSuccess
             finishOperation(if (success) R.string.connection_success else R.string.connection_failed)
         }

@@ -85,6 +85,7 @@ class VideoActivity : Activity() {
                     if (!active) false else { connection = established; true }
                 }
                 if (!keep) { established.close(); return@execute }
+                runCatching { HostStore(applicationContext).recordConnection(host, System.currentTimeMillis()) }
                 established.requestMedia()
                 val offer = established.receiveOffer()
                 runOnUiThread {

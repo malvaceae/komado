@@ -7,7 +7,8 @@ import org.json.JSONObject
 import java.util.UUID
 
 internal data class Pairing(val deviceID: String, val fingerprint: String, val keyAlias: String)
-internal data class Host(val id: String, val name: String, val address: String, val port: Int = 48365, val pairing: Pairing? = null)
+internal data class Host(val id: String, val name: String, val address: String, val port: Int = 48365,
+                         val pairing: Pairing? = null, val lastConnectedAt: Long? = null)
 
 /** App-private address and public trust metadata; signing keys stay in Keystore. */
 internal class HostStore(context: Context, preferenceName: String = "hosts") {
@@ -30,6 +31,15 @@ internal class HostStore(context: Context, preferenceName: String = "hosts") {
         val current = read()
         if (expected.pairing != null || current.none { it == expected }) return false
         write(current.map { if (it.id == expected.id) it.copy(pairing = pairing) else it })
+    }
+
+    /** Update only the same authenticated destination; never recreate a removed host. */
+    fun recordConnection(expected: Host, at: Long): Boolean = synchronized(lock) {
+        if (at !in 1..MAX_TIMESTAMP || expected.pairing == null) return false
+        val current = read()
+        val host = current.firstOrNull { it.id == expected.id } ?: return false
+        if (host.address != expected.address || host.port != expected.port || host.pairing != expected.pairing) return false
+        write(current.map { if (it.id == host.id) it.copy(lastConnectedAt = at) else it })
     }
 
     fun remove(expected: Host): Boolean = synchronized(lock) {
@@ -57,7 +67,11 @@ internal class HostStore(context: Context, preferenceName: String = "hosts") {
                 DeviceSigningKey(result.keyAlias) // validates the application namespace
                 result
             } else null
-            Host(id, name, address, port, pairing)
+            val lastConnectedAt = if (item.has("lastConnectedAt")) {
+                require(item.get("lastConnectedAt") is Long || item.get("lastConnectedAt") is Int)
+                item.getLong("lastConnectedAt").also { require(it in 1..MAX_TIMESTAMP && pairing != null) }
+            } else null
+            Host(id, name, address, port, pairing, lastConnectedAt)
         }
     }
 
@@ -67,7 +81,9 @@ internal class HostStore(context: Context, preferenceName: String = "hosts") {
         val aliases = mutableSetOf<String>()
         hosts.forEach { host ->
             require(canonicalUUID(host.id) && ids.add(host.id) && validName(host.name) && validAddress(host.address) && host.port in 1..65535)
+            require(host.lastConnectedAt == null || (host.lastConnectedAt in 1..MAX_TIMESTAMP && host.pairing != null))
             val item = JSONObject().put("id", host.id).put("name", host.name).put("address", host.address).put("port", host.port)
+            host.lastConnectedAt?.let { item.put("lastConnectedAt", it) }
             host.pairing?.let {
                 require(canonicalUUID(it.deviceID) && validHex(it.fingerprint) && validAlias(it.keyAlias) && aliases.add(it.keyAlias))
                 DeviceSigningKey(it.keyAlias)
@@ -81,6 +97,7 @@ internal class HostStore(context: Context, preferenceName: String = "hosts") {
 
     companion object {
         private val lock = Any()
+        private const val MAX_TIMESTAMP = 253_402_300_799_999L
         fun validName(value: String) = value.length <= 256 && value.isNotBlank() && value.toByteArray(Charsets.UTF_8).size <= 256 &&
             value.none { it.isISOControl() } && String(value.toByteArray(Charsets.UTF_8), Charsets.UTF_8) == value
         fun validAddress(value: String) = value.isNotBlank() && value.length <= 253 && value.none { it.isWhitespace() || it.isISOControl() }
