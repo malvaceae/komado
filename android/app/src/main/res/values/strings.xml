@@ -42,6 +42,11 @@
     <string name="window_search_empty">一致するウインドウがありません。</string>
     <string name="window_selection_failed">ウインドウ一覧を取得できませんでした。Macの画面収録の許可とアプリのバージョンを確認してください。</string>
     <string name="no_windows">表示できるウインドウがありません。</string>
+    <string name="screen_authenticating">Macを認証中…</string>
+    <string name="screen_list_waiting">画面一覧を取得中…</string>
+    <string name="window_list_waiting">ウインドウ一覧を取得中…</string>
+    <string name="screen_choosing">画面を選択してください。</string>
+    <string name="window_choosing">ウインドウを選択してください。</string>
     <string name="screen_waiting">画面を接続中…</string>
     <string name="screen_connected">画面を表示中</string>
     <string name="screen_failed">画面に接続できませんでした。Macの待ち受けと画面収録の許可を確認してください。</string>

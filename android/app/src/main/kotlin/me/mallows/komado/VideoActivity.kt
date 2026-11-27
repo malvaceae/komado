@@ -40,7 +40,7 @@ class VideoActivity : Activity() {
         val pairing = host?.pairing
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(TextView(this).apply { text = host?.name.orEmpty(); textSize = 20f; setPadding(dp(16), dp(12), dp(16), 0) })
-        status = TextView(this).apply { setText(R.string.screen_waiting); setPadding(dp(16), dp(8), dp(16), dp(8)) }
+        status = TextView(this).apply { setText(R.string.screen_authenticating); setPadding(dp(16), dp(8), dp(16), dp(8)) }
         root.addView(status)
         try {
             val video = RemoteVideoRenderer(this, object : RendererCommon.RendererEvents {
@@ -91,6 +91,7 @@ class VideoActivity : Activity() {
                 if (!keep) { established.close(); return@execute }
                 runCatching { HostStore(applicationContext).recordConnection(host, System.currentTimeMillis()) }
                 if (intent.getBooleanExtra(CHOOSE_WINDOW, false)) {
+                    showProgress(R.string.window_list_waiting)
                     val windows = try { established.listWindows() } catch (_: Exception) {
                         runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.window_selection_failed) } }
                         return@execute
@@ -98,15 +99,16 @@ class VideoActivity : Activity() {
                     runOnUiThread {
                         if (active) {
                             if (windows.isEmpty()) { stopSession(failed = true); status.setText(R.string.no_windows) }
-                            else chooseWindow(established, windows)
+                            else { status.setText(R.string.window_choosing); chooseWindow(established, windows) }
                         }
                     }
                 } else if (intent.getBooleanExtra(CHOOSE_DISPLAY, false)) {
+                    showProgress(R.string.screen_list_waiting)
                     val displays = try { established.listDisplays() } catch (_: Exception) {
                         runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.screen_selection_failed) } }
                         return@execute
                     }
-                    runOnUiThread { if (active) chooseDisplay(established, displays) }
+                    runOnUiThread { if (active) { status.setText(R.string.screen_choosing); chooseDisplay(established, displays) } }
                 } else startMedia(established, null)
             } catch (_: Exception) { showFailure() }
         }
@@ -131,6 +133,7 @@ class VideoActivity : Activity() {
     }
 
     private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?, windowId: Long? = null) {
+        showProgress(R.string.screen_waiting)
         try {
             established.requestMedia(displayId, windowId)
             val offer = established.receiveOffer()
@@ -174,6 +177,10 @@ class VideoActivity : Activity() {
 
     private fun showFailure() {
         runOnUiThread { if (active) stopSession(failed = true) }
+    }
+
+    private fun showProgress(message: Int) {
+        runOnUiThread { if (active) status.setText(message) }
     }
 
     private fun stopSession(failed: Boolean) {
