@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class HardwareKeyMapperTest {
-    @Test fun mapsShortcutsButLeavesNormalTextToIme() {
+    @Test fun mapsShortcutsSeparatelyFromText() {
         fun event(code: Int, meta: Int = 0) = KeyEvent(0, 0, KeyEvent.ACTION_DOWN, code, 0, meta)
         assertNull(HardwareKeyMapper.map(event(KeyEvent.KEYCODE_A)))
         assertNull(HardwareKeyMapper.map(event(KeyEvent.KEYCODE_A, KeyEvent.META_SHIFT_ON)))
@@ -28,17 +28,22 @@ class HardwareKeyMapperTest {
         val instrument = InstrumentationRegistry.getInstrumentation()
         instrument.runOnMainSync {
             val sent = mutableListOf<Pair<SpecialKey, Int>>()
-            val view = RemoteKeyboardView(instrument.targetContext, sendKey = { key, mask -> sent.add(key to mask); true }, sendText = { true })
+            val text = mutableListOf<String>()
+            val view = RemoteKeyboardView(instrument.targetContext, sendKey = { key, mask -> sent.add(key to mask); true }, sendText = { text.add(it); true })
             val input = view.onCreateInputConnection(EditorInfo())!!
             val down = KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_C, 0, KeyEvent.META_CTRL_ON)
             val up = KeyEvent(0, 1, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_C, 0, 0)
             assertTrue(view.onKeyDown(KeyEvent.KEYCODE_C, down))
             assertTrue(view.onKeyUp(KeyEvent.KEYCODE_C, up))
             assertEquals(listOf(SpecialKey.C to 4), sent)
-            assertFalse(view.onKeyDown(KeyEvent.KEYCODE_A, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A)))
+            assertTrue(view.onKeyDown(KeyEvent.KEYCODE_A, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A)))
+            assertTrue(view.onKeyUp(KeyEvent.KEYCODE_A, KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A)))
+            assertEquals(listOf("a"), text)
             assertTrue(input.setComposingText("変換中", 1))
             assertFalse(view.onKeyDown(KeyEvent.KEYCODE_C, down))
+            assertFalse(view.onKeyDown(KeyEvent.KEYCODE_A, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A)))
             assertFalse(input.sendKeyEvent(down))
+            assertEquals(listOf("a"), text)
             assertEquals(1, sent.size)
             view.close()
             assertFalse(input.sendKeyEvent(down))

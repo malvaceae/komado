@@ -19,13 +19,18 @@ class CommittedTextConnectionTest {
         val instrument = InstrumentationRegistry.getInstrumentation()
         instrument.runOnMainSync {
             val sent = mutableListOf<Pair<SpecialKey, Int>>()
+            val text = mutableListOf<String>()
             val connection = CommittedTextConnection(View(instrument.targetContext),
-                sendKey = { key, mask -> sent.add(key to mask); true }, send = { true })
+                sendKey = { key, mask -> sent.add(key to mask); true }, send = { text.add(it); true })
             val ctrlC = KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_C, 0, KeyEvent.META_CTRL_ON)
             val shiftTab = KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_TAB, 0, KeyEvent.META_SHIFT_ON)
             assertTrue(connection.sendKeyEvent(ctrlC))
             assertTrue(connection.sendKeyEvent(shiftTab))
-            assertFalse(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A)))
+            assertTrue(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A)))
+            assertTrue(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A)))
+            assertTrue(connection.sendKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A, 0, KeyEvent.META_SHIFT_ON)))
+            assertTrue(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A)))
+            assertEquals(listOf("a", "A"), text)
             assertEquals(listOf(SpecialKey.C to 4, SpecialKey.TAB to 8), sent)
             connection.closeConnection()
         }

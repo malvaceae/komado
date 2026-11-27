@@ -13,16 +13,19 @@ internal class CommittedTextConnection(view: View, private val sendKey: (Special
                                        private val send: (String) -> Boolean) : BaseInputConnection(view, true) {
     private val content = SpannableStringBuilder().apply { Selection.setSelection(this, 0) }
     private var closed = false
+    private val rawText = RawTextKeyHandler(send)
 
     override fun getEditable(): Editable = content
 
     override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
         if (closed || text == null || text.length > 8192 || !validLocalText(text.toString())) return false
+        rawText.reset()
         return super.setComposingText(text, newCursorPosition)
     }
 
     override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
         if (closed || text == null || text.length > 8192) return false
+        rawText.reset()
         val value = text.toString()
         if (!validLocalText(value)) return false
         if (value.isNotEmpty() && !send(value)) return false
@@ -55,8 +58,14 @@ internal class CommittedTextConnection(view: View, private val sendKey: (Special
 
     override fun sendKeyEvent(event: KeyEvent): Boolean {
         if (closed) return false
-        val chord = HardwareKeyMapper.map(event) ?: return false
         if (getComposingSpanStart(content) >= 0) return false
+        val chord = HardwareKeyMapper.map(event)
+        if (chord == null) return when (event.action) {
+            KeyEvent.ACTION_DOWN -> rawText.down(event)
+            KeyEvent.ACTION_UP -> rawText.up(event)
+            else -> false
+        }
+        rawText.reset()
         return when (event.action) {
             KeyEvent.ACTION_DOWN -> sendKey(chord.key, chord.modifiers)
             KeyEvent.ACTION_UP -> true
@@ -68,6 +77,7 @@ internal class CommittedTextConnection(view: View, private val sendKey: (Special
 
     override fun closeConnection() {
         closed = true
+        rawText.reset()
         clearLocalText()
         super.closeConnection()
     }
