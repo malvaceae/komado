@@ -82,6 +82,12 @@ final class HostMediaSession {
         announceTimeout = nil
     }
 
+    func sendClipboardResponse(_ response: ClipboardResponse) -> Bool {
+        guard state == .answerApplied, announced, dataChannel.readyState == .open,
+              let data = try? response.encode() else { return false }
+        return dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
+    }
+
     func makeOffer() async throws -> String {
         guard state == .idle else { throw SessionError.unexpectedState }
         state = .makingOffer

@@ -8,6 +8,7 @@ enum ControlInput: Equatable, Sendable {
     case scroll(PointerScroll)
     case drag(PointerDrag)
     case move(PointerMove)
+    case clipboard(ClipboardRequest)
 
     var pointerCoordinate: (x: UInt32, y: UInt32)? {
         switch self {
@@ -15,15 +16,15 @@ enum ControlInput: Equatable, Sendable {
         case let .scroll(value): (value.x, value.y)
         case let .drag(value): (value.x, value.y)
         case let .move(value): (value.x, value.y)
-        case .text, .key: nil
+        case .text, .key, .clipboard: nil
         }
     }
 
     var sequence: UInt64 {
-        switch self { case let .click(value): value.sequence; case let .text(value): value.sequence; case let .key(value): value.sequence; case let .scroll(value): value.sequence; case let .drag(value): value.sequence; case let .move(value): value.sequence }
+        switch self { case let .click(value): value.sequence; case let .text(value): value.sequence; case let .key(value): value.sequence; case let .scroll(value): value.sequence; case let .drag(value): value.sequence; case let .move(value): value.sequence; case let .clipboard(value): value.sequence }
     }
     var captureRevision: UInt64 {
-        switch self { case let .click(value): value.captureRevision; case let .text(value): value.captureRevision; case let .key(value): value.captureRevision; case let .scroll(value): value.captureRevision; case let .drag(value): value.captureRevision; case let .move(value): value.captureRevision }
+        switch self { case let .click(value): value.captureRevision; case let .text(value): value.captureRevision; case let .key(value): value.captureRevision; case let .scroll(value): value.captureRevision; case let .drag(value): value.captureRevision; case let .move(value): value.captureRevision; case let .clipboard(value): value.captureRevision }
     }
 }
 
@@ -51,6 +52,7 @@ final class ControlInputGate: @unchecked Sendable {
         else if let scroll = try? PointerScroll.decode(data) { input = .scroll(scroll) }
         else if let drag = try? PointerDrag.decode(data) { input = .drag(drag) }
         else if let move = try? PointerMove.decode(data) { input = .move(move) }
+        else if let clipboard = try? ClipboardRequest.decode(data) { input = .clipboard(clipboard) }
         else { return nil }
         return lock.withLock {
             guard !closed, revision == input.captureRevision, input.sequence > sequence else { return nil }

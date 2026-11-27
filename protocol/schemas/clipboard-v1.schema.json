@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:komado:clipboard:v1",
+  "description": "Sequences and revisions are limited to 9007199254740991, text to 16384 UTF-8 bytes, messages to 65536 bytes by implementations.",
+  "oneOf": [
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.get"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.set"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384,
+          "not": {
+            "pattern": "[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]"
+          }
+        }
+      ],
+      "minItems": 5,
+      "maxItems": 5,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.result"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "const": "ok"
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.result"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "const": "unavailable"
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.result"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "const": "busy"
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.result"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "const": "text"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384,
+          "not": {
+            "pattern": "[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]"
+          }
+        }
+      ],
+      "minItems": 5,
+      "maxItems": 5,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.prepare"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.result"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "const": "ready"
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import Network
+import KomadoCore
 import WebRTC
 import XCTest
 @testable import KomadoHost
@@ -29,10 +30,13 @@ final class HostMediaSessionTests: XCTestCase {
             XCTAssertEqual(inputs.value, allowed ? 1 : 0)
             XCTAssertEqual(failures.value, allowed ? 0 : 1)
             if allowed {
+                let clipboard = try ClipboardRequest(sequence: 2, captureRevision: 1, operation: .get).encode()
+                delegate.dataChannel(channel, didReceiveMessageWith: RTCDataBuffer(data: clipboard, isBinary: false))
+                XCTAssertEqual(inputs.value, 2)
                 route.close()
-                let later = Data("[\"1\",\"pointer.click\",\"2\",\"1\",\"500000\",\"500000\",\"left\"]".utf8)
+                let later = Data("[\"1\",\"pointer.click\",\"3\",\"1\",\"500000\",\"500000\",\"left\"]".utf8)
                 delegate.dataChannel(channel, didReceiveMessageWith: RTCDataBuffer(data: later, isBinary: false))
-                XCTAssertEqual(inputs.value, 1)
+                XCTAssertEqual(inputs.value, 2)
                 XCTAssertEqual(failures.value, 1)
             }
         }
@@ -62,6 +66,7 @@ final class HostMediaSessionTests: XCTestCase {
         let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
         let session = try HostMediaSession(route: route, onFailure: {})
         XCTAssertThrowsError(try session.announceCapture(revision: 1))
+        XCTAssertFalse(session.sendClipboardResponse(ClipboardResponse(sequence: 1, result: .unavailable)))
         let offer = try await session.makeOffer()
         XCTAssertTrue(offer.hasPrefix("v=0\r\n"))
         XCTAssertTrue(offer.contains("m=video "))

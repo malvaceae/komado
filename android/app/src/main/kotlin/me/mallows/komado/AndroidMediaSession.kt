@@ -11,6 +11,11 @@ import me.mallows.komado.protocol.KeyboardText
 import me.mallows.komado.protocol.KeyboardTextCodec
 import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.protocol.KeyboardKeyCodec
+import me.mallows.komado.protocol.ClipboardCodec
+import me.mallows.komado.protocol.ClipboardRequest
+import me.mallows.komado.protocol.ClipboardResponse
+import me.mallows.komado.protocol.ClipboardResult
+import me.mallows.komado.protocol.ClipboardOperation
 import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.AudioTrack
 import org.webrtc.DataChannel
@@ -40,6 +45,7 @@ internal class AndroidMediaSession(
         /** Detach synchronously when the track is null, before the peer is disposed. */
         fun onVideo(track: VideoTrack?)
         fun onFailure()
+        fun onClipboardResponse(response: ClipboardResponse) = Unit
     }
 
     private enum class State { IDLE, NEGOTIATING, ANSWER_READY, CLOSED }
@@ -58,6 +64,14 @@ internal class AndroidMediaSession(
     private val timeout = Runnable { fail() }
     private var pendingMove: me.mallows.komado.protocol.PointerMove? = null
     private val retryMove = Runnable { flushMove() }
+    private enum class ClipboardExpected { GET, PREPARE, SET }
+    private data class PendingClipboard(val sequence: Long, val expected: ClipboardExpected)
+    private var pendingClipboard: PendingClipboard? = null
+    private val clipboardTimeout = Runnable {
+        val pending = pendingClipboard
+        pendingClipboard = null
+        if (pending != null) listener.onClipboardResponse(ClipboardResponse(pending.sequence, ClipboardResult.Unavailable))
+    }
 
     init {
         checkMainThread()
@@ -159,6 +173,36 @@ internal class AndroidMediaSession(
         return sendInput(drag.sequence, drag.captureRevision) { me.mallows.komado.protocol.PointerDragCodec.encode(drag) }
     }
 
+    fun sendClipboard(request: ClipboardRequest): Boolean {
+        checkMainThread()
+        if (pendingClipboard != null) return false
+        if (!sendInput(request.sequence, request.captureRevision) { ClipboardCodec.encodeRequest(request) }) return false
+        val expected = when (request.operation) {
+            ClipboardOperation.Get -> ClipboardExpected.GET
+            ClipboardOperation.Prepare -> ClipboardExpected.PREPARE
+            is ClipboardOperation.Set -> ClipboardExpected.SET
+        }
+        pendingClipboard = PendingClipboard(request.sequence, expected)
+        handler.postDelayed(clipboardTimeout, 10_000)
+        return true
+    }
+
+    private fun receiveClipboard(data: ByteArray) {
+        val response = try { ClipboardCodec.decodeResponse(data) } catch (_: Exception) { fail(); return }
+        val pending = pendingClipboard ?: return
+        if (response.sequence != pending.sequence) return
+        val valid = when (response.result) {
+            ClipboardResult.Unavailable, ClipboardResult.Busy -> true
+            ClipboardResult.Ok -> pending.expected == ClipboardExpected.SET
+            ClipboardResult.Ready -> pending.expected == ClipboardExpected.PREPARE
+            is ClipboardResult.Text -> pending.expected == ClipboardExpected.GET
+        }
+        if (!valid) { fail(); return }
+        pendingClipboard = null
+        handler.removeCallbacks(clipboardTimeout)
+        listener.onClipboardResponse(response)
+    }
+
     /** Coalesce hover updates while the reliable channel is congested. */
     fun sendMove(move: me.mallows.komado.protocol.PointerMove): Boolean {
         checkMainThread()
@@ -209,7 +253,9 @@ internal class AndroidMediaSession(
         state = State.CLOSED
         handler.removeCallbacks(timeout)
         handler.removeCallbacks(retryMove)
+        handler.removeCallbacks(clipboardTimeout)
         pendingMove = null
+        pendingClipboard = null
         try {
             if (trackShown) listener.onVideo(null)
         } finally {
@@ -268,19 +314,19 @@ internal class AndroidMediaSession(
                     override fun onBufferedAmountChange(previousAmount: Long) = Unit
                     override fun onStateChange() = Unit
                     override fun onMessage(buffer: DataChannel.Buffer) {
-                        if (buffer.binary || buffer.data.remaining() !in 1..256) {
+                        if (buffer.binary || buffer.data.remaining() !in 1..ClipboardCodec.MAX_MESSAGE_BYTES) {
                             postIfOpen { fail() }
                             return
                         }
                         val data = ByteArray(buffer.data.remaining())
                         buffer.data.get(data)
                         postIfOpen {
-                            if (captureRevision != null) fail() else {
+                            if (captureRevision == null) {
                                 val revision = try { CaptureReadyCodec.decode(data) } catch (_: Exception) { fail(); return@postIfOpen }
                                 captureRevision = revision
                                 handler.removeCallbacks(timeout)
                                 listener.onCaptureReady(revision)
-                            }
+                            } else receiveClipboard(data)
                         }
                     }
                 })

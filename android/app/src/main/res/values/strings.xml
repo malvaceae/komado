@@ -50,6 +50,14 @@
     <string name="trackpad_sensitivity">感度</string>
     <string name="trackpad_cursor_speed">カーソル速度: %1$d%%</string>
     <string name="trackpad_scroll_speed">スクロール感度: %1$d%%</string>
+    <string name="clipboard_send">Macへコピー</string>
+    <string name="clipboard_receive">Macからコピー</string>
+    <string name="clipboard_label">Macからコピー</string>
+    <string name="clipboard_sent">Macにコピーしました</string>
+    <string name="clipboard_received">Androidにコピーしました</string>
+    <string name="clipboard_changed">Android側のコピー内容が変わったため、上書きしませんでした。</string>
+    <string name="clipboard_busy">操作中です。もう一度お試しください。</string>
+    <string name="clipboard_unavailable">コピーできませんでした。Mac側の共有許可とテキストを確認してください。</string>
     <string name="control_double">ダブルタップでダブルクリック</string>
     <string name="control_long_press">長押しで右クリック</string>
     <string name="control_drag">長押し後の移動でドラッグ</string>

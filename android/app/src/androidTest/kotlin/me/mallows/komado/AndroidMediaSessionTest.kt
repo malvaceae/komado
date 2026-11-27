@@ -16,7 +16,13 @@ import me.mallows.komado.protocol.PointerDrag
 import me.mallows.komado.protocol.PointerDragCodec
 import me.mallows.komado.protocol.PointerMove
 import me.mallows.komado.protocol.PointerMoveCodec
+import me.mallows.komado.protocol.ClipboardCodec
+import me.mallows.komado.protocol.ClipboardRequest
+import me.mallows.komado.protocol.ClipboardResponse
+import me.mallows.komado.protocol.ClipboardResult
+import me.mallows.komado.protocol.ClipboardOperation
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.webrtc.DataChannel
@@ -96,6 +102,15 @@ class AndroidMediaSessionTest {
         val dragsReceived = ConcurrentLinkedQueue<PointerDrag>()
         val dragCount = CountDownLatch(3)
         val moveReceived = CompletableFuture<PointerMove>()
+        val clipboardRequests = ConcurrentLinkedQueue<ClipboardRequest>()
+        val clipboardGetReceived = CompletableFuture<ClipboardRequest>()
+        val clipboardLargeGetReceived = CompletableFuture<ClipboardRequest>()
+        val clipboardPrepareReceived = CompletableFuture<ClipboardRequest>()
+        val clipboardSetReceived = CompletableFuture<ClipboardRequest>()
+        val clipboardGetReply = CompletableFuture<ClipboardResponse>()
+        val clipboardPrepareReply = CompletableFuture<ClipboardResponse>()
+        val clipboardSetReply = CompletableFuture<ClipboardResponse>()
+        val clipboardLargeReply = CompletableFuture<ClipboardResponse>()
         channel.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) = Unit
             override fun onStateChange() = Unit
@@ -116,8 +131,18 @@ class AndroidMediaSessionTest {
                             else {
                                 val drag = runCatching { PointerDragCodec.decode(bytes) }.getOrNull()
                                 if (drag != null) { dragsReceived.add(drag); dragCount.countDown() }
-                                else runCatching { PointerMoveCodec.decode(bytes) }.onSuccess { moveReceived.complete(it) }
-                                    .onFailure { moveReceived.completeExceptionally(it) }
+                                else {
+                                    val move = runCatching { PointerMoveCodec.decode(bytes) }.getOrNull()
+                                    if (move != null) moveReceived.complete(move) else {
+                                        val request = ClipboardCodec.decodeRequest(bytes)
+                                        clipboardRequests.add(request)
+                                        when (request.operation) {
+                                            ClipboardOperation.Get -> if (request.sequence == 12L) clipboardLargeGetReceived.complete(request) else clipboardGetReceived.complete(request)
+                                            ClipboardOperation.Prepare -> clipboardPrepareReceived.complete(request)
+                                            is ClipboardOperation.Set -> clipboardSetReceived.complete(request)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -146,6 +171,12 @@ class AndroidMediaSessionTest {
                 receiver = AndroidMediaSession(instrumentation.targetContext, address, object : AndroidMediaSession.Listener {
                     override fun onAnswer(sdp: String) { answer.complete(sdp) }
                     override fun onCaptureReady(revision: Long) { if (revision == 1L) captureReady.countDown() }
+                    override fun onClipboardResponse(response: ClipboardResponse) {
+                        if (response.sequence == 9L) clipboardGetReply.complete(response)
+                        if (response.sequence == 10L) clipboardPrepareReply.complete(response)
+                        if (response.sequence == 11L) clipboardSetReply.complete(response)
+                        if (response.sequence == 12L) clipboardLargeReply.complete(response)
+                    }
                     override fun onVideo(track: VideoTrack?) {
                         attached?.removeSink(sink)
                         attached = track
@@ -204,6 +235,36 @@ class AndroidMediaSessionTest {
             assertTrue(dragCount.await(5, TimeUnit.SECONDS))
             assertTrue(dragsReceived.toList() == drags)
             assertTrue(moveReceived.get(5, TimeUnit.SECONDS) == move)
+            val get = ClipboardRequest(9, 1, ClipboardOperation.Get)
+            instrumentation.runOnMainSync {
+                assertTrue(requireNotNull(receiver).sendClipboard(get))
+                assertTrue(!requireNotNull(receiver).sendClipboard(ClipboardRequest(10, 1, ClipboardOperation.Prepare)))
+            }
+            assertEquals(get, clipboardGetReceived.get(5, TimeUnit.SECONDS))
+            val ignored = ClipboardResponse(99, ClipboardResult.Text("ignored"))
+            assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(ClipboardCodec.encodeResponse(ignored)), false)))
+            val answerClipboard = ClipboardResponse(9, ClipboardResult.Text("日本語😀"))
+            assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(ClipboardCodec.encodeResponse(answerClipboard)), false)))
+            assertEquals(answerClipboard, clipboardGetReply.get(5, TimeUnit.SECONDS))
+            val prepare = ClipboardRequest(10, 1, ClipboardOperation.Prepare)
+            instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendClipboard(prepare)) }
+            assertEquals(prepare, clipboardPrepareReceived.get(5, TimeUnit.SECONDS))
+            val ready = ClipboardResponse(10, ClipboardResult.Ready)
+            assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(ClipboardCodec.encodeResponse(ready)), false)))
+            assertEquals(ready, clipboardPrepareReply.get(5, TimeUnit.SECONDS))
+            val set = ClipboardRequest(11, 1, ClipboardOperation.Set("sample"))
+            instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendClipboard(set)) }
+            assertEquals(set, clipboardSetReceived.get(5, TimeUnit.SECONDS))
+            val accepted = ClipboardResponse(11, ClipboardResult.Ok)
+            assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(ClipboardCodec.encodeResponse(accepted)), false)))
+            assertEquals(accepted, clipboardSetReply.get(5, TimeUnit.SECONDS))
+            assertEquals(listOf(get, prepare, set), clipboardRequests.toList())
+            val largeGet = ClipboardRequest(12, 1, ClipboardOperation.Get)
+            instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendClipboard(largeGet)) }
+            assertEquals(largeGet, clipboardLargeGetReceived.get(5, TimeUnit.SECONDS))
+            val largeReply = ClipboardResponse(12, ClipboardResult.Text("あ".repeat(5_461)))
+            assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(ClipboardCodec.encodeResponse(largeReply)), false)))
+            assertEquals(largeReply, clipboardLargeReply.get(5, TimeUnit.SECONDS))
             source.capturerObserver.onCapturerStarted(true)
             for (i in 0 until 50) {
                 val frame = VideoFrame(JavaI420Buffer.allocate(320, 240), 0, System.nanoTime())

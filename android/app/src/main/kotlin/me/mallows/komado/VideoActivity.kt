@@ -2,6 +2,8 @@ package me.mallows.komado
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -10,6 +12,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import android.widget.Toast
 import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.WindowInfo
@@ -18,6 +21,10 @@ import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerScroll
 import me.mallows.komado.protocol.PointerDrag
 import me.mallows.komado.protocol.PointerMove
+import me.mallows.komado.protocol.ClipboardRequest
+import me.mallows.komado.protocol.ClipboardResponse
+import me.mallows.komado.protocol.ClipboardResult
+import me.mallows.komado.protocol.ClipboardOperation
 import me.mallows.komado.security.DeviceSigningKey
 import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
@@ -49,6 +56,12 @@ class VideoActivity : Activity() {
     private var trackpadSettingsButton: Button? = null
     private val trackpadSettings by lazy { TrackpadSettings(applicationContext) }
     private var trackpadEnabled = false
+    private var clipboardSendButton: Button? = null
+    private var clipboardReceiveButton: Button? = null
+    private enum class ClipboardAction { GET, PREPARE_SEND, SEND }
+    private var clipboardAction: ClipboardAction? = null
+    private var clipboardChangedDuringRequest = false
+    private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
     private var lastVideoTapSent = false
@@ -158,6 +171,16 @@ class VideoActivity : Activity() {
             trackpadControls.addView(trackpadButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             trackpadControls.addView(trackpadSettingsButton)
             root.addView(trackpadControls)
+            clipboardSendButton = Button(this).apply {
+                setText(R.string.clipboard_send); isEnabled = false; setOnClickListener { requestClipboard(get = false) }
+            }
+            clipboardReceiveButton = Button(this).apply {
+                setText(R.string.clipboard_receive); isEnabled = false; setOnClickListener { requestClipboard(get = true) }
+            }
+            val clipboardControls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            clipboardControls.addView(clipboardSendButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            clipboardControls.addView(clipboardReceiveButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            root.addView(clipboardControls)
             root.addView(TextView(this).apply { setText(R.string.special_keys_hint); setPadding(dp(8), 0, dp(8), 0) })
             specialKeys = SpecialKeyBar(this) { key, modifiers ->
                 val revision = captureRevision
@@ -280,6 +303,7 @@ class VideoActivity : Activity() {
                         }
                         override fun onVideo(track: VideoTrack?) { renderer?.show(track) }
                         override fun onFailure() { stopSession(failed = true) }
+                        override fun onClipboardResponse(response: ClipboardResponse) { handleClipboardResponse(response) }
                     })
                     media = session
                     session.acceptOffer(offer)
@@ -311,8 +335,78 @@ class VideoActivity : Activity() {
         keyboardButton?.isEnabled = available && "keyboard.text" in supportedFeatures
         trackpadButton?.isEnabled = available && "pointer.move" in supportedFeatures && viewport?.supportsTrackpad() == true
         trackpadSettingsButton?.isEnabled = trackpadButton?.isEnabled == true && trackpadEnabled
+        val clipboardAvailable = available && controlMode && "clipboard.manual" in supportedFeatures && clipboardAction == null
+        clipboardSendButton?.isEnabled = clipboardAvailable
+        clipboardReceiveButton?.isEnabled = clipboardAvailable
         specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures)
     }
+
+    private fun requestClipboard(get: Boolean) {
+        if (!active || !hasWindowFocus() || clipboardAction != null || "clipboard.manual" !in supportedFeatures) return
+        val revision = captureRevision ?: return
+        val sequence = controlSequence.next() ?: run { showClipboardMessage(R.string.clipboard_unavailable); return }
+        val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboardChangedDuringRequest = false
+        val listener = ClipboardManager.OnPrimaryClipChangedListener { clipboardChangedDuringRequest = true }
+        if (runCatching { manager.addPrimaryClipChangedListener(listener) }.isFailure) {
+            showClipboardMessage(R.string.clipboard_unavailable); return
+        }
+        clipboardListener = listener
+        val operation = if (get) ClipboardOperation.Get else ClipboardOperation.Prepare
+        if (media?.sendClipboard(ClipboardRequest(sequence, revision, operation)) != true) {
+            removeClipboardListener(); showClipboardMessage(R.string.clipboard_unavailable); return
+        }
+        clipboardAction = if (get) ClipboardAction.GET else ClipboardAction.PREPARE_SEND
+        updateControlAvailability()
+    }
+
+    private fun handleClipboardResponse(response: ClipboardResponse) {
+        val action = clipboardAction ?: return
+        clipboardAction = null
+        val changed = clipboardChangedDuringRequest
+        if (action == ClipboardAction.PREPARE_SEND && response.result == ClipboardResult.Ready) {
+            val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val text = if (active && hasWindowFocus() && !changed) ClipboardContent.text(runCatching { manager.primaryClip }.getOrNull()) else null
+            removeClipboardListener()
+            val revision = captureRevision
+            val sequence = if (text != null && revision != null) controlSequence.next() else null
+            if (text != null && revision != null && sequence != null &&
+                media?.sendClipboard(ClipboardRequest(sequence, revision, ClipboardOperation.Set(text))) == true) {
+                clipboardAction = ClipboardAction.SEND
+                updateControlAvailability()
+                return
+            }
+            updateControlAvailability()
+            showClipboardMessage(if (changed) R.string.clipboard_changed else R.string.clipboard_unavailable)
+            return
+        }
+        removeClipboardListener()
+        updateControlAvailability()
+        val message = when (val result = response.result) {
+            ClipboardResult.Ok -> if (action == ClipboardAction.SEND) R.string.clipboard_sent else R.string.clipboard_unavailable
+            ClipboardResult.Ready -> R.string.clipboard_unavailable
+            ClipboardResult.Busy -> R.string.clipboard_busy
+            ClipboardResult.Unavailable -> R.string.clipboard_unavailable
+            is ClipboardResult.Text -> {
+                val clip = if (action == ClipboardAction.GET && active && hasWindowFocus() && !changed)
+                    ClipboardContent.remote(result.value, getString(R.string.clipboard_label)) else null
+                val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                if (changed && action == ClipboardAction.GET) R.string.clipboard_changed
+                else if (clip != null && runCatching { manager.setPrimaryClip(clip) }.isSuccess) R.string.clipboard_received
+                else R.string.clipboard_unavailable
+            }
+        }
+        showClipboardMessage(message)
+    }
+
+    private fun removeClipboardListener() {
+        val listener = clipboardListener ?: return
+        clipboardListener = null
+        val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        runCatching { manager.removePrimaryClipChangedListener(listener) }
+    }
+
+    private fun showClipboardMessage(message: Int) { Toast.makeText(this, message, Toast.LENGTH_SHORT).show() }
 
     private fun showTrackpadSettings() {
         val current = trackpadSettings.load()
@@ -407,6 +501,10 @@ class VideoActivity : Activity() {
         viewport?.onVideoHover = null
         trackpadButton?.isEnabled = false
         trackpadSettingsButton?.isEnabled = false
+        clipboardAction = null
+        removeClipboardListener()
+        clipboardSendButton?.isEnabled = false
+        clipboardReceiveButton?.isEnabled = false
         keyboardButton?.isEnabled = false
         specialKeys?.setAvailable(false)
         keyboard?.close()

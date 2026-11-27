@@ -1,0 +1,40 @@
+{
+  "requests": {
+    "valid": [
+      "[\"1\",\"clipboard.get\",\"1\",\"1\"]",
+      "[\"1\",\"clipboard.set\",\"2\",\"1\",\"日本語😀\\t改行\\r\\n\"]",
+      "[\"1\",\"clipboard.get\",\"9007199254740991\",\"42\"]",
+      "[\"1\",\"clipboard.prepare\",\"3\",\"1\"]"
+    ],
+    "invalid": [
+      "[\"1\",\"clipboard.get\",\"0\",\"1\"]",
+      "[\"1\",\"clipboard.get\",\"1\",\"01\"]",
+      "[\"1\",\"clipboard.get\",\"9007199254740992\",\"1\"]",
+      "[\"1\",\"clipboard.set\",\"1\",\"1\",\"\"]",
+      "[\"1\",\"clipboard.set\",\"1\",\"1\",\"a\\u0000b\"]",
+      "[\"1\",\"clipboard.get\",\"1\",\"1\",\"extra\"]",
+      "[\"1\",\"clipboard.set\",1,\"1\",\"abc\"]",
+      "[\"1\",\"clipboard.get\",\"1\",\"1\",]",
+      "[\"1\",\"clipboard.set\",\"1\",\"1\",\"\\ud800\"]",
+      "[\"1\",\"clipboard.prepare\",\"3\",\"1\",\"extra\"]"
+    ]
+  },
+  "responses": {
+    "valid": [
+      "[\"1\",\"clipboard.result\",\"1\",\"ok\"]",
+      "[\"1\",\"clipboard.result\",\"2\",\"text\",\"日本語😀\\r\\n\"]",
+      "[\"1\",\"clipboard.result\",\"3\",\"unavailable\"]",
+      "[\"1\",\"clipboard.result\",\"4\",\"busy\"]",
+      "[\"1\",\"clipboard.result\",\"3\",\"ready\"]"
+    ],
+    "invalid": [
+      "[\"1\",\"clipboard.result\",\"0\",\"ok\"]",
+      "[\"1\",\"clipboard.result\",\"1\",\"ok\",\"extra\"]",
+      "[\"1\",\"clipboard.result\",\"1\",\"text\",\"\"]",
+      "[\"1\",\"clipboard.result\",\"1\",\"text\",\"a\\u0000b\"]",
+      "[\"1\",\"clipboard.result\",\"1\",\"unknown\"]",
+      "[\"1\",\"clipboard.result\",\"1\",\"ok\"] []",
+      "[\"1\",\"clipboard.result\",\"3\",\"ready\",\"extra\"]"
+    ]
+  }
+}

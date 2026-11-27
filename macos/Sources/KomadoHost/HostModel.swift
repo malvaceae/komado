@@ -41,11 +41,15 @@ final class HostModel: ObservableObject {
     @Published private(set) var screenPermission = CGPreflightScreenCaptureAccess()
     @Published var allowRemoteControl = false {
         didSet {
+            if !allowRemoteControl { allowClipboardSharing = false }
             if !allowRemoteControl, mediaTarget?.isControl == true {
                 let session = mediaID
                 Task { if mediaID == session { await stopSharing() } }
             }
         }
+    }
+    @Published var allowClipboardSharing = false {
+        didSet { if !allowClipboardSharing { clipboardTransfer.reset() } }
     }
     @Published var vpnAddress = ""
     @Published var keepAwakeWhileListening: Bool {
@@ -89,6 +93,7 @@ final class HostModel: ObservableObject {
     private var dragDispatcher: PointerDragDispatcher?
     private var moveDispatcher: PointerMoveDispatcher?
     private var lastExecutedControlSequence: UInt64 = 0
+    private let clipboardTransfer: ClipboardTransfer
     private var sleepActivity: IdleSleepActivity?
     private var waitingSleepActivity: IdleSleepActivity?
     private static let port: NWEndpoint.Port = 48365
@@ -100,7 +105,9 @@ final class HostModel: ObservableObject {
     }
 
     init(identityStore: HostTLSIdentityStore, registry: PairedDeviceRegistry,
-         pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator, settings: UserDefaults = .standard) {
+         pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator, settings: UserDefaults = .standard,
+         clipboardTransfer: ClipboardTransfer = ClipboardTransfer()) {
+        self.clipboardTransfer = clipboardTransfer
         self.settings = settings
         self.keepAwakeWhileListening = settings.bool(forKey: Self.keepAwakeKey)
         self.identityStore = identityStore
@@ -529,6 +536,17 @@ final class HostModel: ObservableObject {
             if mediaID == id, dragDispatcher?.isDragging == true { mediaFailed(id: id) }
             return
         }
+        if case let .clipboard(request) = input {
+            var delivered = false
+            route.withAllowedFrame {
+                lastExecutedControlSequence = request.sequence
+                let result = clipboardTransfer.execute(request.operation, allowed: allowClipboardSharing,
+                                                       busy: dragDispatcher?.isDragging == true)
+                delivered = mediaSession?.sendClipboardResponse(ClipboardResponse(sequence: request.sequence, result: result)) == true
+            }
+            if !delivered { mediaFailed(id: id) }
+            return
+        }
         if dragDispatcher?.isDragging == true {
             if case .drag = input {} else { mediaFailed(id: id); return }
         }
@@ -557,6 +575,7 @@ final class HostModel: ObservableObject {
                                                  hitBounds: hit.bounds, windows: windows)
                     } else { allowed = false }
                 } else { allowed = false }
+            case .clipboard: allowed = false
             }
             guard allowed else {
                 if dragDispatcher?.isDragging == true { mediaFailed(id: id) }
@@ -572,7 +591,7 @@ final class HostModel: ObservableObject {
             geometry = candidate
             switch input {
             case .text, .key: guard FocusedWindow.isOnDisplay(bounds) else { return }
-            case .click, .scroll, .drag, .move: break
+            case .click, .scroll, .drag, .move, .clipboard: break
             }
         }
         var invalidDrag = false
@@ -587,6 +606,7 @@ final class HostModel: ObservableObject {
             case let .scroll(scroll): _ = scrollDispatcher?.send(scroll, geometry: geometry, mapping: mapping, sessionAllowed: true)
             case let .drag(drag): invalidDrag = dragDispatcher?.send(drag, geometry: geometry, mapping: mapping, sessionAllowed: true) != true
             case let .move(move): _ = moveDispatcher?.send(move, geometry: geometry, mapping: mapping, sessionAllowed: true)
+            case .clipboard: break
             }
         }
         if invalidDrag || (!executed && dragDispatcher?.isDragging == true) { mediaFailed(id: id) }
@@ -597,7 +617,7 @@ final class HostModel: ObservableObject {
         mediaID = UUID()
         mediaConnection = nil
         mediaTarget = nil
-        if wasControl { allowRemoteControl = false }
+        if wasControl { allowRemoteControl = false; allowClipboardSharing = false }
         pointerDispatcher?.close()
         textDispatcher?.close()
         keyDispatcher?.close()
@@ -611,6 +631,7 @@ final class HostModel: ObservableObject {
         dragDispatcher = nil
         moveDispatcher = nil
         lastExecutedControlSequence = 0
+        clipboardTransfer.reset()
         controlDisplayID = nil
         controlBounds = nil
         controlWindow = nil
