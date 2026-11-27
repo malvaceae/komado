@@ -5,4 +5,12 @@ public enum MediaTarget: Equatable, Sendable {
     case mainDisplayControl
     case display(UInt32)
     case window(info: WindowInfo, processID: Int32)
+    case windowControl(info: WindowInfo, processID: Int32)
+
+    public var isControl: Bool {
+        switch self {
+        case .mainDisplayControl, .windowControl: true
+        default: false
+        }
+    }
 }

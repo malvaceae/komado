@@ -45,6 +45,7 @@ public enum SignalMessage: Equatable, Sendable {
     case listWindows(UInt16)
     case windows(next: UInt16, values: [WindowInfo])
     case startWindow(UInt32)
+    case startWindowControl(UInt32)
     case offer(String)
     case answer(String)
 
@@ -125,6 +126,9 @@ public enum SignalMessage: Equatable, Sendable {
             }
             guard !windows.isEmpty || next == 0 else { throw MessageError.invalid }
             return .windows(next: UInt16(next), values: windows)
+        case "window.control":
+            guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
+            return .startWindowControl(UInt32(id))
         case "window.start":
             guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
             return .startWindow(UInt32(id))
@@ -173,6 +177,9 @@ public enum SignalMessage: Equatable, Sendable {
             fields = ["1", "window.listed", String(next)] + values.flatMap {
                 [String($0.id), String($0.width), String($0.height), $0.application, $0.title]
             }
+        case let .startWindowControl(id):
+            guard id > 0 else { throw MessageError.invalid }
+            fields = ["1", "window.control", String(id)]
         case let .startWindow(id):
             guard id > 0 else { throw MessageError.invalid }
             fields = ["1", "window.start", String(id)]

@@ -41,7 +41,7 @@ final class HostModel: ObservableObject {
     @Published private(set) var screenPermission = CGPreflightScreenCaptureAccess()
     @Published var allowRemoteControl = false {
         didSet {
-            if !allowRemoteControl, mediaTarget == .mainDisplayControl {
+            if !allowRemoteControl, mediaTarget?.isControl == true {
                 let session = mediaID
                 Task { if mediaID == session { await stopSharing() } }
             }
@@ -81,6 +81,7 @@ final class HostModel: ObservableObject {
     private var capture: DisplayCapture?
     private var controlDisplayID: CGDirectDisplayID?
     private var controlBounds: CGRect?
+    private var controlWindow: WindowControlSafety?
     private var pointerDispatcher: PointerClickDispatcher?
     private var textDispatcher: KeyboardTextDispatcher?
     private var keyDispatcher: KeyboardKeyDispatcher?
@@ -381,7 +382,7 @@ final class HostModel: ObservableObject {
             Task { await server.disconnect(sessionID: connection) }
             return
         }
-        if target == .mainDisplayControl && (!allowRemoteControl || !AXIsProcessTrusted()) {
+        if target.isControl && (!allowRemoteControl || !AXIsProcessTrusted()) {
             error = "操作の許可とアクセシビリティの許可が必要です。"
             Task { await server.disconnect(sessionID: connection) }
             return
@@ -396,7 +397,7 @@ final class HostModel: ObservableObject {
         let route = MediaRouteGate(address: address, onInvalidRoute: failed)
         do {
             let onControl: (@Sendable (ControlInput) -> Void)?
-            if target == .mainDisplayControl {
+            if target.isControl {
                 onControl = { @Sendable [weak self] input in
                     DispatchQueue.main.async { [weak self] in self?.receiveControl(input, id: id) }
                 }
@@ -435,7 +436,10 @@ final class HostModel: ObservableObject {
                 guard let self, self.mediaID == id, !Task.isCancelled else { return }
                 guard let target = self.mediaTarget else { throw HostMediaSession.SessionError.creationFailed }
                 let onScreenOnly: Bool
-                if case .window = target { onScreenOnly = false } else { onScreenOnly = true }
+                switch target {
+                case .window, .windowControl: onScreenOnly = false
+                default: onScreenOnly = true
+                }
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: onScreenOnly)
                 guard self.mediaID == id, !Task.isCancelled else { return }
                 let onStopped: @Sendable () -> Void = { [weak self] in
@@ -470,10 +474,26 @@ final class HostModel: ObservableObject {
                         self.controllingScreen = true
                     }
                     captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, onStopped: onStopped)
-                case let .window(info, processID):
+                case let .window(info, processID), let .windowControl(info, processID):
                     guard let window = content.windows.first(where: {
                         WindowCatalog.matches(window: $0, info: info, processID: processID)
                     }) else { throw HostMediaSession.SessionError.creationFailed }
+                    if target.isControl {
+                        let snapshot = ControlWindowSnapshot(id: info.id, processID: processID, bounds: window.frame)
+                        guard window.isOnScreen, let windows = ControlWindowSnapshot.onScreen(),
+                              windows.first(where: { $0.id == info.id }) == snapshot,
+                              CaptureGeometry(revision: 1, bounds: window.frame) != nil else {
+                            throw HostMediaSession.SessionError.creationFailed
+                        }
+                        self.controlWindow = WindowControlSafety(target: snapshot)
+                        self.pointerDispatcher = PointerClickDispatcher()
+                        self.textDispatcher = KeyboardTextDispatcher()
+                        self.keyDispatcher = KeyboardKeyDispatcher()
+                        self.scrollDispatcher = PointerScrollDispatcher()
+                        self.dragDispatcher = PointerDragDispatcher()
+                        self.moveDispatcher = PointerMoveDispatcher()
+                        self.controllingScreen = true
+                    }
                     self.sharingDisplayName = "\(info.application) — \(info.title)"
                     self.sharingWindow = true
                     self.sharingScreen = true
@@ -497,13 +517,10 @@ final class HostModel: ObservableObject {
     }
 
     private func receiveControl(_ input: ControlInput, id: UUID) {
-        guard mediaID == id, mediaTarget == .mainDisplayControl, allowRemoteControl,
+        guard mediaID == id, mediaTarget?.isControl == true, allowRemoteControl,
               sharingScreen, NSApplication.shared.isProtectedDataAvailable,
               let session = CGSessionCopyCurrentDictionary() as? [String: Any],
               session[kCGSessionOnConsoleKey as String] as? Bool == true,
-              let displayID = controlDisplayID, CGDisplayIsActive(displayID) != 0,
-              let bounds = controlBounds, CGDisplayBounds(displayID) == bounds,
-              let geometry = CaptureGeometry(revision: 1, bounds: bounds),
               let mapping = capture?.frameMapping, let route = mediaRoute,
               input.sequence > lastExecutedControlSequence else {
             if mediaID == id, dragDispatcher?.isDragging == true { mediaFailed(id: id) }
@@ -512,9 +529,48 @@ final class HostModel: ObservableObject {
         if dragDispatcher?.isDragging == true {
             if case .drag = input {} else { mediaFailed(id: id); return }
         }
-        switch input {
-        case .text, .key: guard FocusedWindow.isOnDisplay(bounds) else { return }
-        case .click, .scroll, .drag, .move: break
+        let geometry: CaptureGeometry
+        if let window = controlWindow {
+            guard let candidate = CaptureGeometry(revision: 1, bounds: window.target.bounds),
+                  let windows = ControlWindowSnapshot.onScreen() else {
+                if dragDispatcher?.isDragging == true { mediaFailed(id: id) }
+                return
+            }
+            geometry = candidate
+            let allowed: Bool
+            switch input {
+            case .text, .key:
+                if let focused = FocusedWindow.snapshot() {
+                    allowed = window.permitsKeyboard(focusedProcessID: focused.processID,
+                                                     focusedBounds: focused.bounds, windows: windows)
+                } else { allowed = false }
+            case .click, .scroll, .drag, .move:
+                if let coordinate = input.pointerCoordinate,
+                   let normalized = mapping.normalizedContentPoint(x: Double(coordinate.x) / 1_000_000,
+                                                                    y: Double(coordinate.y) / 1_000_000),
+                   let point = geometry.point(x: normalized.x, y: normalized.y, captureRevision: input.captureRevision) {
+                    if let hit = FocusedWindow.window(at: point) {
+                        allowed = window.permits(point: point, hitProcessID: hit.processID,
+                                                 hitBounds: hit.bounds, windows: windows)
+                    } else { allowed = false }
+                } else { allowed = false }
+            }
+            guard allowed else {
+                if dragDispatcher?.isDragging == true { mediaFailed(id: id) }
+                return
+            }
+        } else {
+            guard let displayID = controlDisplayID, CGDisplayIsActive(displayID) != 0,
+                  let bounds = controlBounds, CGDisplayBounds(displayID) == bounds,
+                  let candidate = CaptureGeometry(revision: 1, bounds: bounds) else {
+                if dragDispatcher?.isDragging == true { mediaFailed(id: id) }
+                return
+            }
+            geometry = candidate
+            switch input {
+            case .text, .key: guard FocusedWindow.isOnDisplay(bounds) else { return }
+            case .click, .scroll, .drag, .move: break
+            }
         }
         var invalidDrag = false
         var executed = false
@@ -534,7 +590,7 @@ final class HostModel: ObservableObject {
     }
 
     private func stopMedia() {
-        let wasControl = mediaTarget == .mainDisplayControl
+        let wasControl = mediaTarget?.isControl == true
         mediaID = UUID()
         mediaConnection = nil
         mediaTarget = nil
@@ -554,6 +610,7 @@ final class HostModel: ObservableObject {
         lastExecutedControlSequence = 0
         controlDisplayID = nil
         controlBounds = nil
+        controlWindow = nil
         mediaTask?.cancel()
         mediaTask = nil
         mediaRoute?.close()

@@ -19,7 +19,7 @@ actor SignalingSession {
     private var device: PairedDevice?
     private var mediaState: MediaState = .idle
     private var featuresRequested = false
-    private static let controlFeatures = ["pointer.click", "pointer.double", "pointer.drag", "pointer.scroll", "pointer.move", "keyboard.text", "keyboard.key"]
+    private static let controlFeatures = ["pointer.click", "pointer.double", "pointer.drag", "pointer.scroll", "pointer.move", "keyboard.text", "keyboard.key", "window.control"]
     private var displaySnapshot: [DisplayInfo]?
     private var windowSnapshot: [WindowSelection]?
     private var nextWindowOffset: UInt16? = 0
@@ -159,6 +159,12 @@ actor SignalingSession {
                         guard let snapshot = displaySnapshot, snapshot.contains(where: { $0.id == id }),
                               try DisplayCatalog.active() == snapshot else { await close(); return }
                         target = .display(id); startsMedia = true
+                    case let .startWindowControl(id):
+                        guard let snapshot = windowSnapshot,
+                              let selected = snapshot.prefix(sentWindowCount).first(where: { $0.info.id == id }),
+                              try await WindowCatalog.matches(selected),
+                              !closed else { await close(); return }
+                        target = .windowControl(info: selected.info, processID: selected.processID); startsMedia = true
                     case let .startWindow(id):
                         guard let snapshot = windowSnapshot,
                               let selected = snapshot.prefix(sentWindowCount).first(where: { $0.info.id == id }),

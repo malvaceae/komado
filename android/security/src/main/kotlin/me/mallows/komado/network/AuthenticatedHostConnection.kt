@@ -54,10 +54,11 @@ class AuthenticatedHostConnection private constructor(
     fun requestMedia(displayId: Long? = null, windowId: Long? = null, control: Boolean = false) = synchronized(mediaLock) {
         if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
         try {
-            if ((displayId != null && windowId != null) || (control && (displayId != null || windowId != null))) {
+            if ((displayId != null && windowId != null) || (control && displayId != null)) {
                 throw IOException("Conflicting capture targets")
             }
             val request = when {
+                control && windowId != null -> SignalMessage.StartWindowControl(windowId)
                 control -> SignalMessage.StartControl
                 displayId != null -> SignalMessage.StartDisplay(displayId)
                 windowId != null -> SignalMessage.StartWindow(windowId)

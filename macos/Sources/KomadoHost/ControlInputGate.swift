@@ -9,6 +9,16 @@ enum ControlInput: Equatable, Sendable {
     case drag(PointerDrag)
     case move(PointerMove)
 
+    var pointerCoordinate: (x: UInt32, y: UInt32)? {
+        switch self {
+        case let .click(value): (value.x, value.y)
+        case let .scroll(value): (value.x, value.y)
+        case let .drag(value): (value.x, value.y)
+        case let .move(value): (value.x, value.y)
+        case .text, .key: nil
+        }
+    }
+
     var sequence: UInt64 {
         switch self { case let .click(value): value.sequence; case let .text(value): value.sequence; case let .key(value): value.sequence; case let .scroll(value): value.sequence; case let .drag(value): value.sequence; case let .move(value): value.sequence }
     }

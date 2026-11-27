@@ -58,6 +58,12 @@ class VideoActivity : Activity() {
         root.addView(TextView(this).apply { text = host?.name.orEmpty(); textSize = 20f; setPadding(dp(16), dp(12), dp(16), 0) })
         status = TextView(this).apply { setText(R.string.screen_authenticating); setPadding(dp(16), dp(8), dp(16), dp(8)) }
         root.addView(status)
+        if (controlMode && intent.getBooleanExtra(CHOOSE_WINDOW, false)) {
+            root.addView(TextView(this).apply {
+                setText(R.string.window_control_note)
+                setPadding(dp(16), 0, dp(16), dp(8))
+            })
+        }
         try {
             val video = RemoteVideoRenderer(this, object : RendererCommon.RendererEvents {
                 override fun onFirstFrameRendered() {
@@ -162,7 +168,8 @@ class VideoActivity : Activity() {
                         runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.features_failed) } }
                         return@execute
                     }
-                    if ("pointer.click" !in features) {
+                    if ("pointer.click" !in features ||
+                        (intent.getBooleanExtra(CHOOSE_WINDOW, false) && "window.control" !in features)) {
                         runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.features_unsupported) } }
                         return@execute
                     }

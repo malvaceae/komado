@@ -135,6 +135,35 @@ class AuthenticatedHostConnectionTest {
         }
     }
 
+    @Test fun windowControlRequestUsesSelectedWindow() {
+        withServer { server, fingerprint ->
+            val executor = Executors.newSingleThreadExecutor()
+            val id = UUID.randomUUID()
+            val task = executor.submit {
+                (server.accept() as SSLSocket).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.startHandshake()
+                    receive(socket) as SignalMessage.Pair
+                    send(socket, SignalMessage.Challenge(ByteArray(32)))
+                    receive(socket) as SignalMessage.Proof
+                    send(socket, SignalMessage.Accepted(id))
+                    assertEquals(SignalMessage.StartWindowControl(123), receive(socket))
+                }
+            }
+            try {
+                val connection = AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint,
+                    "Android test", ByteArray(32), key)
+                connection.requestMedia(windowId = 123, control = true)
+                connection.close()
+                task.get(20, TimeUnit.SECONDS)
+            } finally {
+                server.close()
+                executor.shutdownNow()
+                executor.awaitTermination(10, TimeUnit.SECONDS)
+            }
+        }
+    }
+
     @Test fun mismatchedPinIsRejectedBeforeDeviceKeyCreation() {
         withServer { server, fingerprint ->
             val executor = Executors.newSingleThreadExecutor()

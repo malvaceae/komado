@@ -50,11 +50,13 @@
     <string name="control_hover">マウスの移動でカーソルを移動</string>
     <string name="control_zoom">ピンチで拡大・縮小</string>
     <string name="features_failed">Macの機能情報を取得できませんでした。Macのアプリと接続状態を確認してください。</string>
-    <string name="features_unsupported">このMacは画面の操作に対応していません。</string>
+    <string name="features_unsupported">このMacは選択した対象の操作に対応していません。</string>
     <string name="select_screen">画面を選択</string>
     <string name="screen_option">画面 %1$d（%2$d × %3$d px）</string>
     <string name="screen_selection_failed">画面一覧を取得できませんでした。Macの状態とアプリのバージョンを確認してください。</string>
     <string name="select_window">ウインドウを選択</string>
+    <string name="control_window">ウインドウを操作</string>
+    <string name="window_control_note">Mac上で見えている部分を操作できます。文字入力にはウインドウのフォーカスが必要です。移動やサイズ変更後は接続し直してください。</string>
     <string name="window_option">%1$s — %2$s</string>
     <string name="window_search">アプリ名またはタイトルで検索</string>
     <string name="window_search_empty">一致するウインドウがありません。</string>
