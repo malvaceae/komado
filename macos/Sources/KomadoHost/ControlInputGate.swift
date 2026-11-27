@@ -44,16 +44,21 @@ final class ControlInputGate: @unchecked Sendable {
     }
 
     func accept(_ data: Data, binary: Bool) -> ControlInput? {
-        guard !binary else { return nil }
+        guard !binary, (1...ClipboardCodec.maximumMessageBytes).contains(data.count),
+              let fields = (try? JSONSerialization.jsonObject(with: data)) as? [Any],
+              fields.count >= 2, let type = fields[1] as? String else { return nil }
         let input: ControlInput
-        if let click = try? PointerClick.decode(data) { input = .click(click) }
-        else if let text = try? KeyboardText.decode(data) { input = .text(text) }
-        else if let key = try? KeyboardKey.decode(data) { input = .key(key) }
-        else if let scroll = try? PointerScroll.decode(data) { input = .scroll(scroll) }
-        else if let drag = try? PointerDrag.decode(data) { input = .drag(drag) }
-        else if let move = try? PointerMove.decode(data) { input = .move(move) }
-        else if let clipboard = try? ClipboardRequest.decode(data) { input = .clipboard(clipboard) }
-        else { return nil }
+        switch type {
+        case "pointer.click": guard let value = try? PointerClick.decode(data) else { return nil }; input = .click(value)
+        case "keyboard.text", "keyboard.text.checked": guard let value = try? KeyboardText.decode(data) else { return nil }; input = .text(value)
+        case "keyboard.key": guard let value = try? KeyboardKey.decode(data) else { return nil }; input = .key(value)
+        case "pointer.scroll": guard let value = try? PointerScroll.decode(data) else { return nil }; input = .scroll(value)
+        case "pointer.drag": guard let value = try? PointerDrag.decode(data) else { return nil }; input = .drag(value)
+        case "pointer.move": guard let value = try? PointerMove.decode(data) else { return nil }; input = .move(value)
+        case let value where value.hasPrefix("clipboard."):
+            guard let value = try? ClipboardRequest.decode(data) else { return nil }; input = .clipboard(value)
+        default: return nil
+        }
         return lock.withLock {
             guard !closed, revision == input.captureRevision, input.sequence > sequence else { return nil }
             sequence = input.sequence

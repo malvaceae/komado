@@ -16,7 +16,7 @@ final class PointerMoveDispatcher {
 
     @discardableResult
     func send(_ move: PointerMove, geometry: CaptureGeometry, mapping: CaptureFrameMapping, sessionAllowed: Bool) -> Bool {
-        guard !closed, sessionAllowed, trusted(), (try? move.encode()) != nil else { return false }
+        guard !closed, sessionAllowed, trusted() else { return false }
         var next = validator
         let input = PointerClick(sequence: move.sequence, captureRevision: move.captureRevision, x: move.x, y: move.y, button: .left)
         guard let point = next.point(for: input, in: geometry, mapping: mapping),

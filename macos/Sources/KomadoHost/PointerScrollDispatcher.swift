@@ -16,7 +16,8 @@ final class PointerScrollDispatcher {
 
     @discardableResult
     func send(_ scroll: PointerScroll, geometry: CaptureGeometry, mapping: CaptureFrameMapping, sessionAllowed: Bool) -> Bool {
-        guard !closed, sessionAllowed, trusted(), (try? scroll.encode()) != nil else { return false }
+        guard !closed, sessionAllowed, trusted(), (-120...120).contains(scroll.horizontal),
+              (-120...120).contains(scroll.vertical), scroll.horizontal != 0 || scroll.vertical != 0 else { return false }
         var next = validator
         let position = PointerClick(sequence: scroll.sequence, captureRevision: scroll.captureRevision,
                                     x: scroll.x, y: scroll.y, button: .left)

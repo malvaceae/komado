@@ -19,7 +19,7 @@ final class PointerDragDispatcher {
 
     @discardableResult
     func send(_ drag: PointerDrag, geometry: CaptureGeometry, mapping: CaptureFrameMapping, sessionAllowed: Bool) -> Bool {
-        guard !closed, sessionAllowed, trusted(), (try? drag.encode()) != nil else { return false }
+        guard !closed, sessionAllowed, trusted() else { return false }
         var next = validator
         let input = PointerClick(sequence: drag.sequence, captureRevision: drag.captureRevision, x: drag.x, y: drag.y, button: .left)
         guard let point = next.point(for: input, in: geometry, mapping: mapping),

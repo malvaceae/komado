@@ -35,7 +35,7 @@ final class PointerClickDispatcher {
               let down = CGEvent(mouseEventSource: source, mouseType: downType, mouseCursorPosition: point, mouseButton: button),
               let up = CGEvent(mouseEventSource: source, mouseType: upType, mouseCursorPosition: point, mouseButton: button),
               trusted(), !closed else { return false }
-        guard (try? click.encode()) != nil else { return false }
+        guard click.count == 1 || (click.count == 2 && click.button == .left) else { return false }
         down.setIntegerValueField(.mouseEventClickState, value: Int64(click.count))
         up.setIntegerValueField(.mouseEventClickState, value: Int64(click.count))
         validator = next

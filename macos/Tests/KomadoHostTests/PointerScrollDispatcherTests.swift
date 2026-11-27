@@ -14,6 +14,10 @@ final class PointerScrollDispatcherTests: XCTestCase {
         XCTAssertFalse(dispatcher.send(scroll, geometry: geometry, mapping: mapping, sessionAllowed: true))
         allowed = true
         XCTAssertFalse(dispatcher.send(scroll, geometry: geometry, mapping: mapping, sessionAllowed: false))
+        let oversized = PointerScroll(sequence: 1, captureRevision: 3, x: 500_000, y: 500_000, horizontal: 121, vertical: 0)
+        XCTAssertFalse(dispatcher.send(oversized, geometry: geometry, mapping: mapping, sessionAllowed: true))
+        let empty = PointerScroll(sequence: 1, captureRevision: 3, x: 500_000, y: 500_000, horizontal: 0, vertical: 0)
+        XCTAssertFalse(dispatcher.send(empty, geometry: geometry, mapping: mapping, sessionAllowed: true))
         let margin = PointerScroll(sequence: 1, captureRevision: 3, x: 0, y: 0, horizontal: 12, vertical: -20)
         XCTAssertFalse(dispatcher.send(margin, geometry: geometry, mapping: mapping, sessionAllowed: true))
         XCTAssertTrue(dispatcher.send(scroll, geometry: geometry, mapping: mapping, sessionAllowed: true))
