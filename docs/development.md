@@ -59,7 +59,7 @@ adb -s emulator-5554 shell pm grant me.mallows.komado android.permission.ACCESS_
 
 通常のアプリ操作では、Android 17以降で接続時に権限を要求します。拒否した場合もVPN接続を試せますが、VPN経由の動作は未検証です。
 
-[GitHub ActionsのCI](../.github/workflows/ci.yml)では、macOSのビルドと非対話のテスト、AndroidのJVMテスト・lint・デバッグビルドを実行します。macOSの画面収録、スリープ抑制、Keychainやネットワーク環境に依存するテスト、Androidのエミュレーター・実機テストはCIに含めていません。Xcode 27のランナーはプレビュー版です。CIの実行結果はGitHub上で確認してください。
+[GitHub ActionsのCI](../.github/workflows/ci.yml)では、macOSのビルドと非対話のテスト、AndroidのJVMテスト・lint・デバッグビルドを実行します。macOSの画面収録、Accessibilityによる入力、スリープ抑制、Keychainやネットワーク環境に依存するテスト、Androidのエミュレーター・実機テストはCIに含めていません。Xcode 27のランナーはプレビュー版です。CIの実行結果はGitHub上で確認してください。
 
 手動ペアリングでは、Macで確認情報を作成して待ち受けを開始し、表示された接続先アドレス・ポート、フィンガープリント、発行したペアリングコードをAndroidに入力します。VPN経由の場合はMacのVPNアドレスを指定して待ち受けを開始します。各アドレスに別のポートが割り当てられ、ネットワーク構成が変わるとポートが変わる場合があります。IPv6のリンクローカルアドレスは、Android側のインターフェース名をゾーンとして指定する必要がある場合があります。別端末でのLAN・VPN接続とIPv6の実動作はまだ検証していません。
 

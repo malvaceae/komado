@@ -19,7 +19,7 @@ jobs:
       - name: Build and test without interactive system permissions
         run: >-
           swift test --package-path macos --only-use-versions-from-resolved-file
-          --skip 'HostModelTests|HostTLSIdentityStoreTests|PairedDeviceRegistryTests|ListenerAccessTests|SignalingServerTests|DisplayCaptureTests|IdleSleepActivityTests'
+          --skip 'HostModelTests|HostTLSIdentityStoreTests|PairedDeviceRegistryTests|ListenerAccessTests|SignalingServerTests|DisplayCaptureTests|IdleSleepActivityTests|SystemInputTests'
 
   android:
     name: Android build and tests
