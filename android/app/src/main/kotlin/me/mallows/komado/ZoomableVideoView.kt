@@ -302,6 +302,16 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE) && event.actionMasked == MotionEvent.ACTION_SCROLL &&
+            mouseButton == null && onVideoScroll != null) {
+            val config = ViewConfiguration.get(context)
+            val dx = -event.getAxisValue(MotionEvent.AXIS_HSCROLL) * config.scaledHorizontalScrollFactor
+            val dy = event.getAxisValue(MotionEvent.AXIS_VSCROLL) * config.scaledVerticalScrollFactor
+            if (dx.isFinite() && dy.isFinite() && (dx != 0f || dy != 0f)) {
+                onVideoScroll?.invoke(event.x, event.y, dx, dy)
+            }
+            return true
+        }
         if (event.isFromSource(InputDevice.SOURCE_MOUSE) && event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS && mouseButton != null) {
             val expected = when (mouseButton) {
                 PointerClick.Button.LEFT -> MotionEvent.BUTTON_PRIMARY

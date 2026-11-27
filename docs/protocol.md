@@ -40,7 +40,7 @@ Androidのメイン画面操作モードでは、映像へのタップを左ク�
 
 `control`チャネルで`["1","pointer.scroll",連番,キャプチャリビジョン,X,Y,横移動,縦移動]`を送ります。連番・リビジョンと正規化座標はクリックと共通です。移動量は-120〜120の正規の10進文字列で、両方0は拒否します。Macでは指定位置とキャプチャ領域を検証し、[Core Graphics](https://developer.apple.com/documentation/coregraphics/cgevent/init(scrollwheelevent2source:units:wheelcount:wheel1:wheel2:wheel3:))でピクセル単位のスクロールイベントを生成します。[スキーマ](../protocol/schemas/pointer-scroll-v1.schema.json)と[共通テストデータ](../protocol/fixtures/pointer-scroll.json)を両OSで使います。
 
-Androidでは二本指の移動と間隔の変化を判定し、移動をスクロール、間隔の変化をピンチ拡大に割り当てます。感度、スクロール方向、送信位置に対する対象アプリの動作は実機で未検証です。機能一覧に`pointer.scroll`がある場合だけ送信します。
+Androidでは二本指の移動と間隔の変化を判定し、移動をスクロール、間隔の変化をピンチ拡大に割り当てます。外付けマウスのホイールもAndroidのスクロール量に基づいて送信します。感度、スクロール方向、送信位置に対する対象アプリの動作は実機で未検証です。機能一覧に`pointer.scroll`がある場合だけ送信します。
 
 ## ポインター移動（初期実装）
 

@@ -56,6 +56,32 @@ class ZoomableVideoViewTest {
         } finally { renderer?.let { InstrumentationRegistry.getInstrumentation().runOnMainSync { it.close() } } }
     }
 
+    @Test fun mouseWheelUsesPlatformScrollFactors() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val renderer = RemoteVideoRenderer(activity)
+                try {
+                    val view = ZoomableVideoView(activity, renderer.view)
+                    val scrolls = mutableListOf<List<Float>>()
+                    view.onVideoScroll = { x, y, dx, dy -> scrolls.add(listOf(x, y, dx, dy)) }
+                    val now = SystemClock.uptimeMillis()
+                    val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE })
+                    val coords = arrayOf(MotionEvent.PointerCoords().apply {
+                        x = 200f; y = 300f
+                        setAxisValue(MotionEvent.AXIS_HSCROLL, 0.5f)
+                        setAxisValue(MotionEvent.AXIS_VSCROLL, -1f)
+                    })
+                    val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1, properties, coords, 0, 0,
+                        1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+                    try { assertTrue(view.onGenericMotionEvent(event)) } finally { event.recycle() }
+                    val config = ViewConfiguration.get(activity)
+                    assertEquals(listOf(200f, 300f, -0.5f * config.scaledHorizontalScrollFactor,
+                        -config.scaledVerticalScrollFactor), scrolls.single())
+                } finally { renderer.close() }
+            }
+        }
+    }
+
     @Test fun mouseButtonsAndDragDoNotBecomeTouchGestures() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
