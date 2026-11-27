@@ -100,6 +100,7 @@ class AndroidMediaSessionTest {
         val textReceived = CompletableFuture<KeyboardText>()
         val keyReceived = CompletableFuture<KeyboardKey>()
         val navigationReceived = CompletableFuture<KeyboardKey>()
+        val punctuationReceived = CompletableFuture<KeyboardKey>()
         val scrollReceived = CompletableFuture<PointerScroll>()
         val dragsReceived = ConcurrentLinkedQueue<PointerDrag>()
         val dragCount = CountDownLatch(3)
@@ -129,7 +130,8 @@ class AndroidMediaSessionTest {
                     else {
                         val key = runCatching { KeyboardKeyCodec.decode(bytes) }.getOrNull()
                         if (key != null) {
-                            if (key.sequence == 17L) navigationReceived.complete(key) else keyReceived.complete(key)
+                            if (key.sequence == 17L) navigationReceived.complete(key)
+                            else if (key.sequence == 18L) punctuationReceived.complete(key) else keyReceived.complete(key)
                         }
                         else {
                             val scroll = runCatching { PointerScrollCodec.decode(bytes) }.getOrNull()
@@ -290,6 +292,9 @@ class AndroidMediaSessionTest {
             val home = KeyboardKey(17, 1, SpecialKey.HOME, 8)
             instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendKey(home)) }
             assertEquals(home, navigationReceived.get(5, TimeUnit.SECONDS))
+            val comma = KeyboardKey(18, 1, SpecialKey.COMMA, 1)
+            instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendKey(comma)) }
+            assertEquals(comma, punctuationReceived.get(5, TimeUnit.SECONDS))
             source.capturerObserver.onCapturerStarted(true)
             for (i in 0 until 50) {
                 val frame = VideoFrame(JavaI420Buffer.allocate(320, 240), 0, System.nanoTime())

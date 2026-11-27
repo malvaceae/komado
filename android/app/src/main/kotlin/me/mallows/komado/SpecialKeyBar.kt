@@ -18,6 +18,7 @@ internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, In
     private var picker: AlertDialog? = null
     private var available = false
     private var navigationAvailable = false
+    private var punctuationAvailable = false
 
     init {
         isHorizontalScrollBarEnabled = true
@@ -53,9 +54,10 @@ internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, In
         setAvailable(false)
     }
 
-    fun setAvailable(value: Boolean, navigation: Boolean = false) {
+    fun setAvailable(value: Boolean, navigation: Boolean = false, punctuation: Boolean = false) {
         available = value
         navigationAvailable = value && navigation
+        punctuationAvailable = value && punctuation
         controls.forEach { it.isEnabled = value }
         navigationControls.forEach { it.isEnabled = navigationAvailable }
         if (!value) {
@@ -71,17 +73,18 @@ internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, In
     }
 
     private fun dispatch(key: SpecialKey) {
-        if (!available || (key.isNavigation && !navigationAvailable)) return
+        if (!available || (key.isNavigation && !navigationAvailable) || (key.isPunctuation && !punctuationAvailable)) return
         val mask = modifiers.fold(0) { result, (button, value) -> if (button.isChecked) result or value else result }
         send(key, mask)
     }
 
     internal fun showShortcutKeys(): AlertDialog? {
         if (!available || picker != null) return null
-        val names = ('A'..'Z').map { it.toString() } + ('0'..'9').map { it.toString() }
-        val dialog = AlertDialog.Builder(context).setTitle(R.string.shortcut_key).setItems(names.toTypedArray()) { _, index ->
-            val name = names[index]
-            dispatch(SpecialKey.valueOf(if (name[0].isDigit()) "DIGIT$name" else name))
+        val names = ('A'..'Z').map { it.toString() to SpecialKey.valueOf(it.toString()) } +
+            ('0'..'9').map { it.toString() to SpecialKey.valueOf("DIGIT$it") } +
+            if (punctuationAvailable) listOf("," to SpecialKey.COMMA, "." to SpecialKey.PERIOD, "/" to SpecialKey.SLASH) else emptyList()
+        val dialog = AlertDialog.Builder(context).setTitle(R.string.shortcut_key).setItems(names.map { it.first }.toTypedArray()) { _, index ->
+            dispatch(names[index].second)
         }.setNegativeButton(R.string.cancel, null).setOnDismissListener { picker = null }.show()
         picker = dialog
         return dialog

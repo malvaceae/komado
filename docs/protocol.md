@@ -72,9 +72,11 @@ Androidはフォーカス喪失時に同期を停止し、復帰時に変更の�
 
 ## キー操作（初期形式）
 
-確定文字列とは別に、特殊キーやショートカットの1回分を`["1","keyboard.key",連番,キャプチャリビジョン,キー,修飾キー]`とします。連番とリビジョンはクリック・確定文字列と共通です。キーはBackspace、Delete、Enter、Tab、Escape、矢印、Home・End・Page Up・Page Down、英字、数字、F1〜F12の[定義済みの名前](../protocol/schemas/keyboard-key-v1.schema.json)に限定します。修飾キーはCommand・Option・Control・Shiftをそれぞれ1・2・4・8とするビットマスクの10進文字列です。メッセージは1,024バイト以下で、プロトコル上は修飾キーの状態を次の操作へ持ち越しません。OSへの送信途中での異常終了や切断時のキー状態は未検証です。
+確定文字列とは別に、特殊キーやショートカットの1回分を`["1","keyboard.key",連番,キャプチャリビジョン,キー,修飾キー]`とします。連番とリビジョンはクリック・確定文字列と共通です。キーはBackspace、Delete、Enter、Tab、Escape、矢印、Home・End・Page Up・Page Down、カンマ・ピリオド・スラッシュ、英字、数字、F1〜F12の[定義済みの名前](../protocol/schemas/keyboard-key-v1.schema.json)に限定します。修飾キーはCommand・Option・Control・Shiftをそれぞれ1・2・4・8とするビットマスクの10進文字列です。メッセージは1,024バイト以下で、プロトコル上は修飾キーの状態を次の操作へ持ち越しません。OSへの送信途中での異常終了や切断時のキー状態は未検証です。
 
 両OSの形式を[共通テストデータ](../protocol/fixtures/keyboard-key.json)で確認し、既存の制御チャネルの順序・リビジョン検証に加えました。操作モードのIMEからは削除、Enter、Tab、Escape、矢印などを送ります。特殊キー欄では修飾キーを選び、英数字、Escape、Tab、矢印、F1〜F12と組み合わせて送れます。修飾キーの選択は特殊キー欄のみに適用し、切断時に解除します。
+
+カンマ・ピリオド・スラッシュは`keyboard.punctuation`を通知するホストにだけ送ります。外付けキーボードからは修飾キーを伴う場合のみ送り、通常の文字入力はIMEや文字入力の経路で扱います。Mac側のキーボード配列による違いは未検証です。
 
 Home・End・Page Up・Page Downは`keyboard.navigation`を通知するホストにだけ送ります。未対応のホストではAndroid側の対応するボタンを無効にし、物理キーからも送信しません。
 
@@ -98,7 +100,7 @@ OfferとAnswerは認証済みTLS接続で交換します。SDPのDTLSフィン�
 
 `["1","control.start"]`は認証後のメイン画面の操作要求です。Macで操作許可とAccessibility権限が必要で、従来の`start`は表示のみです。操作開始時はMacで許可を表示し、操作セッション終了時に許可を解除します。
 
-認証済みのアイドル状態で`["1","features.list"]`を1回送ると、Macは`["1","features.listed",機能名...]`を返します。機能名は重複なしの英小文字・数字・`.`・`-`からなる48文字以下の名前で、最大32件です。現在は`pointer.click`、`pointer.double`、`pointer.drag`、`pointer.scroll`、`pointer.move`、`keyboard.text`、`keyboard.key`、`keyboard.navigation`、`window.control`、`display.control`、`clipboard.manual`、`clipboard.auto`を通知します。Androidは操作開始前に一覧を取得し、`pointer.click`がなければ開始せず、一覧にない操作は送信しません。未知の機能名は無視します。新Androidから一覧非対応の旧Macへの操作接続は失敗し、従来の画面表示は利用できます。機能一覧は認証やMacの操作許可の代わりにはなりません。詳細は[ADR 0008](decisions/0008-feature-negotiation.md)を参照してください。
+認証済みのアイドル状態で`["1","features.list"]`を1回送ると、Macは`["1","features.listed",機能名...]`を返します。機能名は重複なしの英小文字・数字・`.`・`-`からなる48文字以下の名前で、最大32件です。現在は`pointer.click`、`pointer.double`、`pointer.drag`、`pointer.scroll`、`pointer.move`、`keyboard.text`、`keyboard.key`、`keyboard.navigation`、`keyboard.punctuation`、`window.control`、`display.control`、`clipboard.manual`、`clipboard.auto`を通知します。Androidは操作開始前に一覧を取得し、`pointer.click`がなければ開始せず、一覧にない操作は送信しません。未知の機能名は無視します。新Androidから一覧非対応の旧Macへの操作接続は失敗し、従来の画面表示は利用できます。機能一覧は認証やMacの操作許可の代わりにはなりません。詳細は[ADR 0008](decisions/0008-feature-negotiation.md)を参照してください。
 
 ローカルで生成したSDPについて、シグナリング接続のローカルIPアドレスに一致するhost候補だけを残し、`c=`の接続アドレスも同じ値に揃えてから送信します。候補が残らない場合や不正な候補・行形式は送信を拒否します。製品のメディアセッションに接続し、実際に生成されたSDPを両OSの処理で絞って相互接続を確認しました。これは通知する候補の制限であり、WebRTC内部のソケットや実際の経路を固定するものではありません。
 

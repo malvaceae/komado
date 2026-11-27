@@ -376,7 +376,8 @@ class VideoActivity : Activity() {
         clipboardReceiveButton?.isEnabled = clipboardAvailable
         statisticsButton?.isEnabled = active && firstFrameShown
         automaticSwitch?.isEnabled = available && controlMode && "clipboard.auto" in supportedFeatures
-        specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures, "keyboard.navigation" in supportedFeatures)
+        specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures,
+            "keyboard.navigation" in supportedFeatures, "keyboard.punctuation" in supportedFeatures)
     }
 
     private fun canSendKey(key: SpecialKey): Boolean = supportsSpecialKey(key, supportedFeatures)

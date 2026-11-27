@@ -6,10 +6,11 @@ import XCTest
 
 final class KeyboardKeyDispatcherTests: XCTestCase {
     @MainActor
-    func testNavigationKeysUseExpectedVirtualCodes() {
+    func testNavigationAndPunctuationKeysUseExpectedVirtualCodes() {
         var events: [CGEvent] = []
         let dispatcher = KeyboardKeyDispatcher(trusted: { true }, post: { events.append($0) })
-        let cases: [(KeyboardKey.Key, Int)] = [(.home, kVK_Home), (.end, kVK_End), (.pageup, kVK_PageUp), (.pagedown, kVK_PageDown)]
+        let cases: [(KeyboardKey.Key, Int)] = [(.home, kVK_Home), (.end, kVK_End), (.pageup, kVK_PageUp), (.pagedown, kVK_PageDown),
+                                                (.comma, kVK_ANSI_Comma), (.period, kVK_ANSI_Period), (.slash, kVK_ANSI_Slash)]
         for (index, (key, expected)) in cases.enumerated() {
             XCTAssertTrue(dispatcher.send(KeyboardKey(sequence: UInt64(index + 1), captureRevision: 1, key: key, modifiers: 0),
                                           captureRevision: 1, sessionAllowed: true))

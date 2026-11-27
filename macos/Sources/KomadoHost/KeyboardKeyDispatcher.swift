@@ -56,6 +56,9 @@ final class KeyboardKeyDispatcher {
         case .end: kVK_End
         case .pageup: kVK_PageUp
         case .pagedown: kVK_PageDown
+        case .comma: kVK_ANSI_Comma
+        case .period: kVK_ANSI_Period
+        case .slash: kVK_ANSI_Slash
         case .a: kVK_ANSI_A
         case .b: kVK_ANSI_B
         case .c: kVK_ANSI_C

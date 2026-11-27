@@ -30,6 +30,14 @@ class HardwareKeyMapperTest {
         assertTrue(supportsSpecialKey(SpecialKey.HOME, setOf("keyboard.key", "keyboard.navigation")))
         assertFalse(supportsSpecialKey(SpecialKey.HOME, setOf("keyboard.navigation")))
         assertTrue(supportsSpecialKey(SpecialKey.TAB, setOf("keyboard.key")))
+        assertNull(HardwareKeyMapper.map(event(KeyEvent.KEYCODE_COMMA)))
+        assertNull(HardwareKeyMapper.map(event(KeyEvent.KEYCODE_PERIOD, KeyEvent.META_SHIFT_ON)))
+        assertEquals(HardwareKeyMapper.Chord(SpecialKey.COMMA, 1), HardwareKeyMapper.map(event(KeyEvent.KEYCODE_COMMA, KeyEvent.META_META_ON)))
+        assertEquals(HardwareKeyMapper.Chord(SpecialKey.PERIOD, 4), HardwareKeyMapper.map(event(KeyEvent.KEYCODE_PERIOD, KeyEvent.META_CTRL_ON)))
+        assertEquals(HardwareKeyMapper.Chord(SpecialKey.SLASH, 4), HardwareKeyMapper.map(event(KeyEvent.KEYCODE_SLASH, KeyEvent.META_CTRL_ON)))
+        assertFalse(supportsSpecialKey(SpecialKey.COMMA, setOf("keyboard.key", "keyboard.navigation")))
+        assertFalse(supportsSpecialKey(SpecialKey.COMMA, setOf("keyboard.punctuation")))
+        assertTrue(supportsSpecialKey(SpecialKey.COMMA, setOf("keyboard.key", "keyboard.punctuation")))
     }
 
     @Test fun physicalKeysAreSentOnceAndCompositionStaysLocal() {

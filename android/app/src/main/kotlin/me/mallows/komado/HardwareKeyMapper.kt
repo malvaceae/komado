@@ -5,9 +5,12 @@ import me.mallows.komado.protocol.SpecialKey
 
 internal val SpecialKey.isNavigation: Boolean
     get() = this == SpecialKey.HOME || this == SpecialKey.END || this == SpecialKey.PAGEUP || this == SpecialKey.PAGEDOWN
+internal val SpecialKey.isPunctuation: Boolean
+    get() = this == SpecialKey.COMMA || this == SpecialKey.PERIOD || this == SpecialKey.SLASH
 
 internal fun supportsSpecialKey(key: SpecialKey, features: Set<String>): Boolean =
-    "keyboard.key" in features && (!key.isNavigation || "keyboard.navigation" in features)
+    "keyboard.key" in features && (!key.isNavigation || "keyboard.navigation" in features) &&
+        (!key.isPunctuation || "keyboard.punctuation" in features)
 
 /** Text without shortcut modifiers remains the IME's responsibility. */
 internal object HardwareKeyMapper {
@@ -30,6 +33,14 @@ internal object HardwareKeyMapper {
             KeyEvent.KEYCODE_MOVE_END -> SpecialKey.END
             KeyEvent.KEYCODE_PAGE_UP -> SpecialKey.PAGEUP
             KeyEvent.KEYCODE_PAGE_DOWN -> SpecialKey.PAGEDOWN
+            KeyEvent.KEYCODE_COMMA, KeyEvent.KEYCODE_PERIOD, KeyEvent.KEYCODE_SLASH -> {
+                if (modifiers and 7 == 0) return null
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_COMMA -> SpecialKey.COMMA
+                    KeyEvent.KEYCODE_PERIOD -> SpecialKey.PERIOD
+                    else -> SpecialKey.SLASH
+                }
+            }
             in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 -> SpecialKey.valueOf("F${event.keyCode - KeyEvent.KEYCODE_F1 + 1}")
             in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> {
                 if (modifiers and 7 == 0) return null

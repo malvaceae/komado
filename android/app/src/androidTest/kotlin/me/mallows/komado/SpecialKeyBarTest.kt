@@ -19,8 +19,8 @@ class SpecialKeyBarTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var bar: SpecialKeyBar
             lateinit var control: ToggleButton
+            val sent = mutableListOf<Pair<SpecialKey, Int>>()
             scenario.onActivity { activity ->
-                val sent = mutableListOf<Pair<SpecialKey, Int>>()
                 bar = SpecialKeyBar(activity) { key, mask -> sent.add(key to mask); true }
                 bar.setAvailable(true)
                 val row = bar.getChildAt(0) as LinearLayout
@@ -29,8 +29,16 @@ class SpecialKeyBarTest {
                 control.performClick()
                 val dialog = bar.showShortcutKeys()!!
                 val list = dialog.listView
+                assertEquals(36, list.adapter.count)
                 assertTrue(list.performItemClick(list.adapter.getView(2, null, list), 2, list.adapter.getItemId(2)))
                 assertEquals(listOf(SpecialKey.C to 4), sent)
+            }
+            scenario.onActivity {
+                bar.setAvailable(true, punctuation = true)
+                val punctuation = bar.showShortcutKeys()!!.listView
+                assertEquals(39, punctuation.adapter.count)
+                assertTrue(punctuation.performItemClick(punctuation.adapter.getView(36, null, punctuation), 36, punctuation.adapter.getItemId(36)))
+                assertEquals(SpecialKey.COMMA to 4, sent.last())
             }
             scenario.onActivity {
                 val second = bar.showShortcutKeys()!!
