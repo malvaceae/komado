@@ -43,6 +43,7 @@ private struct HostView: View {
     @State private var deviceToRemove: PairedDevice?
     @State private var confirmRemoval = false
     @State private var selectedEndpoint = ""
+    @StateObject private var loginItem = LoginItemController()
 
     var body: some View {
         ScrollView {
@@ -81,6 +82,23 @@ private struct HostView: View {
                     Text("同一LANからの接続を受け付けます。VPNを使う場合は、このMacのVPNアドレスも入力してください。")
                         .foregroundStyle(.secondary)
                     Toggle("待ち受け中の自動スリープを抑制", isOn: $model.keepAwakeWhileListening)
+                    Toggle("ログイン時にkomadoを起動", isOn: Binding(
+                        get: { loginItem.registered }, set: { loginItem.setRegistered($0) }))
+                        .disabled(loginItem.state == .unavailable)
+                    if loginItem.state == .requiresApproval {
+                        Text("ログイン項目をシステム設定で許可してください。")
+                            .foregroundStyle(.secondary)
+                        Button("ログイン項目の設定を開く") { loginItem.openSettings() }
+                    } else if loginItem.state == .unavailable {
+                        Text("ログイン項目を利用できません。アプリの配置を確認してください。")
+                            .foregroundStyle(.secondary)
+                    }
+                    if loginItem.error {
+                        Text("ログイン項目を変更できませんでした。システム設定を確認してください。")
+                            .foregroundStyle(.red)
+                    }
+                    Text("起動後の接続待ち受けは手動で開始します。")
+                        .foregroundStyle(.secondary)
                     Picker("映像の最大解像度", selection: $model.captureResolution) {
                         ForEach(CaptureResolution.allCases) { resolution in
                             Text(resolution.label).tag(resolution)
@@ -175,6 +193,8 @@ private struct HostView: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .onAppear { loginItem.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
         .confirmationDialog("端末の登録を削除しますか？", isPresented: $confirmRemoval, presenting: deviceToRemove) { device in
             Button("削除", role: .destructive) { Task { await model.remove(device) } }
             Button("キャンセル", role: .cancel) { }
