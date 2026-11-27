@@ -361,8 +361,10 @@ internal class AndroidMediaSession(
             } else {
                 channel = dataChannel
                 fun checkChannelState() {
-                    if (dataChannel.state() in setOf(DataChannel.State.CLOSING, DataChannel.State.CLOSED)) {
-                        postIfOpen { fail() }
+                    postIfOpen {
+                        if (channel !== dataChannel) return@postIfOpen
+                        val currentState = dataChannel.state()
+                        if (currentState == DataChannel.State.CLOSING || currentState == DataChannel.State.CLOSED) fail()
                     }
                 }
                 dataChannel.registerObserver(object : DataChannel.Observer {

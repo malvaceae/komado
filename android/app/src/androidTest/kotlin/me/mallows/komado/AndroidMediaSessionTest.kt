@@ -97,8 +97,12 @@ class AndroidMediaSessionTest {
         exchangeDescriptionsAndGeneratedVideo(confirmText = true, closeControlChannel = true)
     }
 
+    @Test fun localCloseWhileRemoteChannelClosesIsSafe() {
+        exchangeDescriptionsAndGeneratedVideo(confirmText = true, closeLocally = true)
+    }
+
     private fun exchangeDescriptionsAndGeneratedVideo(confirmText: Boolean, sendWrongConfirmation: Boolean = true,
-                                                       closeControlChannel: Boolean = false) {
+                                                       closeControlChannel: Boolean = false, closeLocally: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val address = DatagramSocket().use {
             it.connect(InetAddress.getByName("192.0.2.1"), 9)
@@ -353,6 +357,15 @@ class AndroidMediaSessionTest {
                 val laterText = KeyboardText(21, 1, "sample")
                 instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendText(laterText)) }
                 assertEquals(laterText.copy(confirm = true), laterTextReceived.get(5, TimeUnit.SECONDS))
+                if (closeLocally) {
+                    instrumentation.runOnMainSync {
+                        channel.close()
+                        requireNotNull(receiver).close()
+                    }
+                    assertTrue("Local close must not report a later failure", !failed.await(500, TimeUnit.MILLISECONDS))
+                    assertTrue("Local close must not emit a later confirmation warning", !textUnconfirmed.await(500, TimeUnit.MILLISECONDS))
+                    return
+                }
                 if (closeControlChannel) {
                     channel.close()
                 } else if (sendWrongConfirmation) {
