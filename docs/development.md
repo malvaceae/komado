@@ -39,6 +39,10 @@ open macos/.build/komado.app
 
 Apple SiliconとIntelの両方を含む開発用アプリは、`./macos/build-app.sh --universal`でビルドできます。生成したバイナリのアーキテクチャは`lipo -archs macos/.build/komado.app/Contents/MacOS/KomadoHost`で確認できます。対応OSや各実機での動作は、ビルドとは別に確認が必要です。
 
+最適化されたローカル確認用アプリは`./macos/build-app.sh --release`で`.build/komado-release.app`に生成します。`--universal`と組み合わせることもできますが、最適化ビルドの両アーキテクチャでの検証はまだ行っていません。いずれもアドホック署名であり、Developer ID署名・公証済みの配布物ではありません。`swift package clean`は`.build/`内のこれらのアプリも削除するため、残す場合は先に別の場所へ移してください。
+
+Android側の未署名リリースAPKは`./android/gradlew -p android :app:assembleRelease`で`android/app/build/outputs/apk/release/app-release-unsigned.apk`に生成します。インストール・配布には別途リリース鍵での署名が必要です。署名鍵はリポジトリで管理しません。
+
 Android側はJDKを用いて実行します。
 
 ```sh
