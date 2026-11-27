@@ -131,7 +131,7 @@
 | 2026-11-27 | macOS 26.7.3、Apple Silicon | クリックイベントのプロセス宛て配送 | テスト用ウインドウとイベントマーカーを使い、クリックの押下・解放を自プロセス宛てに送信 | 両イベントを自プロセスで受信。プロセス宛て送信では対象ウインドウが割り当てられずボタンは反応しなかった。製品のグローバル配送、他アプリへの入力、画面ロック、Android実機は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 8 API 26・Android 17 API 37 arm64エミュレーター | Home・End・Page Up・Page Down | 共通メッセージ、Macの仮想キーコード、Androidの疑似キー・操作欄、旧ホスト向けの無効化をテスト。Android 8とMacを認証接続し、映像受信後に4種類のキー情報を送信してMacのテスト用受信処理で確認 | 形式・判定・イベント生成と両OS間のキー情報の受信を確認。実際のMacアプリへの配送、実物のキーボードとAndroid実機は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 8 API 26・Android 17 API 37 arm64エミュレーター | 記号ショートカット | カンマ・ピリオド・スラッシュの共通メッセージとMacの仮想キーコード、Androidの疑似キー・選択欄、旧ホスト向けの無効化をテスト。Android 17とMacを認証接続し、3種類のキー情報をMacのテスト用受信処理で確認 | 形式・判定・イベント生成と両OS間のキー情報の受信を確認。Macアプリへの実配送、キーボード配列とAndroid実機は未検証 |
-| 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 8 API 26・Android 17 API 37 arm64エミュレーター | Space・追加記号ショートカット | 共通メッセージ、Macの仮想キーコード、Androidの疑似キー・選択欄、旧ホスト向けの無効化、エミュレーター内のWebRTC送受信をテスト | 形式・判定・イベント生成とエミュレーター内の送受信を確認。MacとAndroid間の新キー送信、実際のMacアプリへの配送、IME・キーボード配列とAndroid実機は未検証 |
+| 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 8 API 26・Android 17 API 37 arm64エミュレーター | Space・追加記号ショートカット | 共通メッセージ、Macの仮想キーコード、Androidの疑似キー・選択欄、旧ホスト向けの無効化をテスト。Android 8とMacを認証接続し、9種類のキー情報をMacのテスト用受信処理で確認 | 形式・判定・イベント生成と両OS間のキー情報の受信を確認。実際のMacアプリへの配送、IME・キーボード配列とAndroid実機は未検証 |
 
 実画面の相互接続検証では、1280×800の映像でVideoToolboxが`kVTParameterErr`（-12902）を返し、エンコードされなかった。1152×720に縮小するとエンコード・受信に成功した。失敗時のH.264設定は`profile-level-id=42e01f`（Level 3.1）で、1280×800は4,000マクロブロックと、[WebRTCのLevel 3.1の上限](https://webrtc.googlesource.com/src/+/fb1c41a93d92d4188f068f437d80ef2c4b50c3a9/api/video_codecs/h264_profile_level_id.cc)である3,600を超えるため、これが一因の可能性がある。エラーの原因は確定しておらず、製品の解像度上限としては扱わない。
 
