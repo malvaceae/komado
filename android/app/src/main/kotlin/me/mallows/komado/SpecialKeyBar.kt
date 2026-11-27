@@ -13,9 +13,11 @@ import me.mallows.komado.protocol.SpecialKey
 internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, Int) -> Boolean) : HorizontalScrollView(context) {
     private val row = LinearLayout(context)
     private val controls = mutableListOf<android.view.View>()
+    private val navigationControls = mutableListOf<android.view.View>()
     private val modifiers = mutableListOf<Pair<ToggleButton, Int>>()
     private var picker: AlertDialog? = null
     private var available = false
+    private var navigationAvailable = false
 
     init {
         isHorizontalScrollBarEnabled = true
@@ -42,12 +44,20 @@ internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, In
                 setOnClickListener { dispatch(key) }
             })
         }
+        listOf("Home" to SpecialKey.HOME, "End" to SpecialKey.END,
+            "PgUp" to SpecialKey.PAGEUP, "PgDn" to SpecialKey.PAGEDOWN).forEach { (label, key) ->
+            val button = Button(context).apply { text = label; setOnClickListener { dispatch(key) } }
+            navigationControls.add(button)
+            addControl(button)
+        }
         setAvailable(false)
     }
 
-    fun setAvailable(value: Boolean) {
+    fun setAvailable(value: Boolean, navigation: Boolean = false) {
         available = value
+        navigationAvailable = value && navigation
         controls.forEach { it.isEnabled = value }
+        navigationControls.forEach { it.isEnabled = navigationAvailable }
         if (!value) {
             modifiers.forEach { it.first.isChecked = false }
             picker?.dismiss()
@@ -61,7 +71,7 @@ internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, In
     }
 
     private fun dispatch(key: SpecialKey) {
-        if (!available) return
+        if (!available || (key.isNavigation && !navigationAvailable)) return
         val mask = modifiers.fold(0) { result, (button, value) -> if (button.isChecked) result or value else result }
         send(key, mask)
     }

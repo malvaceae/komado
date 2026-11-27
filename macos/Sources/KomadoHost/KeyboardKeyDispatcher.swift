@@ -52,6 +52,10 @@ final class KeyboardKeyDispatcher {
         case .right: kVK_RightArrow
         case .up: kVK_UpArrow
         case .down: kVK_DownArrow
+        case .home: kVK_Home
+        case .end: kVK_End
+        case .pageup: kVK_PageUp
+        case .pagedown: kVK_PageDown
         case .a: kVK_ANSI_A
         case .b: kVK_ANSI_B
         case .c: kVK_ANSI_C

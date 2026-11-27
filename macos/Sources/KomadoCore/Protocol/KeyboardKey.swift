@@ -3,7 +3,7 @@ import Foundation
 /// One complete special-key press, with modifiers applied only to that press.
 public struct KeyboardKey: Equatable, Sendable {
     public enum Key: String, CaseIterable, Sendable {
-        case backspace, delete, enter, tab, escape, left, right, up, down
+        case backspace, delete, enter, tab, escape, left, right, up, down, home, end, pageup, pagedown
         case a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z
         case digit0, digit1, digit2, digit3, digit4, digit5, digit6, digit7, digit8, digit9
         case f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12

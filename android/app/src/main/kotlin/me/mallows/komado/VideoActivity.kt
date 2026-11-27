@@ -18,6 +18,7 @@ import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.protocol.KeyboardKey
+import me.mallows.komado.protocol.SpecialKey
 import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerScroll
 import me.mallows.komado.protocol.PointerDrag
@@ -206,7 +207,7 @@ class VideoActivity : Activity() {
             controls.addView(TextView(this).apply { setText(R.string.special_keys_hint); setPadding(dp(8), 0, dp(8), 0) })
             specialKeys = SpecialKeyBar(this) { key, modifiers ->
                 val revision = captureRevision
-                val sequence = if (active && firstFrameShown && revision != null) controlSequence.next() else null
+                val sequence = if (active && canSendKey(key) && firstFrameShown && revision != null) controlSequence.next() else null
                 val sent = sequence != null && revision != null && media?.sendKey(KeyboardKey(sequence, revision, key, modifiers)) == true
                 if (!sent && active) stopSession(failed = true)
                 sent
@@ -214,7 +215,7 @@ class VideoActivity : Activity() {
             controls.addView(specialKeys)
             keyboard = RemoteKeyboardView(this, sendKey = { key, modifiers ->
                 val revision = captureRevision
-                val sequence = if (active && "keyboard.key" in supportedFeatures && firstFrameShown && revision != null) controlSequence.next() else null
+                val sequence = if (active && canSendKey(key) && firstFrameShown && revision != null) controlSequence.next() else null
                 if (sequence != null && revision != null) media?.sendKey(KeyboardKey(sequence, revision, key, modifiers)) == true else false
             }, sendText = { text ->
                 val message = if (active && "keyboard.text" in supportedFeatures && firstFrameShown) textMapper.message(text, captureRevision) else null
@@ -375,8 +376,10 @@ class VideoActivity : Activity() {
         clipboardReceiveButton?.isEnabled = clipboardAvailable
         statisticsButton?.isEnabled = active && firstFrameShown
         automaticSwitch?.isEnabled = available && controlMode && "clipboard.auto" in supportedFeatures
-        specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures)
+        specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures, "keyboard.navigation" in supportedFeatures)
     }
+
+    private fun canSendKey(key: SpecialKey): Boolean = supportsSpecialKey(key, supportedFeatures)
 
     private fun requestClipboard(get: Boolean) {
         if (!active || !hasWindowFocus() || clipboardAction != null || "clipboard.manual" !in supportedFeatures) return

@@ -22,6 +22,14 @@ class HardwareKeyMapperTest {
         assertEquals(HardwareKeyMapper.Chord(SpecialKey.DIGIT9, 10), HardwareKeyMapper.map(event(KeyEvent.KEYCODE_9, KeyEvent.META_ALT_ON or KeyEvent.META_SHIFT_ON)))
         assertEquals(HardwareKeyMapper.Chord(SpecialKey.F12, 4), HardwareKeyMapper.map(event(KeyEvent.KEYCODE_F12, KeyEvent.META_CTRL_ON)))
         assertEquals(HardwareKeyMapper.Chord(SpecialKey.TAB, 8), HardwareKeyMapper.map(event(KeyEvent.KEYCODE_TAB, KeyEvent.META_SHIFT_ON)))
+        assertEquals(HardwareKeyMapper.Chord(SpecialKey.HOME, 0), HardwareKeyMapper.map(event(KeyEvent.KEYCODE_MOVE_HOME)))
+        assertEquals(HardwareKeyMapper.Chord(SpecialKey.END, 4), HardwareKeyMapper.map(event(KeyEvent.KEYCODE_MOVE_END, KeyEvent.META_CTRL_ON)))
+        assertEquals(HardwareKeyMapper.Chord(SpecialKey.PAGEUP, 0), HardwareKeyMapper.map(event(KeyEvent.KEYCODE_PAGE_UP)))
+        assertEquals(HardwareKeyMapper.Chord(SpecialKey.PAGEDOWN, 0), HardwareKeyMapper.map(event(KeyEvent.KEYCODE_PAGE_DOWN)))
+        assertFalse(supportsSpecialKey(SpecialKey.HOME, setOf("keyboard.key")))
+        assertTrue(supportsSpecialKey(SpecialKey.HOME, setOf("keyboard.key", "keyboard.navigation")))
+        assertFalse(supportsSpecialKey(SpecialKey.HOME, setOf("keyboard.navigation")))
+        assertTrue(supportsSpecialKey(SpecialKey.TAB, setOf("keyboard.key")))
     }
 
     @Test fun physicalKeysAreSentOnceAndCompositionStaysLocal() {

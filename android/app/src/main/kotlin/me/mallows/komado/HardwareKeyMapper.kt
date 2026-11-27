@@ -3,6 +3,12 @@ package me.mallows.komado
 import android.view.KeyEvent
 import me.mallows.komado.protocol.SpecialKey
 
+internal val SpecialKey.isNavigation: Boolean
+    get() = this == SpecialKey.HOME || this == SpecialKey.END || this == SpecialKey.PAGEUP || this == SpecialKey.PAGEDOWN
+
+internal fun supportsSpecialKey(key: SpecialKey, features: Set<String>): Boolean =
+    "keyboard.key" in features && (!key.isNavigation || "keyboard.navigation" in features)
+
 /** Text without shortcut modifiers remains the IME's responsibility. */
 internal object HardwareKeyMapper {
     data class Chord(val key: SpecialKey, val modifiers: Int)
@@ -20,6 +26,10 @@ internal object HardwareKeyMapper {
             KeyEvent.KEYCODE_DPAD_RIGHT -> SpecialKey.RIGHT
             KeyEvent.KEYCODE_DPAD_UP -> SpecialKey.UP
             KeyEvent.KEYCODE_DPAD_DOWN -> SpecialKey.DOWN
+            KeyEvent.KEYCODE_MOVE_HOME -> SpecialKey.HOME
+            KeyEvent.KEYCODE_MOVE_END -> SpecialKey.END
+            KeyEvent.KEYCODE_PAGE_UP -> SpecialKey.PAGEUP
+            KeyEvent.KEYCODE_PAGE_DOWN -> SpecialKey.PAGEDOWN
             in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 -> SpecialKey.valueOf("F${event.keyCode - KeyEvent.KEYCODE_F1 + 1}")
             in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> {
                 if (modifiers and 7 == 0) return null
