@@ -142,7 +142,7 @@ class MainActivity : ComponentActivity() {
     private fun hostActions(host: Host) {
         val actions = if (host.pairing == null) arrayOf(getString(R.string.pair), getString(R.string.edit_host), getString(R.string.delete))
         else arrayOf(getString(R.string.view_screen), getString(R.string.control_screen), getString(R.string.select_screen),
-            getString(R.string.select_window), getString(R.string.control_window), getString(R.string.check_connection), getString(R.string.edit_host), getString(R.string.delete))
+            getString(R.string.control_display), getString(R.string.select_window), getString(R.string.control_window), getString(R.string.check_connection), getString(R.string.edit_host), getString(R.string.delete))
         AlertDialog.Builder(this).setTitle(host.name).setItems(actions) { _, index ->
             if (host.pairing == null) when (index) {
                 0 -> withLocalNetworkPermission { pairHost(host) }
@@ -155,13 +155,16 @@ class MainActivity : ComponentActivity() {
                 2 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java)
                     .putExtra(VideoActivity.HOST_ID, host.id).putExtra(VideoActivity.CHOOSE_DISPLAY, true)) }
                 3 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java)
-                    .putExtra(VideoActivity.HOST_ID, host.id).putExtra(VideoActivity.CHOOSE_WINDOW, true)) }
+                    .putExtra(VideoActivity.HOST_ID, host.id).putExtra(VideoActivity.CHOOSE_DISPLAY, true)
+                    .putExtra(VideoActivity.CONTROL_MODE, true)) }
                 4 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java)
+                    .putExtra(VideoActivity.HOST_ID, host.id).putExtra(VideoActivity.CHOOSE_WINDOW, true)) }
+                5 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java)
                     .putExtra(VideoActivity.HOST_ID, host.id).putExtra(VideoActivity.CHOOSE_WINDOW, true)
                     .putExtra(VideoActivity.CONTROL_MODE, true)) }
-                5 -> withLocalNetworkPermission { checkConnection(host) }
-                6 -> editHost(host)
-                7 -> deleteHost(host)
+                6 -> withLocalNetworkPermission { checkConnection(host) }
+                7 -> editHost(host)
+                8 -> deleteHost(host)
             }
         }.setNegativeButton(R.string.cancel, null).show()
     }

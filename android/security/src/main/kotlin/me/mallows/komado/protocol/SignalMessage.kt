@@ -26,6 +26,7 @@ sealed interface SignalMessage {
     data object ListFeatures : SignalMessage
     data class Features(val values: List<String>) : SignalMessage
     data class StartDisplay(val id: Long) : SignalMessage
+    data class StartDisplayControl(val id: Long) : SignalMessage
     data object ListDisplays : SignalMessage
     data class Displays(val values: List<DisplayInfo>) : SignalMessage
     data class ListWindows(val offset: Int) : SignalMessage
@@ -86,6 +87,10 @@ object SignalMessageCodec {
                     if (fields.size == 2) SignalMessage.StartMedia
                     else if (fields.size == 3) SignalMessage.StartDisplay(positiveInteger(fields[2], 4_294_967_295L))
                     else throw MessageException()
+                }
+                "display.control" -> {
+                    if (fields.size != 3) throw MessageException()
+                    SignalMessage.StartDisplayControl(positiveInteger(fields[2], 4_294_967_295L))
                 }
                 "control.start" -> {
                     if (fields.size != 2) throw MessageException()
@@ -177,6 +182,7 @@ object SignalMessageCodec {
             SignalMessage.ListFeatures -> listOf("1", "features.list")
             is SignalMessage.Features -> listOf("1", "features.listed") + message.values
             is SignalMessage.StartDisplay -> listOf("1", "start", message.id.toString())
+            is SignalMessage.StartDisplayControl -> listOf("1", "display.control", message.id.toString())
             SignalMessage.ListDisplays -> listOf("1", "display.list")
             is SignalMessage.Displays -> {
                 if (message.values.size !in 1..64) throw MessageException()

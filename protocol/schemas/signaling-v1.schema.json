@@ -217,6 +217,14 @@
     {
       "type": "array",
       "prefixItems": [
+        { "const": "1" }, { "const": "display.control" },
+        { "type": "string", "pattern": "^[1-9][0-9]{0,9}$", "not": { "pattern": "[^0-9]" } }
+      ],
+      "minItems": 3, "maxItems": 3, "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
         { "const": "1" }, { "const": "window.control" },
         { "type": "string", "pattern": "^[1-9][0-9]{0,9}$", "not": { "pattern": "[^0-9]" } }
       ],

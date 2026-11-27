@@ -16,6 +16,7 @@ private final class ServerTestBox: @unchecked Sendable {
     private var mediaSession: UUID?
     private var mediaCount = 0
     private var requestedDisplay: UInt32?
+    private var requestedControl = false
     func setInterface(_ value: NWInterface?) -> Bool {
         lock.withLock {
             guard !pathObserved else { return false }
@@ -34,8 +35,9 @@ private final class ServerTestBox: @unchecked Sendable {
     func getAnswer() -> String? { lock.withLock { answer } }
     func setMediaSession(_ value: UUID) { lock.withLock { mediaSession = value } }
     func getMediaSession() -> UUID? { lock.withLock { mediaSession } }
-    func noteMedia(_ display: UInt32?) -> Int { lock.withLock { mediaCount += 1; requestedDisplay = display; return mediaCount } }
+    func noteMedia(_ display: UInt32?, control: Bool) -> Int { lock.withLock { mediaCount += 1; requestedDisplay = display; requestedControl = control; return mediaCount } }
     func getRequestedDisplay() -> UInt32? { lock.withLock { requestedDisplay } }
+    func getRequestedControl() -> Bool { lock.withLock { requestedControl } }
 }
 
 private final class ServerTestPeer: @unchecked Sendable {
@@ -167,10 +169,13 @@ final class SignalingServerTests: XCTestCase {
                 case let .mediaRequested(id, _, _, target):
                     box.setMediaSession(id)
                     let display: UInt32?
-                    if case let .display(id) = target { display = id } else { display = nil }
+                    switch target {
+                    case let .display(id), let .displayControl(id): display = id
+                    default: display = nil
+                    }
                     if target == .mainDisplayControl {
                         controlRequested.fulfill()
-                    } else if box.noteMedia(display) == 1 { mediaRequested.fulfill() } else { selectedMediaRequested.fulfill() }
+                    } else if box.noteMedia(display, control: target.isControl) == 1 { mediaRequested.fulfill() } else { selectedMediaRequested.fulfill() }
                 case let .answer(_, _, sdp): box.setAnswer(sdp); answerReceived.fulfill()
                 case .disconnected: disconnected.fulfill()
                 default: break
@@ -194,7 +199,7 @@ final class SignalingServerTests: XCTestCase {
         await fulfillment(of: [firstAuthenticated], timeout: 10)
         try await first.send(.listFeatures)
         let features = try await first.receive()
-        XCTAssertEqual(features, .features(["pointer.click", "pointer.double", "pointer.drag", "pointer.scroll", "pointer.move", "keyboard.text", "keyboard.key", "window.control"]))
+        XCTAssertEqual(features, .features(["pointer.click", "pointer.double", "pointer.drag", "pointer.scroll", "pointer.move", "keyboard.text", "keyboard.key", "window.control", "display.control"]))
         try await first.send(.listDisplays)
         guard case let .displays(displays) = try await first.receive(), let display = displays.first else {
             return XCTFail("Expected a nonempty display list")
@@ -262,9 +267,10 @@ final class SignalingServerTests: XCTestCase {
         try await second.send(.listDisplays)
         guard case let .displays(secondDisplays) = try await second.receive(),
               secondDisplays.contains(where: { $0.id == display.id }) else { return XCTFail("Expected display") }
-        try await second.send(.startDisplay(display.id))
+        try await second.send(.startDisplayControl(display.id))
         await fulfillment(of: [selectedMediaRequested], timeout: 10)
         XCTAssertEqual(box.getRequestedDisplay(), display.id)
+        XCTAssertTrue(box.getRequestedControl())
         let secondID = try XCTUnwrap(box.getLastAuthenticated())
         second.connection.cancel()
         await server.disconnectCurrent()
@@ -307,7 +313,7 @@ final class SignalingServerTests: XCTestCase {
         try await unknown.send(.listDisplays)
         guard case let .displays(currentDisplays) = try await unknown.receive() else { return XCTFail("Expected display list") }
         let absent = try XCTUnwrap((UInt32(1)...65).first { candidate in !currentDisplays.contains { $0.id == candidate } })
-        try await unknown.send(.startDisplay(absent))
+        try await unknown.send(.startDisplayControl(absent))
         let unknownCloseDeadline = Date().addingTimeInterval(5)
         while await server.isActive(sessionID: unknownID) && Date() < unknownCloseDeadline {
             try await Task.sleep(for: .milliseconds(20))

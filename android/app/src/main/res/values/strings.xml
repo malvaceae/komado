@@ -34,6 +34,7 @@
     <string name="check_connection">接続を確認</string>
     <string name="view_screen">画面を見る</string>
     <string name="control_screen">メイン画面を操作</string>
+    <string name="control_display">画面を選んで操作</string>
     <string name="show_keyboard">キーボードを表示</string>
     <string name="special_keys_hint">特殊キー（横にスクロール）。修飾キーはこの列の操作に適用します。</string>
     <string name="shortcut_key">英数字キー</string>

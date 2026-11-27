@@ -169,7 +169,8 @@ class VideoActivity : Activity() {
                         return@execute
                     }
                     if ("pointer.click" !in features ||
-                        (intent.getBooleanExtra(CHOOSE_WINDOW, false) && "window.control" !in features)) {
+                        (intent.getBooleanExtra(CHOOSE_WINDOW, false) && "window.control" !in features) ||
+                        (intent.getBooleanExtra(CHOOSE_DISPLAY, false) && "display.control" !in features)) {
                         runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.features_unsupported) } }
                         return@execute
                     }

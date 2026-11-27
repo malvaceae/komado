@@ -40,6 +40,7 @@ public enum SignalMessage: Equatable, Sendable {
     case listFeatures
     case features([String])
     case startDisplay(UInt32)
+    case startDisplayControl(UInt32)
     case listDisplays
     case displays([DisplayInfo])
     case listWindows(UInt16)
@@ -81,6 +82,9 @@ public enum SignalMessage: Equatable, Sendable {
             if fields.count == 2 { return .startMedia }
             guard fields.count == 3, let id = Self.positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
             return .startDisplay(UInt32(id))
+        case "display.control":
+            guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
+            return .startDisplayControl(UInt32(id))
         case "control.start":
             guard fields.count == 2 else { throw MessageError.invalid }
             return .startControl
@@ -162,6 +166,9 @@ public enum SignalMessage: Equatable, Sendable {
         case .startControl: fields = ["1", "control.start"]
         case .listFeatures: fields = ["1", "features.list"]
         case let .features(values): fields = ["1", "features.listed"] + values
+        case let .startDisplayControl(id):
+            guard id > 0 else { throw MessageError.invalid }
+            fields = ["1", "display.control", String(id)]
         case let .startDisplay(id):
             guard id > 0 else { throw MessageError.invalid }
             fields = ["1", "start", String(id)]

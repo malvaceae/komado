@@ -447,9 +447,12 @@ final class HostModel: ObservableObject {
                 }
                 let captured: DisplayCapture
                 switch target {
-                case .mainDisplay, .mainDisplayControl, .display:
+                case .mainDisplay, .mainDisplayControl, .display, .displayControl:
                     let displayID: UInt32
-                    if case let .display(value) = target { displayID = value } else { displayID = CGMainDisplayID() }
+                    switch target {
+                    case let .display(value), let .displayControl(value): displayID = value
+                    default: displayID = CGMainDisplayID()
+                    }
                     guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
                         throw HostMediaSession.SessionError.creationFailed
                     }
@@ -460,7 +463,7 @@ final class HostModel: ObservableObject {
                         "\(CGDisplayPixelsWide(display.displayID)) × \(CGDisplayPixelsHigh(display.displayID)) px"
                     self.sharingWindow = false
                     self.sharingScreen = true
-                    if target == .mainDisplayControl {
+                    if target.isControl {
                         let bounds = CGDisplayBounds(displayID)
                         guard CaptureGeometry(revision: 1, bounds: bounds) != nil else { throw HostMediaSession.SessionError.creationFailed }
                         self.controlDisplayID = displayID

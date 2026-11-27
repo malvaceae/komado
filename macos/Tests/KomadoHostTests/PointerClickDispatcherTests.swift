@@ -28,6 +28,18 @@ final class PointerClickDispatcherTests: XCTestCase {
     }
 
     @MainActor
+    func testClickUsesGlobalCoordinatesForDisplayWithNegativeOrigin() throws {
+        let geometry = try XCTUnwrap(CaptureGeometry(revision: 1, bounds: CGRect(x: -1200, y: -300, width: 800, height: 600)))
+        let mapping = try XCTUnwrap(CaptureFrameMapping(frameSize: CGSize(width: 800, height: 600),
+                                                        contentRect: CGRect(x: 0, y: 0, width: 800, height: 600)))
+        var locations: [CGPoint] = []
+        let dispatcher = PointerClickDispatcher(trusted: { true }, post: { locations.append($0.location) })
+        let click = PointerClick(sequence: 1, captureRevision: 1, x: 500_000, y: 250_000, button: .left)
+        XCTAssertTrue(dispatcher.click(click, geometry: geometry, mapping: mapping, sessionAllowed: true))
+        XCTAssertEqual(locations, [CGPoint(x: -800, y: -150), CGPoint(x: -800, y: -150)])
+    }
+
+    @MainActor
     func testRightAndMiddleButtonsProduceMatchingPairs() throws {
         let geometry = try XCTUnwrap(CaptureGeometry(revision: 1, bounds: CGRect(x: 0, y: 0, width: 10, height: 10)))
         let mapping = try XCTUnwrap(CaptureFrameMapping(frameSize: CGSize(width: 10, height: 10), contentRect: CGRect(x: 0, y: 0, width: 10, height: 10)))
