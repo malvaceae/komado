@@ -6,6 +6,31 @@ import XCTest
 
 final class HostModelTests: XCTestCase {
     @MainActor
+    func testAccessibilityPermissionRequestAndRefresh() throws {
+        let service = "me.mallows.komado.test.permissions.\(UUID().uuidString)"
+        let settings = try XCTUnwrap(UserDefaults(suiteName: service))
+        defer { settings.removePersistentDomain(forName: service) }
+        let registry = PairedDeviceRegistry(service: service)
+        var trusted = false
+        var requests = 0
+        let model = HostModel(identityStore: HostTLSIdentityStore(service: service), registry: registry,
+                              pairing: PairingCoordinator(registry: registry, now: { .zero }),
+                              authentication: DeviceAuthenticationCoordinator(registry: registry, now: { .zero }), settings: settings,
+                              accessibilityStatus: { trusted }, accessibilityPrompt: { requests += 1 })
+        XCTAssertFalse(model.accessibilityPermission)
+        XCTAssertEqual(requests, 0)
+        model.requestAccessibilityPermission()
+        XCTAssertEqual(requests, 1)
+        XCTAssertFalse(model.accessibilityPermission)
+        trusted = true
+        model.refreshPermissions()
+        XCTAssertTrue(model.accessibilityPermission)
+        trusted = false
+        model.refreshPermissions()
+        XCTAssertFalse(model.accessibilityPermission)
+    }
+
+    @MainActor
     func testHostStartsIssuesInvitationAndStops() async throws {
         let service = "me.mallows.komado.test.model.\(UUID().uuidString)", registryService = "\(service).devices"
         let settings = try XCTUnwrap(UserDefaults(suiteName: service))

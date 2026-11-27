@@ -141,6 +141,17 @@ private struct HostView: View {
                         Button("画面収録を許可") { model.requestScreenPermission() }
                     }
                 }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("アクセシビリティ").font(.headline)
+                    if model.accessibilityPermission {
+                        Text("操作に必要な権限が許可されています。")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("AndroidからMacを操作するには、システム設定でアクセシビリティの許可が必要です。")
+                            .foregroundStyle(.secondary)
+                        Button("アクセシビリティの許可を確認") { model.requestAccessibilityPermission() }
+                    }
+                }
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
                     Text("ペアリング").font(.headline)
@@ -194,7 +205,10 @@ private struct HostView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear { loginItem.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            loginItem.refresh()
+            model.refreshPermissions()
+        }
         .confirmationDialog("端末の登録を削除しますか？", isPresented: $confirmRemoval, presenting: deviceToRemove) { device in
             Button("削除", role: .destructive) { Task { await model.remove(device) } }
             Button("キャンセル", role: .cancel) { }

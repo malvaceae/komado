@@ -1,5 +1,5 @@
 import AppKit
-import ApplicationServices
+@preconcurrency import ApplicationServices
 import CoreGraphics
 import KomadoCore
 import Network
@@ -39,6 +39,7 @@ final class HostModel: ObservableObject {
     @Published private(set) var invitation: String?
     @Published private(set) var error: String?
     @Published private(set) var screenPermission = CGPreflightScreenCaptureAccess()
+    @Published private(set) var accessibilityPermission: Bool
     @Published var allowRemoteControl = false {
         didSet {
             if !allowRemoteControl { allowClipboardSharing = false }
@@ -68,6 +69,8 @@ final class HostModel: ObservableObject {
     }
 
     private let settings: UserDefaults
+    private let accessibilityStatus: () -> Bool
+    private let accessibilityPrompt: () -> Void
     private let identityStore: HostTLSIdentityStore
     private let registry: PairedDeviceRegistry
     private let pairing: PairingCoordinator
@@ -115,8 +118,16 @@ final class HostModel: ObservableObject {
 
     init(identityStore: HostTLSIdentityStore, registry: PairedDeviceRegistry,
          pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator, settings: UserDefaults = .standard,
-         clipboardTransfer: ClipboardTransfer = ClipboardTransfer()) {
+         clipboardTransfer: ClipboardTransfer = ClipboardTransfer(),
+         accessibilityStatus: @escaping () -> Bool = { AXIsProcessTrusted() },
+         accessibilityPrompt: @escaping () -> Void = {
+             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+             _ = AXIsProcessTrustedWithOptions(options)
+         }) {
         self.clipboardTransfer = clipboardTransfer
+        self.accessibilityStatus = accessibilityStatus
+        self.accessibilityPrompt = accessibilityPrompt
+        self.accessibilityPermission = accessibilityStatus()
         self.settings = settings
         self.captureResolution = settings.string(forKey: Self.captureResolutionKey).flatMap(CaptureResolution.init(rawValue:)) ?? .standard
         self.keepAwakeWhileListening = settings.bool(forKey: Self.keepAwakeKey)
@@ -141,7 +152,7 @@ final class HostModel: ObservableObject {
     }
 
     func refresh() {
-        screenPermission = CGPreflightScreenCaptureAccess()
+        refreshPermissions()
         do {
             fingerprint = try identityStore.load().map { Self.format($0.fingerprintSHA256, separator: ":") }
             identityError = false
@@ -156,6 +167,16 @@ final class HostModel: ObservableObject {
             devices = []
             devicesError = true
         }
+    }
+
+    func refreshPermissions() {
+        screenPermission = CGPreflightScreenCaptureAccess()
+        accessibilityPermission = accessibilityStatus()
+    }
+
+    func requestAccessibilityPermission() {
+        accessibilityPrompt()
+        accessibilityPermission = accessibilityStatus()
     }
 
     func requestScreenPermission() {
