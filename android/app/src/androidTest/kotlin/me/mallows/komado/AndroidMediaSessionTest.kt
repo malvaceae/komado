@@ -291,6 +291,13 @@ class AndroidMediaSessionTest {
                 if (frames.await(100, TimeUnit.MILLISECONDS)) break
             }
             assertTrue("No frame received", frames.await(5, TimeUnit.SECONDS))
+            val statistics = CompletableFuture<VideoStatistics>()
+            instrumentation.runOnMainSync {
+                assertTrue(requireNotNull(receiver).requestVideoStatistics { statistics.complete(it) })
+            }
+            val snapshot = statistics.get(10, TimeUnit.SECONDS)
+            assertEquals(320, snapshot.width)
+            assertEquals(240, snapshot.height)
             source.capturerObserver.onCapturerStopped()
             assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap("[\"1\",\"capture.ready\",\"1\"]".toByteArray()), false)))
             assertTrue("Duplicate capture notification was not rejected", failed.await(5, TimeUnit.SECONDS))

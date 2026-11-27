@@ -51,6 +51,14 @@
     <string name="trackpad_cursor_speed">カーソル速度: %1$d%%</string>
     <string name="trackpad_scroll_speed">スクロール感度: %1$d%%</string>
     <string name="clipboard_automatic">クリップボードを自動同期（両端で許可が必要。機密情報が転送される場合があります）</string>
+    <string name="statistics_title">接続情報</string>
+    <string name="statistics_loading">接続情報を取得しています…</string>
+    <string name="statistics_unavailable">接続情報を取得できませんでした。</string>
+    <string name="statistics_unknown">取得できません</string>
+    <string name="statistics_size_value">%1$d × %2$d px</string>
+    <string name="statistics_fps_value">%1$.1f fps</string>
+    <string name="statistics_rtt_value">%1$.0f ms</string>
+    <string name="statistics_message">受信映像サイズ: %1$s\n受信フレームレート: %2$s\n通信の往復時間: %3$s\n\n往復時間は操作が画面に反映されるまでの時間とは異なります。</string>
     <string name="clipboard_automatic_unavailable">自動同期を開始できませんでした。Mac側の許可を確認してください。</string>
     <string name="clipboard_send">Macへコピー</string>
     <string name="clipboard_receive">Macからコピー</string>

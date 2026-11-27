@@ -43,6 +43,7 @@ class VideoActivity : Activity() {
     private var renderer: RemoteVideoRenderer? = null
     private var targetDialog: AlertDialog? = null
     private var settingsDialog: AlertDialog? = null
+    private var statisticsDialog: AlertDialog? = null
     private var viewport: ZoomableVideoView? = null
     private val zoomButtons = mutableListOf<Button>()
     private var captureRevision: Long? = null
@@ -59,6 +60,7 @@ class VideoActivity : Activity() {
     private var trackpadEnabled = false
     private var clipboardSendButton: Button? = null
     private var clipboardReceiveButton: Button? = null
+    private var statisticsButton: Button? = null
     private enum class ClipboardAction { GET, PREPARE_SEND, SEND, AUTO_START, AUTO_POLL, AUTO_PREPARE, AUTO_SEND }
     private var clipboardAction: ClipboardAction? = null
     private var clipboardChangeGuard: ClipboardChangeGuard? = null
@@ -226,6 +228,12 @@ class VideoActivity : Activity() {
             }
             controls.addView(keyboardButton)
         }
+        statisticsButton = Button(this).apply {
+            setText(R.string.statistics_title)
+            isEnabled = false
+            setOnClickListener { showVideoStatistics() }
+        }
+        controls.addView(statisticsButton)
         controls.addView(Button(this).apply { setText(R.string.close_screen); setOnClickListener { finish() } })
         root.addView(VideoControlsScrollView(this).apply { addView(controls) })
         setContentView(root)
@@ -365,6 +373,7 @@ class VideoActivity : Activity() {
         val clipboardAvailable = available && controlMode && "clipboard.manual" in supportedFeatures && clipboardAction == null
         clipboardSendButton?.isEnabled = clipboardAvailable
         clipboardReceiveButton?.isEnabled = clipboardAvailable
+        statisticsButton?.isEnabled = active && firstFrameShown
         automaticSwitch?.isEnabled = available && controlMode && "clipboard.auto" in supportedFeatures
         specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures)
     }
@@ -559,6 +568,33 @@ class VideoActivity : Activity() {
 
     private fun showClipboardMessage(message: Int) { Toast.makeText(this, message, Toast.LENGTH_SHORT).show() }
 
+    private fun showVideoStatistics() {
+        if (!active || statisticsDialog != null) return
+        val dialog = AlertDialog.Builder(this).setTitle(R.string.statistics_title)
+            .setMessage(R.string.statistics_loading).setPositiveButton(R.string.close_screen, null).create()
+        statisticsDialog = dialog
+        val timeout = Runnable {
+            if (statisticsDialog === dialog && dialog.isShowing) dialog.setMessage(getString(R.string.statistics_unavailable))
+        }
+        dialog.setOnDismissListener {
+            mainHandler.removeCallbacks(timeout)
+            if (statisticsDialog === dialog) statisticsDialog = null
+        }
+        dialog.show()
+        val requested = media?.requestVideoStatistics { snapshot ->
+            if (!active || statisticsDialog !== dialog || !dialog.isShowing) return@requestVideoStatistics
+            mainHandler.removeCallbacks(timeout)
+            val unknown = getString(R.string.statistics_unknown)
+            val size = if (snapshot.width != null && snapshot.height != null)
+                getString(R.string.statistics_size_value, snapshot.width, snapshot.height) else unknown
+            val fps = snapshot.framesPerSecond?.let { getString(R.string.statistics_fps_value, it) } ?: unknown
+            val rtt = snapshot.roundTripSeconds?.let { getString(R.string.statistics_rtt_value, it * 1000) } ?: unknown
+            dialog.setMessage(getString(R.string.statistics_message, size, fps, rtt))
+        } == true
+        if (requested) mainHandler.postDelayed(timeout, 5_000)
+        else dialog.setMessage(getString(R.string.statistics_unavailable))
+    }
+
     private fun showTrackpadSettings() {
         val current = trackpadSettings.load()
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(8), dp(24), 0) }
@@ -643,6 +679,8 @@ class VideoActivity : Activity() {
         targetDialog = null
         settingsDialog?.dismiss()
         settingsDialog = null
+        statisticsDialog?.dismiss()
+        statisticsDialog = null
         runCatching { media?.close() }
         media = null
         captureRevision = null
@@ -660,6 +698,7 @@ class VideoActivity : Activity() {
         removeClipboardListener()
         clipboardSendButton?.isEnabled = false
         clipboardReceiveButton?.isEnabled = false
+        statisticsButton?.isEnabled = false
         keyboardButton?.isEnabled = false
         specialKeys?.setAvailable(false)
         keyboard?.close()

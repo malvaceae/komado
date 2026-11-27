@@ -152,6 +152,18 @@ internal class AndroidMediaSession(
         }
     }
 
+    fun requestVideoStatistics(callback: (VideoStatistics) -> Unit): Boolean {
+        checkMainThread()
+        if (state != State.ANSWER_READY || !selectedRouteAllowed) return false
+        return try {
+            peer.getStats { report ->
+                val snapshot = VideoStatistics.from(report.statsMap)
+                postIfOpen { callback(snapshot) }
+            }
+            true
+        } catch (_: RuntimeException) { false }
+    }
+
     /** The UI must separately authorize input and map it to the current capture. */
     fun sendClick(click: PointerClick): Boolean {
         return sendInput(click.sequence, click.captureRevision) { PointerClickCodec.encode(click) }
