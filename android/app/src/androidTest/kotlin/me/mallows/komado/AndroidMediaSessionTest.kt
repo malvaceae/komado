@@ -93,7 +93,12 @@ class AndroidMediaSessionTest {
         exchangeDescriptionsAndGeneratedVideo(confirmText = true, sendWrongConfirmation = false)
     }
 
-    private fun exchangeDescriptionsAndGeneratedVideo(confirmText: Boolean, sendWrongConfirmation: Boolean = true) {
+    @Test fun remoteControlChannelClosureReportsUnconfirmedText() {
+        exchangeDescriptionsAndGeneratedVideo(confirmText = true, closeControlChannel = true)
+    }
+
+    private fun exchangeDescriptionsAndGeneratedVideo(confirmText: Boolean, sendWrongConfirmation: Boolean = true,
+                                                       closeControlChannel: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val address = DatagramSocket().use {
             it.connect(InetAddress.getByName("192.0.2.1"), 9)
@@ -348,10 +353,12 @@ class AndroidMediaSessionTest {
                 val laterText = KeyboardText(21, 1, "sample")
                 instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendText(laterText)) }
                 assertEquals(laterText.copy(confirm = true), laterTextReceived.get(5, TimeUnit.SECONDS))
-                if (sendWrongConfirmation) {
+                if (closeControlChannel) {
+                    channel.close()
+                } else if (sendWrongConfirmation) {
                     assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(KeyboardTextPostedCodec.encode(22)), false)))
                 }
-                assertTrue("Unconfirmed text did not close the session", failed.await(if (sendWrongConfirmation) 5 else 15, TimeUnit.SECONDS))
+                assertTrue("Unconfirmed text did not close the session", failed.await(if (sendWrongConfirmation || closeControlChannel) 5 else 15, TimeUnit.SECONDS))
                 assertTrue("Unconfirmed text was not reported", textUnconfirmed.await(5, TimeUnit.SECONDS))
             } else {
                 assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap("[\"1\",\"capture.ready\",\"1\"]".toByteArray()), false)))

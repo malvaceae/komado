@@ -61,6 +61,30 @@ final class HostMediaSessionTests: XCTestCase {
         XCTAssertFalse(forwarded)
     }
 
+    func testControlChannelClosureStopsSessionOnce() throws {
+        let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
+        route.selected(localCandidate: "candidate:1 1 udp 123 127.0.0.1 1234 typ host")
+        let failures = InputCount()
+        let delegate = HostPeerDelegate(route: route, onControl: nil, onFailure: { failures.increment() })
+        let factory = MediaFactory.create()
+        let peer = try XCTUnwrap(factory.peerConnection(with: RTCConfiguration(),
+            constraints: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil), delegate: delegate))
+        let channel = try XCTUnwrap(peer.dataChannel(forLabel: "control", configuration: RTCDataChannelConfiguration()))
+        defer { delegate.close(); peer.close() }
+        channel.close()
+        XCTAssertTrue(channel.readyState == .closing || channel.readyState == .closed)
+        delegate.dataChannelDidChangeState(channel)
+        delegate.dataChannelDidChangeState(channel)
+        XCTAssertEqual(failures.value, 1)
+        XCTAssertFalse(route.isAllowed)
+
+        let localFailures = InputCount()
+        let localDelegate = HostPeerDelegate(route: route, onControl: nil, onFailure: { localFailures.increment() })
+        localDelegate.close()
+        localDelegate.dataChannelDidChangeState(channel)
+        XCTAssertEqual(localFailures.value, 0)
+    }
+
     @MainActor
     func testOfferAndSessionLifecycle() async throws {
         let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})

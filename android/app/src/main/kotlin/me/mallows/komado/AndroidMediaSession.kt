@@ -360,9 +360,14 @@ internal class AndroidMediaSession(
                 fail()
             } else {
                 channel = dataChannel
+                fun checkChannelState() {
+                    if (dataChannel.state() in setOf(DataChannel.State.CLOSING, DataChannel.State.CLOSED)) {
+                        postIfOpen { fail() }
+                    }
+                }
                 dataChannel.registerObserver(object : DataChannel.Observer {
                     override fun onBufferedAmountChange(previousAmount: Long) = Unit
-                    override fun onStateChange() = Unit
+                    override fun onStateChange() = checkChannelState()
                     override fun onMessage(buffer: DataChannel.Buffer) {
                         if (buffer.binary || buffer.data.remaining() !in 1..ClipboardCodec.MAX_MESSAGE_BYTES) {
                             postIfOpen { fail() }
@@ -380,6 +385,7 @@ internal class AndroidMediaSession(
                         }
                     }
                 })
+                checkChannelState()
             }
         }
     }

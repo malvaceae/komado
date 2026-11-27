@@ -209,6 +209,8 @@ final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChanne
         if dataChannel.readyState == .open {
             let callback = lock.withLock { closed ? nil : onChannelOpen }
             callback?()
+        } else if dataChannel.readyState == .closing || dataChannel.readyState == .closed {
+            fail()
         }
     }
 
