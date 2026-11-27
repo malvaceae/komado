@@ -2,6 +2,7 @@ package me.mallows.komado
 
 import android.os.SystemClock
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -35,8 +36,10 @@ class ZoomableVideoViewTest {
                     assertEquals(800, video.width)
                     assertTrue(view.setFrameSize(400, 400, 0))
                     val clicks = mutableListOf<PointerClick>()
+                    val rightClicks = mutableListOf<PointerClick>()
                     val mapper = TapClickMapper()
                     view.onVideoTap = { x, y -> view.mapTap(x, y, 1, mapper)?.let(clicks::add) }
+                    view.onVideoLongPress = { x, y -> view.mapTap(x, y, 1, mapper, PointerClick.Button.RIGHT)?.let(rightClicks::add) }
                     val tapTime = SystemClock.uptimeMillis()
                     val tapDown = MotionEvent.obtain(tapTime, tapTime, MotionEvent.ACTION_DOWN, 400f, 400f, 0)
                     val tapUp = MotionEvent.obtain(tapTime, tapTime + 20, MotionEvent.ACTION_UP, 400f, 400f, 0)
@@ -45,6 +48,24 @@ class ZoomableVideoViewTest {
                     assertEquals(1, clicks.size)
                     assertEquals(500_000, clicks.single().x)
                     assertEquals(500_000, clicks.single().y)
+                    val longTime = SystemClock.uptimeMillis()
+                    val longDown = MotionEvent.obtain(longTime, longTime, MotionEvent.ACTION_DOWN, 400f, 400f, 0)
+                    val longUp = MotionEvent.obtain(longTime, longTime + ViewConfiguration.getLongPressTimeout() + 10,
+                        MotionEvent.ACTION_UP, 400f, 400f, 0)
+                    try { view.dispatchTouchEvent(longDown); view.dispatchTouchEvent(longUp) }
+                    finally { longDown.recycle(); longUp.recycle() }
+                    assertEquals(1, clicks.size)
+                    assertEquals(PointerClick.Button.RIGHT, rightClicks.single().button)
+                    assertEquals(500_000, rightClicks.single().x)
+                    val movedTime = SystemClock.uptimeMillis()
+                    val movedDown = MotionEvent.obtain(movedTime, movedTime, MotionEvent.ACTION_DOWN, 300f, 400f, 0)
+                    val movedMove = MotionEvent.obtain(movedTime, movedTime + 20, MotionEvent.ACTION_MOVE, 400f, 400f, 0)
+                    val movedUp = MotionEvent.obtain(movedTime, movedTime + ViewConfiguration.getLongPressTimeout() + 10,
+                        MotionEvent.ACTION_UP, 400f, 400f, 0)
+                    try { listOf(movedDown, movedMove, movedUp).forEach { view.dispatchTouchEvent(it) } }
+                    finally { listOf(movedDown, movedMove, movedUp).forEach { it.recycle() } }
+                    assertEquals(1, clicks.size)
+                    assertEquals(1, rightClicks.size)
                     assertNull(view.mapTap(400f, 400f, null, mapper))
                     val cancelTime = SystemClock.uptimeMillis()
                     val cancelDown = MotionEvent.obtain(cancelTime, cancelTime, MotionEvent.ACTION_DOWN, 400f, 400f, 0)
@@ -59,6 +80,7 @@ class ZoomableVideoViewTest {
                     try { view.dispatchTouchEvent(jumpDown); view.dispatchTouchEvent(jumpUp) }
                     finally { jumpDown.recycle(); jumpUp.recycle() }
                     assertEquals("A moved touch must not produce a click", 1, clicks.size)
+                    assertEquals("A moved touch must not produce a right click", 1, rightClicks.size)
                     assertTrue(view.setFrameSize(400, 400, 90))
                     assertNull(view.mapTap(400f, 400f, 1, mapper))
                     assertTrue(view.setFrameSize(400, 400, 0))

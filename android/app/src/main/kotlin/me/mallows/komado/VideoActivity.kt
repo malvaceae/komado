@@ -13,6 +13,7 @@ import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.protocol.KeyboardKey
+import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.security.DeviceSigningKey
 import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
@@ -77,11 +78,9 @@ class VideoActivity : Activity() {
             viewport = ZoomableVideoView(this, video.view)
             if (controlMode) viewport?.contentDescription = getString(R.string.video_control_description)
             viewport?.onVideoTap = { x, y ->
-                if (active && controlMode && firstFrameShown) {
-                    val click = viewport?.mapTap(x, y, captureRevision, tapMapper)
-                    if (click != null && media?.sendClick(click) != true) stopSession(failed = true)
-                }
+                sendPointerClick(x, y, PointerClick.Button.LEFT)
             }
+            viewport?.onVideoLongPress = { x, y -> sendPointerClick(x, y, PointerClick.Button.RIGHT) }
             root.addView(viewport, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         } catch (_: Exception) { active = false; status.setText(R.string.screen_failed) }
         val zoomControls = LinearLayout(this)
@@ -230,6 +229,12 @@ class VideoActivity : Activity() {
     private fun updateControlAvailability() {
         keyboardButton?.isEnabled = active && firstFrameShown && captureRevision != null
         specialKeys?.setAvailable(active && firstFrameShown && captureRevision != null)
+    }
+
+    private fun sendPointerClick(x: Float, y: Float, button: PointerClick.Button) {
+        if (!active || !controlMode || !firstFrameShown) return
+        val click = viewport?.mapTap(x, y, captureRevision, tapMapper, button)
+        if (click != null && media?.sendClick(click) != true) stopSession(failed = true)
     }
 
     private fun stopSession(failed: Boolean) {

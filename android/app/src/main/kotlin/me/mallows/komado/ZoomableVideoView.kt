@@ -23,6 +23,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     private var lastY = 0f
     private var moved = false
     var onVideoTap: ((Float, Float) -> Unit)? = null
+    var onVideoLongPress: ((Float, Float) -> Unit)? = null
     private val detector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             zoom.zoom(detector.scaleFactor.toDouble(), detector.focusX.toDouble(), detector.focusY.toDouble())
@@ -55,9 +56,10 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
         applyTransform()
     }
 
-    fun mapTap(x: Float, y: Float, revision: Long?, mapper: TapClickMapper): PointerClick? =
+    fun mapTap(x: Float, y: Float, revision: Long?, mapper: TapClickMapper,
+               button: PointerClick.Button = PointerClick.Button.LEFT): PointerClick? =
         mapper.click(x.toDouble(), y.toDouble(), width, height, frameWidth, frameHeight,
-            frameRotation, revision, zoom.scale, zoom.panX, zoom.panY)
+            frameRotation, revision, zoom.scale, zoom.panX, zoom.panY, button)
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
@@ -117,8 +119,12 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
             MotionEvent.ACTION_UP -> {
                 if (!moved && pointerId != MotionEvent.INVALID_POINTER_ID &&
                     abs(event.x - lastX) <= touchSlop && abs(event.y - lastY) <= touchSlop) {
-                    performClick()
-                    onVideoTap?.invoke(event.x, event.y)
+                    if (event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) {
+                        onVideoLongPress?.invoke(event.x, event.y)
+                    } else {
+                        performClick()
+                        onVideoTap?.invoke(event.x, event.y)
+                    }
                 }
                 pointerId = MotionEvent.INVALID_POINTER_ID
             }
