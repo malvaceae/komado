@@ -41,6 +41,7 @@ class ZoomableVideoViewTest {
                 scenario.onActivity {
                     val view = requireNotNull(viewport)
                     assertTrue(view.setFrameSize(800, 400, 0))
+                    view.setTrackpadSensitivity(150, 50)
                     view.setTrackpadMode(true)
                 }
                 Thread.sleep(100)
@@ -59,7 +60,7 @@ class ZoomableVideoViewTest {
                 }
                 Thread.sleep(100)
                 scenario.onActivity {
-                    assertEquals(480f to 440f, moves.last())
+                    assertEquals(520f to 460f, moves.last())
                     val view = requireNotNull(viewport)
                     val now = SystemClock.uptimeMillis()
                     fun touch(time: Long, action: Int, x: Float, y: Float, down: Long = now) {
@@ -68,13 +69,13 @@ class ZoomableVideoViewTest {
                     }
                     touch(now, MotionEvent.ACTION_DOWN, 50f, 50f)
                     touch(now + 20, MotionEvent.ACTION_UP, 50f, 50f)
-                    assertEquals(listOf(480f to 440f), clicks)
+                    assertEquals(listOf(520f to 460f), clicks)
                     val hold = now + 1_000
                     touch(hold, MotionEvent.ACTION_DOWN, 100f, 100f, hold)
                     touch(hold + ViewConfiguration.getLongPressTimeout() + 20, MotionEvent.ACTION_MOVE, 170f, 120f, hold)
                     touch(hold + ViewConfiguration.getLongPressTimeout() + 40, MotionEvent.ACTION_UP, 170f, 120f, hold)
-                    assertEquals(listOf(Triple(PointerDrag.Phase.BEGIN, 480f, 440f),
-                        Triple(PointerDrag.Phase.MOVE, 550f, 460f), Triple(PointerDrag.Phase.END, 550f, 460f)), drag)
+                    assertEquals(listOf(Triple(PointerDrag.Phase.BEGIN, 520f, 460f),
+                        Triple(PointerDrag.Phase.MOVE, 625f, 490f), Triple(PointerDrag.Phase.END, 625f, 490f)), drag)
                     assertEquals(1, clicks.size)
                     val scrolls = mutableListOf<List<Float>>()
                     view.onVideoScroll = { x, y, dx, dy -> scrolls.add(listOf(x, y, dx, dy)) }
@@ -86,7 +87,7 @@ class ZoomableVideoViewTest {
                     val up = MotionEvent.obtain(scrollTime, scrollTime + 70, MotionEvent.ACTION_UP, 200f, 350f, 0)
                     try { listOf(first, second, move, lift, up).forEach { view.onTouchEvent(it) } }
                     finally { listOf(first, second, move, lift, up).forEach { it.recycle() } }
-                    assertEquals(listOf(listOf(550f, 460f, 0f, -50f)), scrolls)
+                    assertEquals(listOf(listOf(625f, 490f, 0f, -25f)), scrolls)
                     assertEquals(1, clicks.size)
                     view.setTrackpadMode(false)
                     renderer!!.close(); renderer = null

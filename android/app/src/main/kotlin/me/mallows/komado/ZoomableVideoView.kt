@@ -38,6 +38,8 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     private var dragX = 0f
     private var dragY = 0f
     private var trackpadMode = false
+    private var trackpadCursorFactor = 1f
+    private var trackpadScrollFactor = 1f
     private var cursorX = 0f
     private var cursorY = 0f
     private var cursorReady = false
@@ -80,6 +82,12 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
         addView(video, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         contentDescription = context.getString(R.string.video_description)
         isFocusable = true
+    }
+
+    fun setTrackpadSensitivity(cursorPercent: Int, scrollPercent: Int) {
+        require(cursorPercent in 50..200 && scrollPercent in 50..200)
+        trackpadCursorFactor = cursorPercent / 100f
+        trackpadScrollFactor = scrollPercent / 100f
     }
 
     fun supportsTrackpad(): Boolean = frameWidth > 0 && frameHeight > 0 && frameRotation == 0
@@ -189,7 +197,9 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                 else if (movement > touchSlop) twoFingerMode = TwoFingerMode.SCROLL
             }
             if (twoFingerMode == TwoFingerMode.SCROLL) {
-                if (!trackpadMode || cursorReady) onVideoScroll?.invoke(if (trackpadMode) cursorX else x, if (trackpadMode) cursorY else y, x - scrollX, y - scrollY)
+                if (!trackpadMode || cursorReady) onVideoScroll?.invoke(if (trackpadMode) cursorX else x, if (trackpadMode) cursorY else y,
+                    (x - scrollX) * if (trackpadMode) trackpadScrollFactor else 1f,
+                    (y - scrollY) * if (trackpadMode) trackpadScrollFactor else 1f)
                 scrollX = x; scrollY = y
             }
         }
@@ -225,7 +235,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                     if (trackpadMode) {
                         if (moved || abs(dx) > touchSlop || abs(dy) > touchSlop) {
                             moved = true; previousTapTime = 0
-                            if (cursorReady && clampCursor(cursorX + dx, cursorY + dy)) {
+                            if (cursorReady && clampCursor(cursorX + dx * trackpadCursorFactor, cursorY + dy * trackpadCursorFactor)) {
                                 if (dragging) {
                                     if (onVideoDrag?.invoke(PointerDrag.Phase.MOVE, cursorX, cursorY) == true) {
                                         dragX = cursorX; dragY = cursorY

@@ -8,6 +8,7 @@ import android.os.Looper
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.DisplayInfo
@@ -33,6 +34,7 @@ class VideoActivity : Activity() {
     private var media: AndroidMediaSession? = null
     private var renderer: RemoteVideoRenderer? = null
     private var targetDialog: AlertDialog? = null
+    private var settingsDialog: AlertDialog? = null
     private var viewport: ZoomableVideoView? = null
     private val zoomButtons = mutableListOf<Button>()
     private var captureRevision: Long? = null
@@ -44,6 +46,8 @@ class VideoActivity : Activity() {
     private var keyboard: RemoteKeyboardView? = null
     private var keyboardButton: Button? = null
     private var trackpadButton: Button? = null
+    private var trackpadSettingsButton: Button? = null
+    private val trackpadSettings by lazy { TrackpadSettings(applicationContext) }
     private var trackpadEnabled = false
     private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
@@ -97,6 +101,8 @@ class VideoActivity : Activity() {
             })
             renderer = video
             viewport = ZoomableVideoView(this, video.view)
+            val sensitivity = trackpadSettings.load()
+            viewport?.setTrackpadSensitivity(sensitivity.cursor, sensitivity.scroll)
             if (controlMode) viewport?.contentDescription = getString(R.string.video_control_initial_description)
             viewport?.onVideoTap = { x, y ->
                 lastVideoTapSent = sendPointerClick(x, y, PointerClick.Button.LEFT)
@@ -140,9 +146,18 @@ class VideoActivity : Activity() {
                     viewport?.setTrackpadMode(trackpadEnabled)
                     setText(if (trackpadEnabled) R.string.enable_direct_touch else R.string.enable_trackpad)
                     configureControlFeatures()
+                    updateControlAvailability()
                 }
             }
-            root.addView(trackpadButton)
+            trackpadSettingsButton = Button(this).apply {
+                setText(R.string.trackpad_sensitivity)
+                isEnabled = false
+                setOnClickListener { showTrackpadSettings() }
+            }
+            val trackpadControls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            trackpadControls.addView(trackpadButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            trackpadControls.addView(trackpadSettingsButton)
+            root.addView(trackpadControls)
             root.addView(TextView(this).apply { setText(R.string.special_keys_hint); setPadding(dp(8), 0, dp(8), 0) })
             specialKeys = SpecialKeyBar(this) { key, modifiers ->
                 val revision = captureRevision
@@ -295,7 +310,40 @@ class VideoActivity : Activity() {
         val available = active && firstFrameShown && captureRevision != null
         keyboardButton?.isEnabled = available && "keyboard.text" in supportedFeatures
         trackpadButton?.isEnabled = available && "pointer.move" in supportedFeatures && viewport?.supportsTrackpad() == true
+        trackpadSettingsButton?.isEnabled = trackpadButton?.isEnabled == true && trackpadEnabled
         specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures)
+    }
+
+    private fun showTrackpadSettings() {
+        val current = trackpadSettings.load()
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(8), dp(24), 0) }
+        fun slider(label: Int, value: Int): SeekBar {
+            val caption = TextView(this)
+            content.addView(caption)
+            return SeekBar(this).apply {
+                max = 200; min = 50; progress = value
+                caption.text = getString(label, value)
+                contentDescription = caption.text
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                        caption.text = getString(label, progress)
+                        seekBar.contentDescription = caption.text
+                    }
+                    override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
+                    override fun onStopTrackingTouch(seekBar: SeekBar) = Unit
+                })
+                content.addView(this)
+            }
+        }
+        val cursor = slider(R.string.trackpad_cursor_speed, current.cursor)
+        val scroll = slider(R.string.trackpad_scroll_speed, current.scroll)
+        settingsDialog = AlertDialog.Builder(this).setTitle(R.string.trackpad_sensitivity).setView(content)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val values = TrackpadSettings.Values(cursor.progress, scroll.progress)
+                trackpadSettings.save(values)
+                viewport?.setTrackpadSensitivity(values.cursor, values.scroll)
+            }.setOnDismissListener { settingsDialog = null }.show()
     }
 
     private fun configureControlFeatures() {
@@ -348,6 +396,8 @@ class VideoActivity : Activity() {
         runCatching { current?.close() }
         targetDialog?.dismiss()
         targetDialog = null
+        settingsDialog?.dismiss()
+        settingsDialog = null
         runCatching { media?.close() }
         media = null
         captureRevision = null
@@ -356,6 +406,7 @@ class VideoActivity : Activity() {
         trackpadEnabled = false
         viewport?.onVideoHover = null
         trackpadButton?.isEnabled = false
+        trackpadSettingsButton?.isEnabled = false
         keyboardButton?.isEnabled = false
         specialKeys?.setAvailable(false)
         keyboard?.close()
