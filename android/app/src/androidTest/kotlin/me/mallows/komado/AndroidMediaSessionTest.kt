@@ -10,6 +10,8 @@ import me.mallows.komado.protocol.KeyboardTextCodec
 import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.protocol.KeyboardKeyCodec
 import me.mallows.komado.protocol.SpecialKey
+import me.mallows.komado.protocol.PointerScroll
+import me.mallows.komado.protocol.PointerScrollCodec
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,6 +87,7 @@ class AndroidMediaSessionTest {
         val clickReceived = CompletableFuture<PointerClick>()
         val textReceived = CompletableFuture<KeyboardText>()
         val keyReceived = CompletableFuture<KeyboardKey>()
+        val scrollReceived = CompletableFuture<PointerScroll>()
         channel.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) = Unit
             override fun onStateChange() = Unit
@@ -96,8 +99,12 @@ class AndroidMediaSessionTest {
                 else {
                     val text = runCatching { KeyboardTextCodec.decode(bytes) }.getOrNull()
                     if (text != null) textReceived.complete(text)
-                    else runCatching { KeyboardKeyCodec.decode(bytes) }.onSuccess { keyReceived.complete(it) }
-                        .onFailure { keyReceived.completeExceptionally(it) }
+                    else {
+                        val key = runCatching { KeyboardKeyCodec.decode(bytes) }.getOrNull()
+                        if (key != null) keyReceived.complete(key)
+                        else runCatching { PointerScrollCodec.decode(bytes) }.onSuccess { scrollReceived.complete(it) }
+                            .onFailure { scrollReceived.completeExceptionally(it) }
+                    }
                 }
             }
         })
@@ -151,6 +158,7 @@ class AndroidMediaSessionTest {
             val click = PointerClick(1, 1, 500_000, 500_000, PointerClick.Button.LEFT)
             val text = KeyboardText(2, 1, "日本語")
             val key = KeyboardKey(3, 1, SpecialKey.ESCAPE, 1)
+            val scroll = PointerScroll(4, 1, 500_000, 500_000, 3, -12)
             instrumentation.runOnMainSync {
                 val current = requireNotNull(receiver)
                 assertTrue(!current.sendClick(click.copy(captureRevision = 2)))
@@ -162,10 +170,13 @@ class AndroidMediaSessionTest {
                 assertTrue(!current.sendKey(key.copy(captureRevision = 2)))
                 assertTrue(current.sendKey(key))
                 assertTrue(!current.sendKey(key))
+                assertTrue(current.sendScroll(scroll))
+                assertTrue(!current.sendScroll(scroll))
             }
             assertTrue(clickReceived.get(5, TimeUnit.SECONDS) == click)
             assertTrue(textReceived.get(5, TimeUnit.SECONDS) == text)
             assertTrue(keyReceived.get(5, TimeUnit.SECONDS) == key)
+            assertTrue(scrollReceived.get(5, TimeUnit.SECONDS) == scroll)
             source.capturerObserver.onCapturerStarted(true)
             for (i in 0 until 50) {
                 val frame = VideoFrame(JavaI420Buffer.allocate(320, 240), 0, System.nanoTime())

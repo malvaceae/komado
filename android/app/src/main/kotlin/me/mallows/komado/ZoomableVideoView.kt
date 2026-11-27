@@ -10,6 +10,7 @@ import me.mallows.komado.input.VideoZoom
 import me.mallows.komado.protocol.PointerClick
 import org.webrtc.SurfaceViewRenderer
 import kotlin.math.abs
+import kotlin.math.hypot
 
 /** A clipped video viewport with pinch zoom and one-finger panning. */
 internal class ZoomableVideoView(context: Context, private val video: SurfaceViewRenderer) : FrameLayout(context) {
@@ -22,12 +23,22 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     private var lastX = 0f
     private var lastY = 0f
     private var moved = false
+    private enum class TwoFingerMode { NONE, PENDING, PINCH, SCROLL }
+    private var twoFingerMode = TwoFingerMode.NONE
+    private var initialSpan = 0f
+    private var initialFocusX = 0f
+    private var initialFocusY = 0f
+    private var scrollX = 0f
+    private var scrollY = 0f
     var onVideoTap: ((Float, Float) -> Unit)? = null
     var onVideoLongPress: ((Float, Float) -> Unit)? = null
+    var onVideoScroll: ((Float, Float, Float, Float) -> Unit)? = null
     private val detector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
-            zoom.zoom(detector.scaleFactor.toDouble(), detector.focusX.toDouble(), detector.focusY.toDouble())
-            applyTransform()
+            if (twoFingerMode == TwoFingerMode.PINCH) {
+                zoom.zoom(detector.scaleFactor.toDouble(), detector.focusX.toDouble(), detector.focusY.toDouble())
+                applyTransform()
+            }
             return true
         }
     }).apply { isQuickScaleEnabled = false }
@@ -82,6 +93,29 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount == 2) {
+            initialFocusX = (event.getX(0) + event.getX(1)) / 2
+            initialFocusY = (event.getY(0) + event.getY(1)) / 2
+            initialSpan = hypot(event.getX(0) - event.getX(1), event.getY(0) - event.getY(1))
+            scrollX = initialFocusX; scrollY = initialFocusY
+            twoFingerMode = TwoFingerMode.PENDING
+        } else if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount > 2) {
+            twoFingerMode = TwoFingerMode.NONE
+        } else if (event.actionMasked == MotionEvent.ACTION_MOVE && event.pointerCount == 2 && twoFingerMode != TwoFingerMode.NONE) {
+            val x = (event.getX(0) + event.getX(1)) / 2
+            val y = (event.getY(0) + event.getY(1)) / 2
+            val span = hypot(event.getX(0) - event.getX(1), event.getY(0) - event.getY(1))
+            if (twoFingerMode == TwoFingerMode.PENDING) {
+                val sizeChange = abs(span - initialSpan) / 2
+                val movement = hypot(x - initialFocusX, y - initialFocusY)
+                if (sizeChange > touchSlop && sizeChange >= movement) twoFingerMode = TwoFingerMode.PINCH
+                else if (movement > touchSlop) twoFingerMode = TwoFingerMode.SCROLL
+            }
+            if (twoFingerMode == TwoFingerMode.SCROLL) {
+                onVideoScroll?.invoke(x, y, x - scrollX, y - scrollY)
+                scrollX = x; scrollY = y
+            }
+        }
         detector.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -108,6 +142,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                 }
             }
             MotionEvent.ACTION_POINTER_UP -> {
+                twoFingerMode = TwoFingerMode.NONE
                 val remaining = if (event.actionIndex == 0) 1 else 0
                 if (remaining < event.pointerCount) {
                     pointerId = event.getPointerId(remaining)
@@ -127,8 +162,9 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                     }
                 }
                 pointerId = MotionEvent.INVALID_POINTER_ID
+                twoFingerMode = TwoFingerMode.NONE
             }
-            MotionEvent.ACTION_CANCEL -> pointerId = MotionEvent.INVALID_POINTER_ID
+            MotionEvent.ACTION_CANCEL -> { pointerId = MotionEvent.INVALID_POINTER_ID; twoFingerMode = TwoFingerMode.NONE }
         }
         return true
     }

@@ -111,6 +111,8 @@ class ZoomableVideoViewTest {
                     view.resetZoom()
                     assertEquals(1f, video.scaleX, 0.001f)
                     assertEquals(0f, video.translationX, 0.001f)
+                    val scrolls = mutableListOf<Pair<Float, Float>>()
+                    view.onVideoScroll = { _, _, dx, dy -> scrolls.add(dx to dy) }
                     val pinchTime = SystemClock.uptimeMillis()
                     val first = MotionEvent.obtain(pinchTime, pinchTime, MotionEvent.ACTION_DOWN, 150f, 400f, 0)
                     val second = twoPointers(pinchTime, pinchTime + 10, MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 150f, 650f)
@@ -126,6 +128,19 @@ class ZoomableVideoViewTest {
                     }
                     assertTrue("Pinch did not enlarge the video", video.scaleX > 1f)
                     assertEquals("Pinching must not produce a click", 2, clicks.size)
+                    assertTrue("Pinching must not scroll", scrolls.isEmpty())
+                    val beforeScroll = video.scaleX
+                    val scrollTime = SystemClock.uptimeMillis()
+                    val scrollDown = MotionEvent.obtain(scrollTime, scrollTime, MotionEvent.ACTION_DOWN, 200f, 400f, 0)
+                    val scrollSecond = twoPointers(scrollTime, scrollTime + 10, MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 200f, 600f)
+                    val scrollMove = twoPointers(scrollTime, scrollTime + 30, MotionEvent.ACTION_MOVE, 200f, 600f, 350f)
+                    val scrollLift = twoPointers(scrollTime, scrollTime + 50, MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 200f, 600f, 350f)
+                    val scrollUp = MotionEvent.obtain(scrollTime, scrollTime + 70, MotionEvent.ACTION_UP, 200f, 350f, 0)
+                    try { listOf(scrollDown, scrollSecond, scrollMove, scrollLift, scrollUp).forEach { view.dispatchTouchEvent(it) } }
+                    finally { listOf(scrollDown, scrollSecond, scrollMove, scrollLift, scrollUp).forEach { it.recycle() } }
+                    assertEquals(listOf(0f to -50f), scrolls)
+                    assertEquals(beforeScroll, video.scaleX, 0.001f)
+                    assertEquals("Scrolling must not produce a click", 2, clicks.size)
                     renderer!!.close()
                     renderer = null
                 }
@@ -135,9 +150,9 @@ class ZoomableVideoViewTest {
         }
     }
 
-    private fun twoPointers(downTime: Long, time: Long, action: Int, left: Float, right: Float): MotionEvent {
+    private fun twoPointers(downTime: Long, time: Long, action: Int, left: Float, right: Float, y: Float = 400f): MotionEvent {
         val properties = Array(2) { index -> MotionEvent.PointerProperties().apply { id = index; toolType = MotionEvent.TOOL_TYPE_FINGER } }
-        val coordinates = arrayOf(left, right).map { x -> MotionEvent.PointerCoords().apply { this.x = x; y = 400f; pressure = 1f; size = 1f } }.toTypedArray()
+        val coordinates = arrayOf(left, right).map { x -> MotionEvent.PointerCoords().apply { this.x = x; this.y = y; pressure = 1f; size = 1f } }.toTypedArray()
         return MotionEvent.obtain(downTime, time, action, 2, properties, coordinates, 0, 0, 1f, 1f, 0, 0, 0, 0)
     }
 }

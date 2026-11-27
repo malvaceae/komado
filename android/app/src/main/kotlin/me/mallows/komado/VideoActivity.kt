@@ -14,11 +14,13 @@ import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.protocol.PointerClick
+import me.mallows.komado.protocol.PointerScroll
 import me.mallows.komado.security.DeviceSigningKey
 import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
 import java.util.UUID
 import java.util.concurrent.Executors
+import kotlin.math.roundToInt
 
 class VideoActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
@@ -81,6 +83,19 @@ class VideoActivity : Activity() {
                 sendPointerClick(x, y, PointerClick.Button.LEFT)
             }
             viewport?.onVideoLongPress = { x, y -> sendPointerClick(x, y, PointerClick.Button.RIGHT) }
+            viewport?.onVideoScroll = { x, y, dx, dy ->
+                if (active && controlMode && firstFrameShown && dx.isFinite() && dy.isFinite()) {
+                    val horizontal = (dx / resources.displayMetrics.density).roundToInt().coerceIn(-120, 120)
+                    val vertical = (dy / resources.displayMetrics.density).roundToInt().coerceIn(-120, 120)
+                    if (horizontal != 0 || vertical != 0) {
+                        val location = viewport?.mapTap(x, y, captureRevision, tapMapper)
+                        if (location != null) {
+                            val scroll = PointerScroll(location.sequence, location.captureRevision, location.x, location.y, horizontal, vertical)
+                            if (media?.sendScroll(scroll) != true) stopSession(failed = true)
+                        }
+                    }
+                }
+            }
             root.addView(viewport, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         } catch (_: Exception) { active = false; status.setText(R.string.screen_failed) }
         val zoomControls = LinearLayout(this)

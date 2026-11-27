@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:komado:pointer-scroll:v1",
+  "title": "komado pointer scroll v1",
+  "description": "Sequence and revision are limited to 9007199254740991 by the implementations.",
+  "type": "array",
+  "prefixItems": [
+    { "const": "1" },
+    { "const": "pointer.scroll" },
+    { "type": "string", "pattern": "^[1-9][0-9]{0,15}$", "not": { "pattern": "[^0-9]" } },
+    { "type": "string", "pattern": "^[1-9][0-9]{0,15}$", "not": { "pattern": "[^0-9]" } },
+    { "type": "string", "pattern": "^(0|[1-9][0-9]{0,5}|1000000)$", "not": { "pattern": "[^0-9]" } },
+    { "type": "string", "pattern": "^(0|[1-9][0-9]{0,5}|1000000)$", "not": { "pattern": "[^0-9]" } },
+    { "$ref": "#/$defs/delta" },
+    { "$ref": "#/$defs/delta" }
+  ],
+  "minItems": 8,
+  "maxItems": 8,
+  "items": false,
+  "not": { "prefixItems": [{}, {}, {}, {}, {}, {}, { "const": "0" }, { "const": "0" }] },
+  "$defs": {
+    "delta": { "type": "string", "pattern": "^(0|-?([1-9]|[1-9][0-9]|1[01][0-9]|120))$", "not": { "pattern": "[^0-9-]" } }
+  }
+}

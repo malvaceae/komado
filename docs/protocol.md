@@ -36,6 +36,12 @@ Reliable / Orderedの`control`チャネルで、`["1","pointer.click",連番,キ
 
 Androidのメイン画面操作モードでは、映像へのタップを左クリック、移動せずに長押しして離す操作を右クリックに変換し、映像外の余白やリビジョン未通知の場合を拒否します。拡大・移動した表示からの座標変換もテストしています。回転情報を持つ映像の座標変換は未検証のため拒否します。クリックのOSへの実配送、画面ロックや対象変更時の安全な扱いは未検証です。
 
+## スクロール（初期実装）
+
+`control`チャネルで`["1","pointer.scroll",連番,キャプチャリビジョン,X,Y,横移動,縦移動]`を送ります。連番・リビジョンと正規化座標はクリックと共通です。移動量は-120〜120の正規の10進文字列で、両方0は拒否します。Macでは指定位置とキャプチャ領域を検証し、[Core Graphics](https://developer.apple.com/documentation/coregraphics/cgevent/init(scrollwheelevent2source:units:wheelcount:wheel1:wheel2:wheel3:))でピクセル単位のスクロールイベントを生成します。[スキーマ](../protocol/schemas/pointer-scroll-v1.schema.json)と[共通テストデータ](../protocol/fixtures/pointer-scroll.json)を両OSで使います。
+
+Androidでは二本指の移動と間隔の変化を判定し、移動をスクロール、間隔の変化をピンチ拡大に割り当てます。感度、スクロール方向、送信位置に対する対象アプリの動作は実機で未検証です。機能ネゴシエーションは未実装のため、スクロール非対応の旧Macで送信すると接続が終了します。
+
 ## 確定文字列（初期実装）
 
 IMEの確定文字列は`["1","keyboard.text",連番,キャプチャリビジョン,文字列]`とします。連番はクリックと共通で、リビジョンの条件も同じです。文字列は空でない512 UTF-8バイト以下とし、タブと改行以外の制御文字、不正なUnicode、2,048バイトを超えるメッセージを拒否します。未確定の変換中テキストは送らず、物理キーの押下・解放は別途設計します。[スキーマ](../protocol/schemas/keyboard-text-v1.schema.json)と[共通テストデータ](../protocol/fixtures/keyboard-text.json)で、日本語や絵文字を含む例を両OSで確認しています。操作モードのIME入力先とMacの入力処理を接続しましたが、実際のIME画面とMacへの配送は未検証です。

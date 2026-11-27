@@ -84,6 +84,7 @@ final class HostModel: ObservableObject {
     private var pointerDispatcher: PointerClickDispatcher?
     private var textDispatcher: KeyboardTextDispatcher?
     private var keyDispatcher: KeyboardKeyDispatcher?
+    private var scrollDispatcher: PointerScrollDispatcher?
     private var lastExecutedControlSequence: UInt64 = 0
     private var sleepActivity: IdleSleepActivity?
     private var waitingSleepActivity: IdleSleepActivity?
@@ -461,6 +462,7 @@ final class HostModel: ObservableObject {
                         self.pointerDispatcher = PointerClickDispatcher()
                         self.textDispatcher = KeyboardTextDispatcher()
                         self.keyDispatcher = KeyboardKeyDispatcher()
+                        self.scrollDispatcher = PointerScrollDispatcher()
                         self.controllingScreen = true
                     }
                     captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, onStopped: onStopped)
@@ -502,7 +504,7 @@ final class HostModel: ObservableObject {
               input.sequence > lastExecutedControlSequence else { return }
         switch input {
         case .text, .key: guard FocusedWindow.isOnDisplay(bounds) else { return }
-        case .click: break
+        case .click, .scroll: break
         }
         route.withAllowedFrame {
             lastExecutedControlSequence = input.sequence
@@ -510,6 +512,7 @@ final class HostModel: ObservableObject {
             case let .click(click): _ = pointerDispatcher?.click(click, geometry: geometry, mapping: mapping, sessionAllowed: true)
             case let .text(text): _ = textDispatcher?.send(text, captureRevision: geometry.revision, sessionAllowed: true)
             case let .key(key): _ = keyDispatcher?.send(key, captureRevision: geometry.revision, sessionAllowed: true)
+            case let .scroll(scroll): _ = scrollDispatcher?.send(scroll, geometry: geometry, mapping: mapping, sessionAllowed: true)
             }
         }
     }
@@ -523,9 +526,11 @@ final class HostModel: ObservableObject {
         pointerDispatcher?.close()
         textDispatcher?.close()
         keyDispatcher?.close()
+        scrollDispatcher?.close()
         pointerDispatcher = nil
         textDispatcher = nil
         keyDispatcher = nil
+        scrollDispatcher = nil
         lastExecutedControlSequence = 0
         controlDisplayID = nil
         controlBounds = nil
