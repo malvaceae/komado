@@ -206,19 +206,9 @@ class VideoActivity : Activity() {
             }
             controls.addView(automaticSwitch)
             controls.addView(TextView(this).apply { setText(R.string.special_keys_hint); setPadding(dp(8), 0, dp(8), 0) })
-            specialKeys = SpecialKeyBar(this) { key, modifiers ->
-                val revision = captureRevision
-                val sequence = if (active && canSendKey(key) && firstFrameShown && revision != null) controlSequence.next() else null
-                val sent = sequence != null && revision != null && media?.sendKey(KeyboardKey(sequence, revision, key, modifiers)) == true
-                if (!sent && active) stopSession(failed = true)
-                sent
-            }
+            specialKeys = SpecialKeyBar(this, ::sendRemoteKey)
             controls.addView(specialKeys)
-            keyboard = RemoteKeyboardView(this, sendKey = { key, modifiers ->
-                val revision = captureRevision
-                val sequence = if (active && canSendKey(key) && firstFrameShown && revision != null) controlSequence.next() else null
-                if (sequence != null && revision != null) media?.sendKey(KeyboardKey(sequence, revision, key, modifiers)) == true else false
-            }, sendText = { text ->
+            keyboard = RemoteKeyboardView(this, sendKey = ::sendRemoteKey, sendText = { text ->
                 if (!active || "keyboard.text" !in supportedFeatures || !firstFrameShown) false else
                     textMapper.send(text, captureRevision, { media?.sendText(it) == true },
                         { if (active) { textDeliveryUnconfirmed = true; stopSession(failed = true) } })
@@ -388,6 +378,15 @@ class VideoActivity : Activity() {
     }
 
     private fun canSendKey(key: SpecialKey): Boolean = supportsSpecialKey(key, supportedFeatures)
+
+    private fun sendRemoteKey(key: SpecialKey, modifiers: Int): Boolean {
+        val revision = captureRevision ?: return false
+        if (!active || !firstFrameShown || !canSendKey(key)) return false
+        val sequence = controlSequence.next()
+        val sent = sequence != null && media?.sendKey(KeyboardKey(sequence, revision, key, modifiers)) == true
+        if (!sent && active) stopSession(failed = true)
+        return sent
+    }
 
     private fun requestClipboard(get: Boolean) {
         if (!active || !hasWindowFocus() || clipboardAction != null || "clipboard.manual" !in supportedFeatures) return
