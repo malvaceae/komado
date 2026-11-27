@@ -141,7 +141,7 @@ class MainActivity : ComponentActivity() {
 
     private fun hostActions(host: Host) {
         val actions = if (host.pairing == null) arrayOf(getString(R.string.pair), getString(R.string.edit_host), getString(R.string.delete))
-        else arrayOf(getString(R.string.view_screen), getString(R.string.select_screen),
+        else arrayOf(getString(R.string.view_screen), getString(R.string.control_screen), getString(R.string.select_screen),
             getString(R.string.select_window), getString(R.string.check_connection), getString(R.string.edit_host), getString(R.string.delete))
         AlertDialog.Builder(this).setTitle(host.name).setItems(actions) { _, index ->
             if (host.pairing == null) when (index) {
@@ -151,12 +151,14 @@ class MainActivity : ComponentActivity() {
             } else when (index) {
                 0 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java).putExtra(VideoActivity.HOST_ID, host.id)) }
                 1 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java)
-                    .putExtra(VideoActivity.HOST_ID, host.id).putExtra(VideoActivity.CHOOSE_DISPLAY, true)) }
+                    .putExtra(VideoActivity.HOST_ID, host.id).putExtra(VideoActivity.CONTROL_MODE, true)) }
                 2 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java)
+                    .putExtra(VideoActivity.HOST_ID, host.id).putExtra(VideoActivity.CHOOSE_DISPLAY, true)) }
+                3 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java)
                     .putExtra(VideoActivity.HOST_ID, host.id).putExtra(VideoActivity.CHOOSE_WINDOW, true)) }
-                3 -> withLocalNetworkPermission { checkConnection(host) }
-                4 -> editHost(host)
-                5 -> deleteHost(host)
+                4 -> withLocalNetworkPermission { checkConnection(host) }
+                5 -> editHost(host)
+                6 -> deleteHost(host)
             }
         }.setNegativeButton(R.string.cancel, null).show()
     }

@@ -144,6 +144,7 @@ actor SignalingSession {
                     let startsMedia: Bool
                     switch message {
                     case .startMedia: target = .mainDisplay; startsMedia = true
+                    case .startControl: target = .mainDisplayControl; startsMedia = true
                     case let .startDisplay(id):
                         guard let snapshot = displaySnapshot, snapshot.contains(where: { $0.id == id }),
                               try DisplayCatalog.active() == snapshot else { await close(); return }

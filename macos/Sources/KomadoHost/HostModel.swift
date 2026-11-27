@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 import KomadoCore
 import Network
@@ -32,11 +33,20 @@ final class HostModel: ObservableObject {
     @Published private(set) var connectedDevice: String?
     @Published private(set) var sharingScreen = false
     @Published private(set) var sharingWindow = false
+    @Published private(set) var controllingScreen = false
     @Published private(set) var sharingDisplayName: String?
     @Published private(set) var networkReady = false
     @Published private(set) var invitation: String?
     @Published private(set) var error: String?
     @Published private(set) var screenPermission = CGPreflightScreenCaptureAccess()
+    @Published var allowRemoteControl = false {
+        didSet {
+            if !allowRemoteControl, mediaTarget == .mainDisplayControl {
+                let session = mediaID
+                Task { if mediaID == session { await stopSharing() } }
+            }
+        }
+    }
     @Published var vpnAddress = ""
     @Published var keepAwakeWhileListening: Bool {
         didSet {
@@ -69,6 +79,12 @@ final class HostModel: ObservableObject {
     private var screenMonitor: ScreenEnvironmentMonitor?
     private var mediaTask: Task<Void, Never>?
     private var capture: DisplayCapture?
+    private var controlDisplayID: CGDirectDisplayID?
+    private var controlBounds: CGRect?
+    private var pointerDispatcher: PointerClickDispatcher?
+    private var textDispatcher: KeyboardTextDispatcher?
+    private var keyDispatcher: KeyboardKeyDispatcher?
+    private var lastExecutedControlSequence: UInt64 = 0
     private var sleepActivity: IdleSleepActivity?
     private var waitingSleepActivity: IdleSleepActivity?
     private static let port: NWEndpoint.Port = 48365
@@ -187,6 +203,7 @@ final class HostModel: ObservableObject {
 
     func stop() async {
         stopMedia()
+        allowRemoteControl = false
         let current = server
         generation = UUID()
         server = nil
@@ -207,7 +224,7 @@ final class HostModel: ObservableObject {
     }
 
     func stopSharing() async {
-        guard sharingScreen, let connection = mediaConnection, let current = server else { return }
+        guard let connection = mediaConnection, let current = server else { return }
         stopMedia()
         await current.disconnect(sessionID: connection)
     }
@@ -361,6 +378,11 @@ final class HostModel: ObservableObject {
             Task { await server.disconnect(sessionID: connection) }
             return
         }
+        if target == .mainDisplayControl && (!allowRemoteControl || !AXIsProcessTrusted()) {
+            error = "操作の許可とアクセシビリティの許可が必要です。"
+            Task { await server.disconnect(sessionID: connection) }
+            return
+        }
         let id = UUID()
         mediaID = id
         mediaConnection = connection
@@ -370,7 +392,15 @@ final class HostModel: ObservableObject {
         }
         let route = MediaRouteGate(address: address, onInvalidRoute: failed)
         do {
-            let session = try HostMediaSession(route: route, onFailure: failed)
+            let onControl: (@Sendable (ControlInput) -> Void)?
+            if target == .mainDisplayControl {
+                onControl = { @Sendable [weak self] input in
+                    Task { @MainActor [weak self] in self?.receiveControl(input, id: id) }
+                }
+            } else {
+                onControl = nil
+            }
+            let session = try HostMediaSession(route: route, onControl: onControl, onFailure: failed)
             mediaRoute = route
             mediaSession = session
             screenMonitor = ScreenEnvironmentMonitor {
@@ -410,7 +440,7 @@ final class HostModel: ObservableObject {
                 }
                 let captured: DisplayCapture
                 switch target {
-                case .mainDisplay, .display:
+                case .mainDisplay, .mainDisplayControl, .display:
                     let displayID: UInt32
                     if case let .display(value) = target { displayID = value } else { displayID = CGMainDisplayID() }
                     guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
@@ -423,6 +453,16 @@ final class HostModel: ObservableObject {
                         "\(CGDisplayPixelsWide(display.displayID)) × \(CGDisplayPixelsHigh(display.displayID)) px"
                     self.sharingWindow = false
                     self.sharingScreen = true
+                    if target == .mainDisplayControl {
+                        let bounds = CGDisplayBounds(displayID)
+                        guard CaptureGeometry(revision: 1, bounds: bounds) != nil else { throw HostMediaSession.SessionError.creationFailed }
+                        self.controlDisplayID = displayID
+                        self.controlBounds = bounds
+                        self.pointerDispatcher = PointerClickDispatcher()
+                        self.textDispatcher = KeyboardTextDispatcher()
+                        self.keyDispatcher = KeyboardKeyDispatcher()
+                        self.controllingScreen = true
+                    }
                     captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, onStopped: onStopped)
                 case let .window(info, processID):
                     guard let window = content.windows.first(where: {
@@ -450,15 +490,51 @@ final class HostModel: ObservableObject {
         if let connection { Task { await current?.disconnect(sessionID: connection) } }
     }
 
+    private func receiveControl(_ input: ControlInput, id: UUID) {
+        guard mediaID == id, mediaTarget == .mainDisplayControl, allowRemoteControl,
+              sharingScreen, NSApplication.shared.isProtectedDataAvailable,
+              let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+              session[kCGSessionOnConsoleKey as String] as? Bool == true,
+              let displayID = controlDisplayID, CGDisplayIsActive(displayID) != 0,
+              let bounds = controlBounds, CGDisplayBounds(displayID) == bounds,
+              let geometry = CaptureGeometry(revision: 1, bounds: bounds),
+              let mapping = capture?.frameMapping, let route = mediaRoute,
+              input.sequence > lastExecutedControlSequence else { return }
+        switch input {
+        case .text, .key: guard FocusedWindow.isOnDisplay(bounds) else { return }
+        case .click: break
+        }
+        route.withAllowedFrame {
+            lastExecutedControlSequence = input.sequence
+            switch input {
+            case let .click(click): _ = pointerDispatcher?.click(click, geometry: geometry, mapping: mapping, sessionAllowed: true)
+            case let .text(text): _ = textDispatcher?.send(text, captureRevision: geometry.revision, sessionAllowed: true)
+            case let .key(key): _ = keyDispatcher?.send(key, captureRevision: geometry.revision, sessionAllowed: true)
+            }
+        }
+    }
+
     private func stopMedia() {
+        let wasControl = mediaTarget == .mainDisplayControl
         mediaID = UUID()
         mediaConnection = nil
         mediaTarget = nil
+        if wasControl { allowRemoteControl = false }
+        pointerDispatcher?.close()
+        textDispatcher?.close()
+        keyDispatcher?.close()
+        pointerDispatcher = nil
+        textDispatcher = nil
+        keyDispatcher = nil
+        lastExecutedControlSequence = 0
+        controlDisplayID = nil
+        controlBounds = nil
         mediaTask?.cancel()
         mediaTask = nil
         mediaRoute?.close()
         mediaRoute = nil
         sharingScreen = false
+        controllingScreen = false
         sharingWindow = false
         sharingDisplayName = nil
         screenMonitor = nil

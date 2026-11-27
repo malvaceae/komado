@@ -12,6 +12,7 @@ import android.widget.TextView
 import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.WindowInfo
+import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.security.DeviceSigningKey
 import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
@@ -30,12 +31,19 @@ class VideoActivity : Activity() {
     private var viewport: ZoomableVideoView? = null
     private val zoomButtons = mutableListOf<Button>()
     private var captureRevision: Long? = null
+    private val controlSequence = ControlSequence()
+    private val tapMapper = TapClickMapper(controlSequence)
+    private val textMapper = CommittedTextMapper(controlSequence)
+    private var controlMode = false
+    private var keyboard: RemoteKeyboardView? = null
+    private var keyboardButton: Button? = null
     private var firstFrameShown = false
     private lateinit var status: TextView
     private val firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        controlMode = intent.getBooleanExtra(CONTROL_MODE, false)
         val host = runCatching { HostStore(applicationContext).load().firstOrNull { it.id == intent.getStringExtra(HOST_ID) } }.getOrNull()
         val pairing = host?.pairing
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -50,6 +58,7 @@ class VideoActivity : Activity() {
                             firstFrameShown = true
                             firstFrameDeadline.finish()
                             status.setText(R.string.screen_connected)
+                            updateControlAvailability()
                         }
                     }
                 }
@@ -65,6 +74,13 @@ class VideoActivity : Activity() {
             })
             renderer = video
             viewport = ZoomableVideoView(this, video.view)
+            if (controlMode) viewport?.contentDescription = getString(R.string.video_control_description)
+            viewport?.onVideoTap = { x, y ->
+                if (active && controlMode && firstFrameShown) {
+                    val click = viewport?.mapTap(x, y, captureRevision, tapMapper)
+                    if (click != null && media?.sendClick(click) != true) stopSession(failed = true)
+                }
+            }
             root.addView(viewport, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         } catch (_: Exception) { active = false; status.setText(R.string.screen_failed) }
         val zoomControls = LinearLayout(this)
@@ -75,6 +91,23 @@ class VideoActivity : Activity() {
             zoomControls.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
         root.addView(zoomControls)
+        if (controlMode) {
+            keyboard = RemoteKeyboardView(this, sendKey = { key ->
+                val revision = captureRevision
+                val sequence = if (active && firstFrameShown && revision != null) controlSequence.next() else null
+                if (sequence != null && revision != null) media?.sendKey(KeyboardKey(sequence, revision, key, 0)) == true else false
+            }, sendText = { text ->
+                val message = if (active && firstFrameShown) textMapper.message(text, captureRevision) else null
+                message != null && media?.sendText(message) == true
+            })
+            root.addView(keyboard, LinearLayout.LayoutParams(1, 1))
+            keyboardButton = Button(this).apply {
+                setText(R.string.show_keyboard)
+                isEnabled = false
+                setOnClickListener { keyboard?.showKeyboard() }
+            }
+            root.addView(keyboardButton)
+        }
         root.addView(Button(this).apply { setText(R.string.close_screen); setOnClickListener { finish() } })
         setContentView(root)
         if (host == null || pairing == null || !active) {
@@ -135,7 +168,7 @@ class VideoActivity : Activity() {
     private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?, windowId: Long? = null) {
         showProgress(R.string.screen_waiting)
         try {
-            established.requestMedia(displayId, windowId)
+            established.requestMedia(displayId, windowId, control = controlMode)
             val offer = established.receiveOffer()
             runOnUiThread {
                 if (!active) return@runOnUiThread
@@ -154,6 +187,7 @@ class VideoActivity : Activity() {
                         override fun onCaptureReady(revision: Long) {
                             captureRevision = revision
                             firstFrameDeadline.start()
+                            updateControlAvailability()
                         }
                         override fun onVideo(track: VideoTrack?) { renderer?.show(track) }
                         override fun onFailure() { stopSession(failed = true) }
@@ -183,6 +217,10 @@ class VideoActivity : Activity() {
         runOnUiThread { if (active) status.setText(message) }
     }
 
+    private fun updateControlAvailability() {
+        keyboardButton?.isEnabled = active && firstFrameShown && captureRevision != null
+    }
+
     private fun stopSession(failed: Boolean) {
         firstFrameDeadline.finish()
         val current = synchronized(lock) {
@@ -197,6 +235,9 @@ class VideoActivity : Activity() {
         runCatching { media?.close() }
         media = null
         captureRevision = null
+        keyboardButton?.isEnabled = false
+        keyboard?.close()
+        keyboard = null
         zoomButtons.forEach { it.isEnabled = false }
         runCatching { renderer?.close() }
         renderer = null
@@ -212,5 +253,6 @@ class VideoActivity : Activity() {
         const val HOST_ID = "me.mallows.komado.host_id"
         const val CHOOSE_DISPLAY = "me.mallows.komado.choose_display"
         const val CHOOSE_WINDOW = "me.mallows.komado.choose_window"
+        const val CONTROL_MODE = "me.mallows.komado.control_mode"
     }
 }

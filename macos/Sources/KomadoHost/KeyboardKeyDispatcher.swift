@@ -4,7 +4,7 @@ import CoreGraphics
 import KomadoCore
 
 /// Builds a key-down/key-up pair after the caller verifies session, capture,
-/// focus and user authorization. Not connected to the DataChannel yet.
+/// focus and user authorization.
 @MainActor
 final class KeyboardKeyDispatcher {
     private let trusted: () -> Bool

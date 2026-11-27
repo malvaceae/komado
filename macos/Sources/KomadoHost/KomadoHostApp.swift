@@ -12,6 +12,7 @@ struct KomadoHostApp: App {
                      systemImage: model.sharingScreen ? "rectangle.on.rectangle" : "macwindow") {
             Text(model.running ? (model.connectedDevice != nil ? "接続中" : (model.ready ? "接続待機中" : "準備中")) : "停止中")
             if model.sharingScreen { Text("\(model.sharingWindow ? "ウインドウ" : "画面")を共有中: \(model.sharingDisplayName ?? "画面")") }
+            if model.controllingScreen { Text("Androidからの操作を許可中") }
             if let device = model.connectedDevice { Text("接続中: \(device)") }
             Divider()
             Button("komadoを開く") {
@@ -51,6 +52,7 @@ private struct HostView: View {
                     Text(model.running ? (model.connectedDevice != nil ? "接続中" : (model.ready ? "接続待機中" : "準備中")) : "停止中")
                         .foregroundStyle(.secondary)
                     if model.sharingScreen { Label("\(model.sharingWindow ? "ウインドウ" : "画面")を共有中: \(model.sharingDisplayName ?? "画面")", systemImage: "rectangle.on.rectangle") }
+                    if model.controllingScreen { Text("Androidからの操作を許可中") }
                 }
                 if let error = model.error {
                     Text(error).foregroundStyle(.red)
@@ -79,6 +81,9 @@ private struct HostView: View {
                     Text("同一LANからの接続を受け付けます。VPNを使う場合は、このMacのVPNアドレスも入力してください。")
                         .foregroundStyle(.secondary)
                     Toggle("待ち受け中の自動スリープを抑制", isOn: $model.keepAwakeWhileListening)
+                    Toggle("Androidからの操作を許可", isOn: $model.allowRemoteControl)
+                    Text("操作にはアクセシビリティの許可も必要です。画面ロック中の操作停止は未検証です。")
+                        .foregroundStyle(.secondary)
                     if model.running {
                         if model.sharingScreen {
                             Button("画面共有を停止") { Task { await model.stopSharing() } }

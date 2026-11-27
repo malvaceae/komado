@@ -1,6 +1,7 @@
 package me.mallows.komado
 
 import android.view.View
+import android.view.KeyEvent
 import android.os.Build
 import android.view.inputmethod.TextAttribute
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -10,9 +11,31 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import me.mallows.komado.protocol.SpecialKey
 
 @RunWith(AndroidJUnit4::class)
 class CommittedTextConnectionTest {
+    @Test fun editingKeysStayLocalDuringCompositionAndSendAfterward() {
+        val instrument = InstrumentationRegistry.getInstrumentation()
+        instrument.runOnMainSync {
+            val keys = mutableListOf<SpecialKey>()
+            val texts = mutableListOf<String>()
+            val connection = CommittedTextConnection(View(instrument.targetContext),
+                sendKey = { keys.add(it); true }, send = { texts.add(it); true })
+            assertTrue(connection.setComposingText("日本", 1))
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            assertTrue(keys.isEmpty())
+            assertTrue(connection.commitText("日", 1))
+            assertEquals(listOf("日"), texts)
+            assertTrue(connection.deleteSurroundingText(1, 0))
+            assertTrue(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)))
+            assertTrue(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)))
+            assertFalse(connection.deleteSurroundingText(2, 0))
+            assertEquals(listOf(SpecialKey.BACKSPACE, SpecialKey.ENTER), keys)
+            connection.closeConnection()
+            assertFalse(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)))
+        }
+    }
     @Test fun sendsCommittedTextOnlyOnce() {
         val instrument = InstrumentationRegistry.getInstrumentation()
         instrument.runOnMainSync {

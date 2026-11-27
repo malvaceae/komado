@@ -8,6 +8,7 @@ import XCTest
 private final class ServerTestBox: @unchecked Sendable {
     private let lock = NSLock()
     private var interface: NWInterface?
+    private var pathObserved = false
     private var port: UInt16?
     private var authenticationCount = 0
     private var lastAuthenticated: UUID?
@@ -15,7 +16,14 @@ private final class ServerTestBox: @unchecked Sendable {
     private var mediaSession: UUID?
     private var mediaCount = 0
     private var requestedDisplay: UInt32?
-    func setInterface(_ value: NWInterface?) { lock.withLock { interface = value } }
+    func setInterface(_ value: NWInterface?) -> Bool {
+        lock.withLock {
+            guard !pathObserved else { return false }
+            pathObserved = true
+            interface = value
+            return true
+        }
+    }
     func getInterface() -> NWInterface? { lock.withLock { interface } }
     func setPort(_ value: UInt16) { lock.withLock { port = value } }
     func getPort() -> UInt16? { lock.withLock { port } }
@@ -110,8 +118,9 @@ final class SignalingServerTests: XCTestCase {
         let box = ServerTestBox(), pathReady = expectation(description: "network path")
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
-            box.setInterface(path.availableInterfaces.first { $0.type == .wifi || $0.type == .wiredEthernet })
-            pathReady.fulfill()
+            if box.setInterface(path.availableInterfaces.first { $0.type == .wifi || $0.type == .wiredEthernet }) {
+                pathReady.fulfill()
+            }
         }
         monitor.start(queue: DispatchQueue.global())
         defer { monitor.cancel() }
@@ -141,9 +150,10 @@ final class SignalingServerTests: XCTestCase {
         let firstAuthenticated = expectation(description: "first connection authenticated")
         let mediaRequested = expectation(description: "media requested")
         let selectedMediaRequested = expectation(description: "selected display requested")
+        let controlRequested = expectation(description: "control requested")
         let answerReceived = expectation(description: "SDP answer")
-        let disconnected = expectation(description: "nine disconnections")
-        disconnected.expectedFulfillmentCount = 9
+        let disconnected = expectation(description: "ten disconnections")
+        disconnected.expectedFulfillmentCount = 10
         let server = try SignalingServer.create(identity: identity.identity,
             bindings: [ListenerBinding(scope: .localLink, interface: interface, address: address)],
             port: .any, pairing: pairing, authentication: auth) { event in
@@ -158,7 +168,9 @@ final class SignalingServerTests: XCTestCase {
                     box.setMediaSession(id)
                     let display: UInt32?
                     if case let .display(id) = target { display = id } else { display = nil }
-                    if box.noteMedia(display) == 1 { mediaRequested.fulfill() } else { selectedMediaRequested.fulfill() }
+                    if target == .mainDisplayControl {
+                        controlRequested.fulfill()
+                    } else if box.noteMedia(display) == 1 { mediaRequested.fulfill() } else { selectedMediaRequested.fulfill() }
                 case let .answer(_, _, sdp): box.setAnswer(sdp); answerReceived.fulfill()
                 case .disconnected: disconnected.fulfill()
                 default: break
@@ -325,6 +337,19 @@ final class SignalingServerTests: XCTestCase {
         let unknownWindowStillActive = await server.isActive(sessionID: unknownWindowID)
         XCTAssertFalse(unknownWindowStillActive, "A window not delivered to the peer must be rejected")
         unknownWindow.connection.cancel()
+        await server.disconnectCurrent()
+        let control = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
+        try await control.start()
+        try await control.send(.authenticate(deviceID: deviceID))
+        guard case let .challenge(controlChallenge) = try await control.receive() else { return XCTFail("Expected challenge") }
+        let controlSignature = try key.signature(for: Data("komado.device-auth.v1\0".utf8) + controlChallenge).derRepresentation
+        try await control.send(.proof(controlSignature))
+        let controlAccepted = try await control.receive()
+        XCTAssertEqual(controlAccepted, .accepted(deviceID: deviceID))
+        try await control.send(.startControl)
+        await fulfillment(of: [controlRequested], timeout: 10)
+        control.connection.cancel()
+        await server.disconnectCurrent()
         let removed = try await server.removeDevice(id: deviceID)
         XCTAssertTrue(removed)
         let third = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
@@ -344,7 +369,7 @@ final class SignalingServerTests: XCTestCase {
         await server.disconnectCurrent()
         let unauthenticated = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
         try await unauthenticated.start()
-        try await unauthenticated.send(.listDisplays)
+        try await unauthenticated.send(.startControl)
         let unauthenticatedResponse = try await unauthenticated.receive()
         XCTAssertEqual(unauthenticatedResponse, .rejected)
         unauthenticated.connection.cancel()

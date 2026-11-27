@@ -36,11 +36,14 @@ class AuthenticatedHostConnection private constructor(
     @Volatile private var closed = false
 
     /** Request one media session after device authentication. */
-    fun requestMedia(displayId: Long? = null, windowId: Long? = null) = synchronized(mediaLock) {
+    fun requestMedia(displayId: Long? = null, windowId: Long? = null, control: Boolean = false) = synchronized(mediaLock) {
         if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
         try {
-            if (displayId != null && windowId != null) throw IOException("Conflicting capture targets")
+            if ((displayId != null && windowId != null) || (control && (displayId != null || windowId != null))) {
+                throw IOException("Conflicting capture targets")
+            }
             val request = when {
+                control -> SignalMessage.StartControl
                 displayId != null -> SignalMessage.StartDisplay(displayId)
                 windowId != null -> SignalMessage.StartWindow(windowId)
                 else -> SignalMessage.StartMedia

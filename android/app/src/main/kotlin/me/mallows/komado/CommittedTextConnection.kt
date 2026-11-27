@@ -4,10 +4,13 @@ import android.text.Editable
 import android.text.Selection
 import android.text.SpannableStringBuilder
 import android.view.View
+import android.view.KeyEvent
 import android.view.inputmethod.BaseInputConnection
+import me.mallows.komado.protocol.SpecialKey
 
 /** Keeps composition local and forwards only text that an IME commits. */
-internal class CommittedTextConnection(view: View, private val send: (String) -> Boolean) : BaseInputConnection(view, true) {
+internal class CommittedTextConnection(view: View, private val sendKey: (SpecialKey) -> Boolean = { false },
+                                       private val send: (String) -> Boolean) : BaseInputConnection(view, true) {
     private val content = SpannableStringBuilder().apply { Selection.setSelection(this, 0) }
     private var closed = false
 
@@ -38,8 +41,40 @@ internal class CommittedTextConnection(view: View, private val send: (String) ->
         return true
     }
 
-    override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean = false
-    override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean = false
+    override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+        if (closed || beforeLength < 0 || afterLength < 0) return false
+        if (getComposingSpanStart(content) >= 0) return super.deleteSurroundingText(beforeLength, afterLength)
+        return when {
+            beforeLength == 1 && afterLength == 0 -> sendKey(SpecialKey.BACKSPACE)
+            beforeLength == 0 && afterLength == 1 -> sendKey(SpecialKey.DELETE)
+            else -> false
+        }
+    }
+    override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean =
+        deleteSurroundingText(beforeLength, afterLength)
+
+    override fun sendKeyEvent(event: KeyEvent): Boolean {
+        if (closed) return false
+        val key = when (event.keyCode) {
+            KeyEvent.KEYCODE_DEL -> SpecialKey.BACKSPACE
+            KeyEvent.KEYCODE_FORWARD_DEL -> SpecialKey.DELETE
+            KeyEvent.KEYCODE_ENTER -> SpecialKey.ENTER
+            KeyEvent.KEYCODE_TAB -> SpecialKey.TAB
+            KeyEvent.KEYCODE_ESCAPE -> SpecialKey.ESCAPE
+            KeyEvent.KEYCODE_DPAD_LEFT -> SpecialKey.LEFT
+            KeyEvent.KEYCODE_DPAD_RIGHT -> SpecialKey.RIGHT
+            KeyEvent.KEYCODE_DPAD_UP -> SpecialKey.UP
+            KeyEvent.KEYCODE_DPAD_DOWN -> SpecialKey.DOWN
+            else -> return false
+        }
+        if (event.isShiftPressed || event.isAltPressed || event.isCtrlPressed || event.isMetaPressed) return false
+        if (getComposingSpanStart(content) >= 0) return false
+        return when (event.action) {
+            KeyEvent.ACTION_DOWN -> sendKey(key)
+            KeyEvent.ACTION_UP -> true
+            else -> false
+        }
+    }
 
     override fun closeConnection() {
         closed = true

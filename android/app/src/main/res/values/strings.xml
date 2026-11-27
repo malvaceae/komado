@@ -33,6 +33,9 @@
     <string name="pair">ペアリング</string>
     <string name="check_connection">接続を確認</string>
     <string name="view_screen">画面を見る</string>
+    <string name="control_screen">メイン画面を操作</string>
+    <string name="show_keyboard">キーボードを表示</string>
+    <string name="video_control_description">Macの画面。タップでクリック、ピンチで拡大・縮小、拡大中はドラッグで表示位置を移動します。</string>
     <string name="select_screen">画面を選択</string>
     <string name="screen_option">画面 %1$d（%2$d × %3$d px）</string>
     <string name="screen_selection_failed">画面一覧を取得できませんでした。Macの状態とアプリのバージョンを確認してください。</string>

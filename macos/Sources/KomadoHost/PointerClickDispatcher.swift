@@ -4,7 +4,6 @@ import KomadoCore
 
 /// Constructs an indivisible press/release pair after the caller has checked
 /// the authenticated session, capture state, route, and user authorization.
-/// This component is not connected to the DataChannel yet.
 @MainActor
 final class PointerClickDispatcher {
     private let trusted: () -> Bool

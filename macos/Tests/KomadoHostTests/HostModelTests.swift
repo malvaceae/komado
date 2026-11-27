@@ -23,6 +23,7 @@ final class HostModelTests: XCTestCase {
         let auth = DeviceAuthenticationCoordinator(registry: registry, now: { .zero })
         let model = HostModel(identityStore: HostTLSIdentityStore(service: service), registry: registry,
                               pairing: pairing, authentication: auth, settings: settings)
+        XCTAssertFalse(model.allowRemoteControl)
         XCTAssertFalse(model.keepAwakeWhileListening)
         model.keepAwakeWhileListening = true
         XCTAssertTrue(settings.bool(forKey: "keepAwakeWhileListening"))
@@ -45,8 +46,10 @@ final class HostModelTests: XCTestCase {
         XCTAssertTrue(try waitingAssertionExists())
         await model.issueInvitation()
         XCTAssertEqual(model.invitation?.count, 64)
+        model.allowRemoteControl = true
         await model.stop()
         XCTAssertFalse(model.running)
+        XCTAssertFalse(model.allowRemoteControl)
         XCTAssertNil(model.invitation)
         XCTAssertFalse(try waitingAssertionExists())
         XCTAssertTrue(settings.bool(forKey: "keepAwakeWhileListening"))

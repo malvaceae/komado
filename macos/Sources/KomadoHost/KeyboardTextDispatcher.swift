@@ -3,7 +3,7 @@ import CoreGraphics
 import KomadoCore
 
 /// Builds Unicode key events after the caller verifies the session, capture,
-/// focus and user authorization. Not connected to the DataChannel yet.
+/// focus and user authorization.
 @MainActor
 final class KeyboardTextDispatcher {
     private let trusted: () -> Bool

@@ -36,6 +36,7 @@ public enum SignalMessage: Equatable, Sendable {
     case accepted(deviceID: UUID)
     case rejected
     case startMedia
+    case startControl
     case startDisplay(UInt32)
     case listDisplays
     case displays([DisplayInfo])
@@ -77,6 +78,9 @@ public enum SignalMessage: Equatable, Sendable {
             if fields.count == 2 { return .startMedia }
             guard fields.count == 3, let id = Self.positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
             return .startDisplay(UInt32(id))
+        case "control.start":
+            guard fields.count == 2 else { throw MessageError.invalid }
+            return .startControl
         case "display.list":
             guard fields.count == 2 else { throw MessageError.invalid }
             return .listDisplays
@@ -141,6 +145,7 @@ public enum SignalMessage: Equatable, Sendable {
         case let .accepted(id): fields = ["1", "accepted", id.uuidString.lowercased()]
         case .rejected: fields = ["1", "rejected"]
         case .startMedia: fields = ["1", "start"]
+        case .startControl: fields = ["1", "control.start"]
         case let .startDisplay(id):
             guard id > 0 else { throw MessageError.invalid }
             fields = ["1", "start", String(id)]
