@@ -37,6 +37,24 @@ class VideoViewportTest {
     }
 
     @Test
+    fun clampsCursorToVisibleVideoAfterZoomAndPan() {
+        val viewport = assertNotNull(VideoViewport.create(1000.0, 1000.0, 1920.0, 1080.0, 1.0, 0.0, 0.0, 7))
+        val upper = assertNotNull(viewport.clampCursor(-100.0, -100.0))
+        val lower = assertNotNull(viewport.clampCursor(2000.0, 2000.0))
+        assertNotNull(viewport.normalize(upper.first.toFloat().toDouble(), upper.second.toFloat().toDouble()))
+        assertNotNull(viewport.normalize(lower.first.toFloat().toDouble(), lower.second.toFloat().toDouble()))
+        val fractional = assertNotNull(VideoViewport.create(1001.0, 1000.0, 1920.0, 1080.0, 1.0, 0.0, 0.0, 7))
+        val edge = assertNotNull(fractional.clampCursor(-10.0, 2000.0))
+        assertNotNull(fractional.normalize(edge.first.toFloat().toDouble(), edge.second.toFloat().toDouble()))
+        val offscreen = assertNotNull(VideoViewport.create(100.0, 100.0, 10.0, 10.0, 1.0, 500.0, 0.0, 7))
+        assertNull(offscreen.clampCursor(0.0, 0.0))
+        assertNull(viewport.clampCursor(Double.NaN, 2.0))
+        val zoomed = assertNotNull(VideoViewport.create(1000.0, 1000.0, 1000.0, 1000.0, 2.0, -250.0, 0.0, 8))
+        val visible = assertNotNull(zoomed.clampCursor(-10.0, 1500.0))
+        assertNotNull(zoomed.normalize(visible.first, visible.second))
+    }
+
+    @Test
     fun rejectsNonFiniteInputsAndInvalidGeometry() {
         val viewport = assertNotNull(VideoViewport.create(100.0, 100.0, 10.0, 10.0, 1.0, 0.0, 0.0, 0))
         assertNull(viewport.normalize(Double.NaN, 2.0))

@@ -1,6 +1,9 @@
 package me.mallows.komado
 
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.view.KeyEvent
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -8,6 +11,7 @@ import android.view.ScaleGestureDetector
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import me.mallows.komado.input.VideoZoom
+import me.mallows.komado.input.VideoViewport
 import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerDrag
 import org.webrtc.SurfaceViewRenderer
@@ -33,6 +37,12 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     private var dragAttempted = false
     private var dragX = 0f
     private var dragY = 0f
+    private var trackpadMode = false
+    private var cursorX = 0f
+    private var cursorY = 0f
+    private var cursorReady = false
+    private val cursorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 2f * resources.displayMetrics.density }
+    private val cursorOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = 4f * resources.displayMetrics.density }
     private var mouseButton: PointerClick.Button? = null
     private enum class TwoFingerMode { NONE, PENDING, PINCH, SCROLL }
     private var twoFingerMode = TwoFingerMode.NONE
@@ -70,6 +80,43 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
         addView(video, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         contentDescription = context.getString(R.string.video_description)
         isFocusable = true
+    }
+
+    fun supportsTrackpad(): Boolean = frameWidth > 0 && frameHeight > 0 && frameRotation == 0
+
+    fun setTrackpadMode(enabled: Boolean) {
+        if (trackpadMode == enabled) return
+        if (dragging) finishDrag(dragX, dragY)
+        removeCallbacks(sendHover); hoverScheduled = false
+        pointerId = MotionEvent.INVALID_POINTER_ID; previousTapTime = 0
+        trackpadMode = enabled
+        cursorReady = false
+        if (enabled && clampCursor(width / 2f, height / 2f)) scheduleHover(cursorX, cursorY)
+        invalidate()
+    }
+
+    private fun clampCursor(x: Float, y: Float): Boolean {
+        if (frameRotation != 0) { cursorReady = false; return false }
+        val viewport = VideoViewport.create(width.toDouble(), height.toDouble(), frameWidth.toDouble(), frameHeight.toDouble(),
+            zoom.scale, zoom.panX, zoom.panY, 1) ?: run { cursorReady = false; return false }
+        val point = viewport.clampCursor(x.toDouble(), y.toDouble()) ?: run { cursorReady = false; return false }
+        cursorX = point.first.toFloat(); cursorY = point.second.toFloat(); cursorReady = true
+        invalidate()
+        return true
+    }
+
+    private fun scheduleHover(x: Float, y: Float) {
+        hoverX = x; hoverY = y
+        if (!hoverScheduled) { hoverScheduled = true; postOnAnimation(sendHover) }
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        if (trackpadMode && cursorReady) {
+            val radius = 7f * resources.displayMetrics.density
+            canvas.drawCircle(cursorX, cursorY, radius, cursorOutline)
+            canvas.drawCircle(cursorX, cursorY, radius, cursorPaint)
+        }
     }
 
     fun setFrameSize(width: Int, height: Int, rotation: Int): Boolean {
@@ -112,6 +159,12 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
         video.scaleY = zoom.scale.toFloat()
         video.translationX = zoom.panX.toFloat()
         video.translationY = zoom.panY.toFloat()
+        if (trackpadMode) {
+            val hadCursor = cursorReady
+            if (clampCursor(if (hadCursor) cursorX else width / 2f, if (hadCursor) cursorY else height / 2f) && !dragging) {
+                scheduleHover(cursorX, cursorY)
+            }
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -136,13 +189,14 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                 else if (movement > touchSlop) twoFingerMode = TwoFingerMode.SCROLL
             }
             if (twoFingerMode == TwoFingerMode.SCROLL) {
-                onVideoScroll?.invoke(x, y, x - scrollX, y - scrollY)
+                if (!trackpadMode || cursorReady) onVideoScroll?.invoke(if (trackpadMode) cursorX else x, if (trackpadMode) cursorY else y, x - scrollX, y - scrollY)
                 scrollX = x; scrollY = y
             }
         }
         detector.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                if (trackpadMode) { removeCallbacks(sendHover); hoverScheduled = false }
                 pointerId = event.getPointerId(0)
                 lastX = event.x
                 lastY = event.y
@@ -163,10 +217,24 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                         moved = true
                         dragAttempted = true
                         previousTapTime = 0
-                        dragging = onVideoDrag?.invoke(PointerDrag.Phase.BEGIN, lastX, lastY) == true
-                        dragX = lastX; dragY = lastY
+                        val startX = if (trackpadMode) cursorX else lastX
+                        val startY = if (trackpadMode) cursorY else lastY
+                        dragging = (!trackpadMode || cursorReady) && onVideoDrag?.invoke(PointerDrag.Phase.BEGIN, startX, startY) == true
+                        dragX = startX; dragY = startY
                     }
-                    if (dragging) {
+                    if (trackpadMode) {
+                        if (moved || abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                            moved = true; previousTapTime = 0
+                            if (cursorReady && clampCursor(cursorX + dx, cursorY + dy)) {
+                                if (dragging) {
+                                    if (onVideoDrag?.invoke(PointerDrag.Phase.MOVE, cursorX, cursorY) == true) {
+                                        dragX = cursorX; dragY = cursorY
+                                    } else finishDrag(dragX, dragY)
+                                } else if (!dragAttempted) scheduleHover(cursorX, cursorY)
+                            } else if (dragging) finishDrag(dragX, dragY)
+                            lastX = x; lastY = y
+                        }
+                    } else if (dragging) {
                         if (onVideoDrag?.invoke(PointerDrag.Phase.MOVE, x, y) == true) {
                             dragX = x; dragY = y
                         } else { finishDrag(dragX, dragY) }
@@ -183,7 +251,8 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
             MotionEvent.ACTION_POINTER_UP -> {
                 twoFingerMode = TwoFingerMode.NONE
                 val remaining = if (event.actionIndex == 0) 1 else 0
-                if (remaining < event.pointerCount) {
+                if (trackpadMode) pointerId = MotionEvent.INVALID_POINTER_ID
+                else if (remaining < event.pointerCount) {
                     pointerId = event.getPointerId(remaining)
                     lastX = event.getX(remaining)
                     lastY = event.getY(remaining)
@@ -191,23 +260,25 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                 moved = true
             }
             MotionEvent.ACTION_UP -> {
-                if (dragging) finishDrag(event.x, event.y)
-                if (!moved && pointerId != MotionEvent.INVALID_POINTER_ID &&
+                if (dragging) finishDrag(if (trackpadMode) cursorX else event.x, if (trackpadMode) cursorY else event.y)
+                val clickX = if (trackpadMode) cursorX else event.x
+                val clickY = if (trackpadMode) cursorY else event.y
+                if ((!trackpadMode || cursorReady) && !moved && pointerId != MotionEvent.INVALID_POINTER_ID &&
                     abs(event.x - lastX) <= touchSlop && abs(event.y - lastY) <= touchSlop) {
                     if (event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) {
                         previousTapTime = 0
-                        onVideoLongPress?.invoke(event.x, event.y)
+                        onVideoLongPress?.invoke(clickX, clickY)
                     } else {
                         performClick()
                         val sinceLast = event.eventTime - previousTapTime
                         if (previousTapTime != 0L && sinceLast in 1..ViewConfiguration.getDoubleTapTimeout().toLong() &&
                             hypot(event.x - previousTapX, event.y - previousTapY) <= doubleTapSlop) {
                             previousTapTime = 0
-                            onVideoDoubleTap?.invoke(event.x, event.y)
+                            onVideoDoubleTap?.invoke(clickX, clickY)
                         } else {
                             previousTapTime = event.eventTime
                             previousTapX = event.x; previousTapY = event.y
-                            onVideoTap?.invoke(event.x, event.y)
+                            onVideoTap?.invoke(clickX, clickY)
                         }
                     }
                 } else { previousTapTime = 0 }
@@ -331,8 +402,8 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     override fun onHoverEvent(event: MotionEvent): Boolean {
         if (event.isFromSource(InputDevice.SOURCE_MOUSE) && onVideoHover != null) {
             if (event.actionMasked == MotionEvent.ACTION_HOVER_MOVE) {
-                hoverX = event.x; hoverY = event.y
-                if (!hoverScheduled) { hoverScheduled = true; postOnAnimation(sendHover) }
+                if (trackpadMode) clampCursor(event.x, event.y)
+                scheduleHover(event.x, event.y)
                 return true
             }
             if (event.actionMasked == MotionEvent.ACTION_HOVER_EXIT) {

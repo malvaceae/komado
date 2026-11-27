@@ -18,6 +18,83 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ZoomableVideoViewTest {
+    @Test fun trackpadMovesCursorAndClicksOrDragsAtCursor() {
+        var renderer: RemoteVideoRenderer? = null
+        var viewport: ZoomableVideoView? = null
+        val moves = mutableListOf<Pair<Float, Float>>()
+        val clicks = mutableListOf<Pair<Float, Float>>()
+        val drag = mutableListOf<Triple<PointerDrag.Phase, Float, Float>>()
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    renderer = RemoteVideoRenderer(activity)
+                    viewport = ZoomableVideoView(activity, renderer!!.view).apply {
+                        onVideoHover = { x, y -> moves.add(x to y) }
+                        onVideoTap = { x, y -> clicks.add(x to y) }
+                        onVideoDrag = { phase, x, y -> drag.add(Triple(phase, x, y)); true }
+                    }
+                    val root = FrameLayout(activity)
+                    root.addView(viewport, FrameLayout.LayoutParams(800, 800))
+                    activity.setContentView(root)
+                }
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                scenario.onActivity {
+                    val view = requireNotNull(viewport)
+                    assertTrue(view.setFrameSize(800, 400, 0))
+                    view.setTrackpadMode(true)
+                }
+                Thread.sleep(100)
+                scenario.onActivity {
+                    assertEquals(400f to 400f, moves.last())
+                    val view = requireNotNull(viewport)
+                    val now = SystemClock.uptimeMillis()
+                    fun touch(time: Long, action: Int, x: Float, y: Float, down: Long = now) {
+                        val event = MotionEvent.obtain(down, time, action, x, y, 0)
+                        try { view.onTouchEvent(event) } finally { event.recycle() }
+                    }
+                    touch(now, MotionEvent.ACTION_DOWN, 100f, 100f)
+                    touch(now + 20, MotionEvent.ACTION_MOVE, 180f, 140f)
+                    touch(now + 40, MotionEvent.ACTION_UP, 180f, 140f)
+                    assertTrue(clicks.isEmpty())
+                }
+                Thread.sleep(100)
+                scenario.onActivity {
+                    assertEquals(480f to 440f, moves.last())
+                    val view = requireNotNull(viewport)
+                    val now = SystemClock.uptimeMillis()
+                    fun touch(time: Long, action: Int, x: Float, y: Float, down: Long = now) {
+                        val event = MotionEvent.obtain(down, time, action, x, y, 0)
+                        try { view.onTouchEvent(event) } finally { event.recycle() }
+                    }
+                    touch(now, MotionEvent.ACTION_DOWN, 50f, 50f)
+                    touch(now + 20, MotionEvent.ACTION_UP, 50f, 50f)
+                    assertEquals(listOf(480f to 440f), clicks)
+                    val hold = now + 1_000
+                    touch(hold, MotionEvent.ACTION_DOWN, 100f, 100f, hold)
+                    touch(hold + ViewConfiguration.getLongPressTimeout() + 20, MotionEvent.ACTION_MOVE, 170f, 120f, hold)
+                    touch(hold + ViewConfiguration.getLongPressTimeout() + 40, MotionEvent.ACTION_UP, 170f, 120f, hold)
+                    assertEquals(listOf(Triple(PointerDrag.Phase.BEGIN, 480f, 440f),
+                        Triple(PointerDrag.Phase.MOVE, 550f, 460f), Triple(PointerDrag.Phase.END, 550f, 460f)), drag)
+                    assertEquals(1, clicks.size)
+                    val scrolls = mutableListOf<List<Float>>()
+                    view.onVideoScroll = { x, y, dx, dy -> scrolls.add(listOf(x, y, dx, dy)) }
+                    val scrollTime = hold + 2_000
+                    val first = MotionEvent.obtain(scrollTime, scrollTime, MotionEvent.ACTION_DOWN, 200f, 400f, 0)
+                    val second = twoPointers(scrollTime, scrollTime + 10, MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 200f, 600f)
+                    val move = twoPointers(scrollTime, scrollTime + 30, MotionEvent.ACTION_MOVE, 200f, 600f, 350f)
+                    val lift = twoPointers(scrollTime, scrollTime + 50, MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 200f, 600f, 350f)
+                    val up = MotionEvent.obtain(scrollTime, scrollTime + 70, MotionEvent.ACTION_UP, 200f, 350f, 0)
+                    try { listOf(first, second, move, lift, up).forEach { view.onTouchEvent(it) } }
+                    finally { listOf(first, second, move, lift, up).forEach { it.recycle() } }
+                    assertEquals(listOf(listOf(550f, 460f, 0f, -50f)), scrolls)
+                    assertEquals(1, clicks.size)
+                    view.setTrackpadMode(false)
+                    renderer!!.close(); renderer = null
+                }
+            }
+        } finally { renderer?.let { InstrumentationRegistry.getInstrumentation().runOnMainSync { it.close() } } }
+    }
+
     @Test fun mouseHoverCoalescesAndCancelsWhenLeaving() {
         var renderer: RemoteVideoRenderer? = null
         var viewport: ZoomableVideoView? = null

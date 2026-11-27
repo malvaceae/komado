@@ -44,6 +44,9 @@
     <string name="modifier_shift">Shift</string>
     <string name="video_control_initial_description">Macの画面</string>
     <string name="control_tap">Macの画面。タップでクリック</string>
+    <string name="control_trackpad">トラックパッド。指を動かしてカーソルを移動し、タップでクリック</string>
+    <string name="enable_trackpad">トラックパッドに切替</string>
+    <string name="enable_direct_touch">直接タッチに切替</string>
     <string name="control_double">ダブルタップでダブルクリック</string>
     <string name="control_long_press">長押しで右クリック</string>
     <string name="control_drag">長押し後の移動でドラッグ</string>

@@ -1,6 +1,7 @@
 package me.mallows.komado.input
 
 import kotlin.math.min
+import kotlin.math.max
 
 /** Coordinates relative to the captured image, before conversion on the host. */
 data class NormalizedPoint(val x: Double, val y: Double, val captureRevision: Long)
@@ -24,6 +25,24 @@ class VideoViewport private constructor(
             normalizedX < 0 || normalizedY < 0 || normalizedX >= 1 || normalizedY >= 1
         ) return null
         return NormalizedPoint(normalizedX, normalizedY, captureRevision)
+    }
+
+    /** Clamp a view-space cursor inside the visible part of the image. */
+    fun clampCursor(x: Double, y: Double): Pair<Double, Double>? {
+        if (!x.isFinite() || !y.isFinite()) return null
+        // Select representable float coordinates inside the half-open visible image.
+        fun lower(value: Double): Float {
+            val rounded = value.toFloat()
+            return if (rounded.toDouble() < value) java.lang.Math.nextUp(rounded) else rounded
+        }
+        fun upper(value: Double): Float {
+            val rounded = value.toFloat()
+            return if (rounded.toDouble() >= value) java.lang.Math.nextDown(rounded) else rounded
+        }
+        val minX = lower(max(0.0, left)); val minY = lower(max(0.0, top))
+        val maxX = upper(min(viewWidth, left + imageWidth)); val maxY = upper(min(viewHeight, top + imageHeight))
+        if (!minX.isFinite() || !minY.isFinite() || !maxX.isFinite() || !maxY.isFinite() || minX > maxX || minY > maxY) return null
+        return x.coerceIn(minX.toDouble(), maxX.toDouble()) to y.coerceIn(minY.toDouble(), maxY.toDouble())
     }
 
     companion object {

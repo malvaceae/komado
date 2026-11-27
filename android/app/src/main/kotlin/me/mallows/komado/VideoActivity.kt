@@ -43,6 +43,8 @@ class VideoActivity : Activity() {
     @Volatile private var supportedFeatures: Set<String> = emptySet()
     private var keyboard: RemoteKeyboardView? = null
     private var keyboardButton: Button? = null
+    private var trackpadButton: Button? = null
+    private var trackpadEnabled = false
     private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
     private var lastVideoTapSent = false
@@ -82,6 +84,13 @@ class VideoActivity : Activity() {
                             viewport?.setFrameSize(width, height, rotation)
                             val valid = width > 0 && height > 0 && rotation in listOf(0, 90, 180, 270)
                             zoomButtons.forEach { it.isEnabled = valid }
+                            if (trackpadEnabled && viewport?.supportsTrackpad() != true) {
+                                viewport?.setTrackpadMode(false)
+                                trackpadEnabled = false
+                                trackpadButton?.setText(R.string.enable_trackpad)
+                                configureControlFeatures()
+                            }
+                            updateControlAvailability()
                         }
                     }
                 }
@@ -123,6 +132,17 @@ class VideoActivity : Activity() {
         }
         root.addView(zoomControls)
         if (controlMode) {
+            trackpadButton = Button(this).apply {
+                setText(R.string.enable_trackpad)
+                isEnabled = false
+                setOnClickListener {
+                    trackpadEnabled = !trackpadEnabled
+                    viewport?.setTrackpadMode(trackpadEnabled)
+                    setText(if (trackpadEnabled) R.string.enable_direct_touch else R.string.enable_trackpad)
+                    configureControlFeatures()
+                }
+            }
+            root.addView(trackpadButton)
             root.addView(TextView(this).apply { setText(R.string.special_keys_hint); setPadding(dp(8), 0, dp(8), 0) })
             specialKeys = SpecialKeyBar(this) { key, modifiers ->
                 val revision = captureRevision
@@ -274,11 +294,12 @@ class VideoActivity : Activity() {
     private fun updateControlAvailability() {
         val available = active && firstFrameShown && captureRevision != null
         keyboardButton?.isEnabled = available && "keyboard.text" in supportedFeatures
+        trackpadButton?.isEnabled = available && "pointer.move" in supportedFeatures && viewport?.supportsTrackpad() == true
         specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures)
     }
 
     private fun configureControlFeatures() {
-        val descriptions = mutableListOf(getString(R.string.control_tap))
+        val descriptions = mutableListOf(getString(if (trackpadEnabled) R.string.control_trackpad else R.string.control_tap))
         if ("pointer.double" in supportedFeatures) descriptions.add(getString(R.string.control_double))
         descriptions.add(getString(R.string.control_long_press))
         if ("pointer.drag" in supportedFeatures) descriptions.add(getString(R.string.control_drag))
@@ -331,7 +352,10 @@ class VideoActivity : Activity() {
         media = null
         captureRevision = null
         supportedFeatures = emptySet()
+        viewport?.setTrackpadMode(false)
+        trackpadEnabled = false
         viewport?.onVideoHover = null
+        trackpadButton?.isEnabled = false
         keyboardButton?.isEnabled = false
         specialKeys?.setAvailable(false)
         keyboard?.close()
