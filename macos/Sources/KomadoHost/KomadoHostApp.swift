@@ -82,8 +82,12 @@ private struct HostView: View {
                         .foregroundStyle(.secondary)
                     Toggle("待ち受け中の自動スリープを抑制", isOn: $model.keepAwakeWhileListening)
                     Toggle("Androidからの操作を許可", isOn: $model.allowRemoteControl)
-                    Toggle("クリップボードの手動共有を許可", isOn: $model.allowClipboardSharing)
+                    Toggle("クリップボード共有を許可", isOn: $model.allowClipboardSharing)
                         .disabled(!model.allowRemoteControl)
+                    Toggle("クリップボードの自動同期も許可", isOn: $model.allowClipboardAutomatic)
+                        .disabled(!model.allowClipboardSharing)
+                    Text("自動同期は未分類の機密情報を転送する可能性があります。")
+                        .foregroundStyle(.secondary)
                     Text("操作にはアクセシビリティの許可も必要です。画面ロック中の操作停止は未検証です。")
                         .foregroundStyle(.secondary)
                     if model.running {

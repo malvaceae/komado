@@ -62,7 +62,13 @@ IMEの確定文字列は`["1","keyboard.text",連番,キャプチャリビジョ
 
 認証・操作許可された接続で`clipboard.manual`を通知する場合、Reliable / Orderedの`control`チャネルでテキストを手動転送できます。要求は`["1","clipboard.get",連番,リビジョン]`、`["1","clipboard.prepare",連番,リビジョン]`、`["1","clipboard.set",連番,リビジョン,テキスト]`です。応答は`["1","clipboard.result",要求の連番,状態]`、テキスト返却時は`["1","clipboard.result",要求の連番,"text",テキスト]`です。状態は`ready`・`ok`・`text`・`unavailable`・`busy`です。
 
-Macの共有許可を必要とし、Androidからの送信は本文を含まない`prepare`が`ready`を返した場合のみ行います。準備は一回限りで10秒後、許可取り消し時、セッション終了時に失効します。Macからの取得も手動要求のみで、Androidがフォーカスを失った場合や要求中にクリップボードが変更された場合は書き込みません。テキストは1〜16,384 UTF-8バイト、メッセージは65,536バイト以下とし、タブ・改行・復帰以外の制御文字は拒否します。要求の連番・リビジョンは他の操作と共有し、Androidは未要求または古い応答を適用しません。形式は[スキーマ](../protocol/schemas/clipboard-v1.schema.json)と[共通テストデータ](../protocol/fixtures/clipboard-messages.json)で管理します。自動同期は未実装です。
+Macの共有許可を必要とし、Androidからの送信は本文を含まない`prepare`が`ready`を返した場合のみ行います。準備は一回限りで10秒後、許可取り消し時、セッション終了時に失効します。Macからの取得も手動要求のみで、Androidがフォーカスを失った場合や要求中にクリップボードが変更された場合は書き込みません。テキストは1〜16,384 UTF-8バイト、メッセージは65,536バイト以下とし、タブ・改行・復帰以外の制御文字は拒否します。要求の連番・リビジョンは他の操作と共有し、Androidは未要求または古い応答を適用しません。形式は[スキーマ](../protocol/schemas/clipboard-v1.schema.json)と[共通テストデータ](../protocol/fixtures/clipboard-messages.json)で管理します。
+
+## クリップボード自動同期（初期形式）
+
+両端で自動同期を有効にし、Macが`clipboard.auto`を通知する場合、既存の制御チャネルを使う。`clipboard.auto.start`でMacの変更カウントを初期化し`started`を返す。`clipboard.auto.poll`は変更がなければ`unchanged`、転送可能な新しいテキストがあれば`text`を返す。Androidからは`clipboard.auto.prepare`の`ready`を受けた後、`clipboard.auto.set`でテキストを送る。要求は手動共有と同じ連番・リビジョンと制限に従う。自動送信の準備は手動送信には使えず、許可解除でも失効する。開始時に既存の内容は転送せず、受信した内容の再送を抑止する。
+
+Androidはフォーカス喪失時に同期を停止し、復帰時に変更の基準を取り直す。Macの機密・一時・自動生成・リモート由来の形式、およびAndroidの機密・リモート・リモート共有除外の印があるものは自動送信しない。これらの印はすべての機密情報に付くとは限らない。変更通知や時刻の判定と実際の読み書きには競合があり、すべての同時変更を防ぐ保証はない。
 
 ## キー操作（初期形式）
 
@@ -90,7 +96,7 @@ OfferとAnswerは認証済みTLS接続で交換します。SDPのDTLSフィン�
 
 `["1","control.start"]`は認証後のメイン画面の操作要求です。Macで操作許可とAccessibility権限が必要で、従来の`start`は表示のみです。操作開始時はMacで許可を表示し、操作セッション終了時に許可を解除します。
 
-認証済みのアイドル状態で`["1","features.list"]`を1回送ると、Macは`["1","features.listed",機能名...]`を返します。機能名は重複なしの英小文字・数字・`.`・`-`からなる48文字以下の名前で、最大32件です。現在は`pointer.click`、`pointer.double`、`pointer.drag`、`pointer.scroll`、`pointer.move`、`keyboard.text`、`keyboard.key`、`window.control`、`display.control`、`clipboard.manual`を通知します。Androidは操作開始前に一覧を取得し、`pointer.click`がなければ開始せず、一覧にない操作は送信しません。未知の機能名は無視します。新Androidから一覧非対応の旧Macへの操作接続は失敗し、従来の画面表示は利用できます。機能一覧は認証やMacの操作許可の代わりにはなりません。詳細は[ADR 0008](decisions/0008-feature-negotiation.md)を参照してください。
+認証済みのアイドル状態で`["1","features.list"]`を1回送ると、Macは`["1","features.listed",機能名...]`を返します。機能名は重複なしの英小文字・数字・`.`・`-`からなる48文字以下の名前で、最大32件です。現在は`pointer.click`、`pointer.double`、`pointer.drag`、`pointer.scroll`、`pointer.move`、`keyboard.text`、`keyboard.key`、`window.control`、`display.control`、`clipboard.manual`、`clipboard.auto`を通知します。Androidは操作開始前に一覧を取得し、`pointer.click`がなければ開始せず、一覧にない操作は送信しません。未知の機能名は無視します。新Androidから一覧非対応の旧Macへの操作接続は失敗し、従来の画面表示は利用できます。機能一覧は認証やMacの操作許可の代わりにはなりません。詳細は[ADR 0008](decisions/0008-feature-negotiation.md)を参照してください。
 
 ローカルで生成したSDPについて、シグナリング接続のローカルIPアドレスに一致するhost候補だけを残し、`c=`の接続アドレスも同じ値に揃えてから送信します。候補が残らない場合や不正な候補・行形式は送信を拒否します。製品のメディアセッションに接続し、実際に生成されたSDPを両OSの処理で絞って相互接続を確認しました。これは通知する候補の制限であり、WebRTC内部のソケットや実際の経路を固定するものではありません。
 

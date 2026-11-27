@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -58,10 +59,19 @@ class VideoActivity : Activity() {
     private var trackpadEnabled = false
     private var clipboardSendButton: Button? = null
     private var clipboardReceiveButton: Button? = null
-    private enum class ClipboardAction { GET, PREPARE_SEND, SEND }
+    private enum class ClipboardAction { GET, PREPARE_SEND, SEND, AUTO_START, AUTO_POLL, AUTO_PREPARE, AUTO_SEND }
     private var clipboardAction: ClipboardAction? = null
     private var clipboardChangeGuard: ClipboardChangeGuard? = null
     private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+    private var automaticSwitch: CheckBox? = null
+    private var automaticWanted = false
+    private var automaticStarted = false
+    private var automaticEpoch = 0L
+    private var automaticRequestEpoch = 0L
+    private var automaticRequestTimestamp: Long? = null
+    private var automaticState: AutomaticClipboardState? = null
+    private var automaticListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+    private val automaticTick = Runnable { automaticStep() }
     private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
     private var lastVideoTapSent = false
@@ -181,6 +191,15 @@ class VideoActivity : Activity() {
             clipboardControls.addView(clipboardSendButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             clipboardControls.addView(clipboardReceiveButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             root.addView(clipboardControls)
+            automaticSwitch = CheckBox(this).apply {
+                setText(R.string.clipboard_automatic)
+                isEnabled = false
+                setOnCheckedChangeListener { _, checked ->
+                    automaticWanted = checked
+                    if (checked) beginAutomaticClipboard() else suspendAutomaticClipboard()
+                }
+            }
+            root.addView(automaticSwitch)
             root.addView(TextView(this).apply { setText(R.string.special_keys_hint); setPadding(dp(8), 0, dp(8), 0) })
             specialKeys = SpecialKeyBar(this) { key, modifiers ->
                 val revision = captureRevision
@@ -312,6 +331,12 @@ class VideoActivity : Activity() {
         } catch (_: Exception) { showFailure() }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!automaticWanted) return
+        if (hasFocus) beginAutomaticClipboard() else suspendAutomaticClipboard()
+    }
+
     override fun onStop() {
         stopSession(failed = false)
         super.onStop()
@@ -338,6 +363,7 @@ class VideoActivity : Activity() {
         val clipboardAvailable = available && controlMode && "clipboard.manual" in supportedFeatures && clipboardAction == null
         clipboardSendButton?.isEnabled = clipboardAvailable
         clipboardReceiveButton?.isEnabled = clipboardAvailable
+        automaticSwitch?.isEnabled = available && controlMode && "clipboard.auto" in supportedFeatures
         specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures)
     }
 
@@ -367,6 +393,12 @@ class VideoActivity : Activity() {
     private fun handleClipboardResponse(response: ClipboardResponse) {
         val action = clipboardAction ?: return
         clipboardAction = null
+        if (action in setOf(ClipboardAction.AUTO_START, ClipboardAction.AUTO_POLL, ClipboardAction.AUTO_PREPARE, ClipboardAction.AUTO_SEND)) {
+            handleAutomaticClipboardResponse(action, response.result)
+            updateControlAvailability()
+            return
+        }
+        scheduleAutomaticClipboard()
         val changed = clipboardChangeGuard?.changed != false
         if (action == ClipboardAction.PREPARE_SEND && response.result == ClipboardResult.Ready) {
             val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -388,7 +420,7 @@ class VideoActivity : Activity() {
         updateControlAvailability()
         val message = when (val result = response.result) {
             ClipboardResult.Ok -> if (action == ClipboardAction.SEND) R.string.clipboard_sent else R.string.clipboard_unavailable
-            ClipboardResult.Ready -> R.string.clipboard_unavailable
+            ClipboardResult.Ready, ClipboardResult.Started, ClipboardResult.Unchanged -> R.string.clipboard_unavailable
             ClipboardResult.Busy -> R.string.clipboard_busy
             ClipboardResult.Unavailable -> R.string.clipboard_unavailable
             is ClipboardResult.Text -> {
@@ -401,6 +433,118 @@ class VideoActivity : Activity() {
             }
         }
         showClipboardMessage(message)
+    }
+
+    private fun beginAutomaticClipboard() {
+        suspendAutomaticClipboard()
+        if (!automaticWanted || !active || !hasWindowFocus()) return
+        val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val state = AutomaticClipboardState(runCatching { manager.primaryClipDescription?.timestamp }.getOrNull())
+        val listener = ClipboardManager.OnPrimaryClipChangedListener {
+            val description = runCatching { manager.primaryClipDescription }.getOrNull()
+            state.changed(description?.timestamp, ClipboardContent.automaticAllowed(description))
+            scheduleAutomaticClipboard()
+        }
+        if (runCatching { manager.addPrimaryClipChangedListener(listener) }.isFailure) {
+            disableAutomaticClipboard()
+            return
+        }
+        automaticState = state
+        automaticListener = listener
+        state.reset(runCatching { manager.primaryClipDescription?.timestamp }.getOrNull())
+        scheduleAutomaticClipboard(0)
+    }
+
+    private fun suspendAutomaticClipboard() {
+        automaticEpoch++
+        automaticStarted = false
+        automaticState = null
+        mainHandler.removeCallbacks(automaticTick)
+        automaticListener?.let { listener ->
+            val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            runCatching { manager.removePrimaryClipChangedListener(listener) }
+        }
+        automaticListener = null
+    }
+
+    private fun disableAutomaticClipboard() {
+        automaticWanted = false
+        suspendAutomaticClipboard()
+        automaticSwitch?.isChecked = false
+        showClipboardMessage(R.string.clipboard_automatic_unavailable)
+    }
+
+    private fun scheduleAutomaticClipboard(delay: Long = 1000) {
+        mainHandler.removeCallbacks(automaticTick)
+        if (automaticWanted && active && hasWindowFocus() && automaticState != null) mainHandler.postDelayed(automaticTick, delay)
+    }
+
+    private fun automaticStep() {
+        if (!automaticWanted || !active || !hasWindowFocus() || automaticState == null) return
+        if (clipboardAction != null || !firstFrameShown || captureRevision == null) { scheduleAutomaticClipboard(); return }
+        val state = automaticState ?: return
+        val action = if (!automaticStarted) ClipboardAction.AUTO_START
+            else if (state.dirty) ClipboardAction.AUTO_PREPARE else ClipboardAction.AUTO_POLL
+        val operation = when (action) {
+            ClipboardAction.AUTO_START -> ClipboardOperation.AutoStart
+            ClipboardAction.AUTO_PREPARE -> ClipboardOperation.AutoPrepare
+            else -> ClipboardOperation.AutoPoll
+        }
+        automaticRequestTimestamp = state.timestamp
+        automaticRequestEpoch = automaticEpoch
+        if (!sendAutomaticClipboard(action, operation)) disableAutomaticClipboard()
+    }
+
+    private fun sendAutomaticClipboard(action: ClipboardAction, operation: ClipboardOperation): Boolean {
+        val revision = captureRevision ?: return false
+        val sequence = controlSequence.next() ?: return false
+        if (media?.sendClipboard(ClipboardRequest(sequence, revision, operation)) != true) return false
+        clipboardAction = action
+        updateControlAvailability()
+        return true
+    }
+
+    private fun handleAutomaticClipboardResponse(action: ClipboardAction, result: ClipboardResult) {
+        if (!automaticWanted || !active || !hasWindowFocus() || automaticRequestEpoch != automaticEpoch) {
+            scheduleAutomaticClipboard(0)
+            return
+        }
+        val state = automaticState ?: return
+        val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val descriptionResult = runCatching { manager.primaryClipDescription }
+        if (descriptionResult.isFailure) { disableAutomaticClipboard(); return }
+        val description = descriptionResult.getOrNull()
+        val currentTimestamp = description?.timestamp
+        when {
+            result == ClipboardResult.Unavailable -> { disableAutomaticClipboard(); return }
+            result == ClipboardResult.Busy -> Unit
+            action == ClipboardAction.AUTO_START && result == ClipboardResult.Started -> automaticStarted = true
+            action == ClipboardAction.AUTO_PREPARE && result == ClipboardResult.Ready -> {
+                if (state.dirty && state.matches(automaticRequestTimestamp) && state.matches(currentTimestamp) &&
+                    ClipboardContent.automaticAllowed(description)) {
+                    val clip = runCatching { manager.primaryClip }.getOrNull()
+                    val text = if (ClipboardContent.automaticAllowed(clip?.description) &&
+                        clip?.description?.timestamp == automaticRequestTimestamp) ClipboardContent.text(clip) else null
+                    if (text != null && sendAutomaticClipboard(ClipboardAction.AUTO_SEND, ClipboardOperation.AutoSet(text))) return
+                }
+                state.delivered(automaticRequestTimestamp)
+            }
+            action == ClipboardAction.AUTO_SEND && result == ClipboardResult.Ok -> state.delivered(automaticRequestTimestamp)
+            action == ClipboardAction.AUTO_POLL && result is ClipboardResult.Text -> {
+                val unchanged = if (description == null) state.timestamp == null && automaticRequestTimestamp == null
+                    else state.matches(currentTimestamp) && state.matches(automaticRequestTimestamp)
+                if (!state.dirty && unchanged) {
+                    val clip = ClipboardContent.remote(result.value, getString(R.string.clipboard_label))
+                    if (clip != null && runCatching { manager.setPrimaryClip(clip) }.isSuccess) {
+                        val updated = runCatching { manager.primaryClipDescription }.getOrNull()
+                        state.reset(updated?.timestamp)
+                    }
+                }
+            }
+            action == ClipboardAction.AUTO_POLL && result == ClipboardResult.Unchanged -> Unit
+            else -> { disableAutomaticClipboard(); return }
+        }
+        scheduleAutomaticClipboard()
     }
 
     private fun removeClipboardListener() {
@@ -506,6 +650,10 @@ class VideoActivity : Activity() {
         viewport?.onVideoHover = null
         trackpadButton?.isEnabled = false
         trackpadSettingsButton?.isEnabled = false
+        automaticWanted = false
+        suspendAutomaticClipboard()
+        automaticSwitch?.isChecked = false
+        automaticSwitch?.isEnabled = false
         clipboardAction = null
         removeClipboardListener()
         clipboardSendButton?.isEnabled = false

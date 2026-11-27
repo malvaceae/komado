@@ -24,6 +24,12 @@ class ClipboardContentTest {
         assertTrue(remote.description.extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true)
         assertTrue(remote.description.extras?.getBoolean("android.content.extra.IS_REMOTE_DEVICE") == true)
         assertTrue(remote.description.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN))
+        assertTrue(!ClipboardContent.automaticAllowed(remote.description))
+        val plain = ClipData.newPlainText("test", "plain")
+        assertTrue(ClipboardContent.automaticAllowed(plain.description))
+        plain.description.extras = android.os.PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+        assertTrue(!ClipboardContent.automaticAllowed(plain.description))
+        assertTrue(!ClipboardContent.automaticAllowed(null))
         assertNull(ClipboardContent.remote("bad\u0000text", "remote"))
     }
 }

@@ -39,4 +39,32 @@ final class ClipboardTransferTests: XCTestCase {
         XCTAssertTrue(pasteboard.writeObjects([NSURL(fileURLWithPath: "/tmp/komado-test-file")]))
         XCTAssertEqual(transfer.execute(.get, allowed: true, busy: false, now: 26), .unavailable)
     }
+    @MainActor func testAutomaticSyncRequiresConsentSkipsSensitiveAndAvoidsEcho() {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("me.mallows.komado.test.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        let transfer = ClipboardTransfer(pasteboard: pasteboard)
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString("existing", forType: .string))
+        XCTAssertEqual(transfer.execute(.autoStart, allowed: true, busy: false, automaticAllowed: false, now: 1), .unavailable)
+        XCTAssertEqual(transfer.execute(.autoStart, allowed: true, busy: false, automaticAllowed: true, now: 2), .started)
+        XCTAssertEqual(transfer.execute(.autoPoll, allowed: true, busy: false, automaticAllowed: true, now: 3), .unchanged)
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString("new", forType: .string))
+        XCTAssertEqual(transfer.execute(.autoPoll, allowed: true, busy: false, automaticAllowed: true, now: 4), .text("new"))
+        XCTAssertEqual(transfer.execute(.autoPoll, allowed: true, busy: false, automaticAllowed: true, now: 5), .unchanged)
+        XCTAssertEqual(transfer.execute(.autoSet("unsolicited"), allowed: true, busy: false, automaticAllowed: true, now: 6), .unavailable)
+        XCTAssertEqual(transfer.execute(.autoPrepare, allowed: true, busy: false, automaticAllowed: true, now: 7), .ready)
+        XCTAssertEqual(transfer.execute(.autoSet("remote"), allowed: true, busy: false, automaticAllowed: true, now: 7.1), .ok)
+        XCTAssertEqual(transfer.execute(.autoPoll, allowed: true, busy: false, automaticAllowed: true, now: 8), .unchanged)
+        let hidden = NSPasteboardItem()
+        XCTAssertTrue(hidden.setString("sensitive test", forType: .string))
+        XCTAssertTrue(hidden.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")))
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.writeObjects([hidden]))
+        XCTAssertEqual(transfer.execute(.autoPoll, allowed: true, busy: false, automaticAllowed: true, now: 9), .unchanged)
+        XCTAssertEqual(transfer.execute(.get, allowed: true, busy: false, now: 10), .text("sensitive test"))
+        transfer.stopAutomatic()
+        XCTAssertEqual(transfer.execute(.autoPoll, allowed: true, busy: false, automaticAllowed: true, now: 11), .unavailable)
+    }
+
 }

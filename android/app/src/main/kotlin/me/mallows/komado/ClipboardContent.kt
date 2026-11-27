@@ -1,6 +1,7 @@
 package me.mallows.komado
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.os.PersistableBundle
 import me.mallows.komado.protocol.ClipboardCodec
 
@@ -17,6 +18,23 @@ internal object ClipboardContent {
         if (raw.length !in 1..ClipboardCodec.MAX_TEXT_BYTES) return null
         val value = raw.toString()
         return value.takeIf(ClipboardCodec::validText)
+    }
+
+    /** Metadata checks do not read the clipboard's text. */
+    fun automaticAllowed(description: ClipDescription?): Boolean {
+        description ?: return false
+        val extras = description.extras
+        if (extras?.getBoolean(SENSITIVE) == true || extras?.getBoolean(REMOTE) == true) return false
+        return !publicFlag(description, "isExcludedFromRemoteClipboard") && !publicFlag(description, "isRemoteClipboard")
+    }
+
+    // These public APIs were added after the current compile SDK; probe their
+    // availability rather than excluding older Android releases.
+    private fun publicFlag(description: ClipDescription, name: String): Boolean {
+        val method = try { ClipDescription::class.java.getMethod(name) }
+        catch (_: NoSuchMethodException) { return false }
+        catch (_: Exception) { return true }
+        return try { method.invoke(description) as? Boolean ?: true } catch (_: Exception) { true }
     }
 
     fun remote(text: String, label: String): ClipData? {

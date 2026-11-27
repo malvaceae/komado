@@ -49,7 +49,12 @@ final class HostModel: ObservableObject {
         }
     }
     @Published var allowClipboardSharing = false {
-        didSet { if !allowClipboardSharing { clipboardTransfer.reset() } }
+        didSet {
+            if !allowClipboardSharing { allowClipboardAutomatic = false; clipboardTransfer.reset() }
+        }
+    }
+    @Published var allowClipboardAutomatic = false {
+        didSet { if !allowClipboardAutomatic { clipboardTransfer.stopAutomatic() } }
     }
     @Published var vpnAddress = ""
     @Published var keepAwakeWhileListening: Bool {
@@ -541,7 +546,8 @@ final class HostModel: ObservableObject {
             route.withAllowedFrame {
                 lastExecutedControlSequence = request.sequence
                 let result = clipboardTransfer.execute(request.operation, allowed: allowClipboardSharing,
-                                                       busy: dragDispatcher?.isDragging == true)
+                                                       busy: dragDispatcher?.isDragging == true,
+                                                       automaticAllowed: allowClipboardAutomatic)
                 delivered = mediaSession?.sendClipboardResponse(ClipboardResponse(sequence: request.sequence, result: result)) == true
             }
             if !delivered { mediaFailed(id: id) }

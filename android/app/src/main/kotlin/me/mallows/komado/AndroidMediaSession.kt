@@ -64,7 +64,7 @@ internal class AndroidMediaSession(
     private val timeout = Runnable { fail() }
     private var pendingMove: me.mallows.komado.protocol.PointerMove? = null
     private val retryMove = Runnable { flushMove() }
-    private enum class ClipboardExpected { GET, PREPARE, SET }
+    private enum class ClipboardExpected { GET, PREPARE, SET, AUTO_START, AUTO_POLL, AUTO_PREPARE, AUTO_SET }
     private data class PendingClipboard(val sequence: Long, val expected: ClipboardExpected)
     private var pendingClipboard: PendingClipboard? = null
     private val clipboardTimeout = Runnable {
@@ -181,6 +181,10 @@ internal class AndroidMediaSession(
             ClipboardOperation.Get -> ClipboardExpected.GET
             ClipboardOperation.Prepare -> ClipboardExpected.PREPARE
             is ClipboardOperation.Set -> ClipboardExpected.SET
+            ClipboardOperation.AutoStart -> ClipboardExpected.AUTO_START
+            ClipboardOperation.AutoPoll -> ClipboardExpected.AUTO_POLL
+            ClipboardOperation.AutoPrepare -> ClipboardExpected.AUTO_PREPARE
+            is ClipboardOperation.AutoSet -> ClipboardExpected.AUTO_SET
         }
         pendingClipboard = PendingClipboard(request.sequence, expected)
         handler.postDelayed(clipboardTimeout, 10_000)
@@ -193,9 +197,11 @@ internal class AndroidMediaSession(
         if (response.sequence != pending.sequence) return
         val valid = when (response.result) {
             ClipboardResult.Unavailable, ClipboardResult.Busy -> true
-            ClipboardResult.Ok -> pending.expected == ClipboardExpected.SET
-            ClipboardResult.Ready -> pending.expected == ClipboardExpected.PREPARE
-            is ClipboardResult.Text -> pending.expected == ClipboardExpected.GET
+            ClipboardResult.Ok -> pending.expected == ClipboardExpected.SET || pending.expected == ClipboardExpected.AUTO_SET
+            ClipboardResult.Ready -> pending.expected == ClipboardExpected.PREPARE || pending.expected == ClipboardExpected.AUTO_PREPARE
+            ClipboardResult.Started -> pending.expected == ClipboardExpected.AUTO_START
+            ClipboardResult.Unchanged -> pending.expected == ClipboardExpected.AUTO_POLL
+            is ClipboardResult.Text -> pending.expected == ClipboardExpected.GET || pending.expected == ClipboardExpected.AUTO_POLL
         }
         if (!valid) { fail(); return }
         pendingClipboard = null

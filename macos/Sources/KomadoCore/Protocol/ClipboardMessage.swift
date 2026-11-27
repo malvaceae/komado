@@ -1,8 +1,8 @@
 import Foundation
 
-/// Manual clipboard transfers; content is never logged or persisted by komado.
+/// Clipboard transfers; content is never logged or persisted by komado.
 public struct ClipboardRequest: Equatable, Sendable {
-    public enum Operation: Equatable, Sendable { case get, prepare, set(String) }
+    public enum Operation: Equatable, Sendable { case get, prepare, set(String), autoStart, autoPoll, autoPrepare, autoSet(String) }
     public let sequence: UInt64
     public let captureRevision: UInt64
     public let operation: Operation
@@ -18,6 +18,10 @@ public struct ClipboardRequest: Equatable, Sendable {
         switch fields[1] {
         case "clipboard.get" where fields.count == 4: operation = .get
         case "clipboard.prepare" where fields.count == 4: operation = .prepare
+        case "clipboard.auto.start" where fields.count == 4: operation = .autoStart
+        case "clipboard.auto.poll" where fields.count == 4: operation = .autoPoll
+        case "clipboard.auto.prepare" where fields.count == 4: operation = .autoPrepare
+        case "clipboard.auto.set" where fields.count == 5 && ClipboardCodec.validText(fields[4]): operation = .autoSet(fields[4])
         case "clipboard.set" where fields.count == 5 && ClipboardCodec.validText(fields[4]): operation = .set(fields[4])
         default: throw ClipboardCodec.MessageError.invalid
         }
@@ -28,12 +32,19 @@ public struct ClipboardRequest: Equatable, Sendable {
         guard (1...PointerClick.maximumSequence).contains(sequence), (1...PointerClick.maximumSequence).contains(captureRevision) else {
             throw ClipboardCodec.MessageError.invalid
         }
-        if case let .set(text) = operation, !ClipboardCodec.validText(text) { throw ClipboardCodec.MessageError.invalid }
+        switch operation {
+        case let .set(text), let .autoSet(text): if !ClipboardCodec.validText(text) { throw ClipboardCodec.MessageError.invalid }
+        default: break
+        }
         var fields = ["1", "", String(sequence), String(captureRevision)]
         switch operation {
         case .get: fields[1] = "clipboard.get"
         case .prepare: fields[1] = "clipboard.prepare"
         case let .set(text): fields[1] = "clipboard.set"; fields.append(text)
+        case .autoStart: fields[1] = "clipboard.auto.start"
+        case .autoPoll: fields[1] = "clipboard.auto.poll"
+        case .autoPrepare: fields[1] = "clipboard.auto.prepare"
+        case let .autoSet(text): fields[1] = "clipboard.auto.set"; fields.append(text)
         }
         let data = try ClipboardCodec.encode(fields)
         guard try Self.decode(data) == self else { throw ClipboardCodec.MessageError.invalid }
@@ -42,7 +53,7 @@ public struct ClipboardRequest: Equatable, Sendable {
 }
 
 public struct ClipboardResponse: Equatable, Sendable {
-    public enum Result: Equatable, Sendable { case ok, ready, text(String), unavailable, busy }
+    public enum Result: Equatable, Sendable { case ok, ready, started, unchanged, text(String), unavailable, busy }
     public let sequence: UInt64
     public let result: Result
     public init(sequence: UInt64, result: Result) { self.sequence = sequence; self.result = result }
@@ -54,6 +65,8 @@ public struct ClipboardResponse: Equatable, Sendable {
         switch fields[3] {
         case "ok" where fields.count == 4: result = .ok
         case "ready" where fields.count == 4: result = .ready
+        case "started" where fields.count == 4: result = .started
+        case "unchanged" where fields.count == 4: result = .unchanged
         case "unavailable" where fields.count == 4: result = .unavailable
         case "busy" where fields.count == 4: result = .busy
         case "text" where fields.count == 5 && ClipboardCodec.validText(fields[4]): result = .text(fields[4])
@@ -69,6 +82,8 @@ public struct ClipboardResponse: Equatable, Sendable {
         switch result {
         case .ok: fields[3] = "ok"
         case .ready: fields[3] = "ready"
+        case .started: fields[3] = "started"
+        case .unchanged: fields[3] = "unchanged"
         case .unavailable: fields[3] = "unavailable"
         case .busy: fields[3] = "busy"
         case let .text(text): fields[3] = "text"; fields.append(text)

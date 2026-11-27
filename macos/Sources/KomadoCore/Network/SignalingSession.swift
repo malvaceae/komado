@@ -19,7 +19,7 @@ actor SignalingSession {
     private var device: PairedDevice?
     private var mediaState: MediaState = .idle
     private var featuresRequested = false
-    private static let controlFeatures = ["pointer.click", "pointer.double", "pointer.drag", "pointer.scroll", "pointer.move", "keyboard.text", "keyboard.key", "window.control", "display.control", "clipboard.manual"]
+    private static let controlFeatures = ["pointer.click", "pointer.double", "pointer.drag", "pointer.scroll", "pointer.move", "keyboard.text", "keyboard.key", "window.control", "display.control", "clipboard.manual", "clipboard.auto"]
     private var displaySnapshot: [DisplayInfo]?
     private var windowSnapshot: [WindowSelection]?
     private var nextWindowOffset: UInt16? = 0

@@ -222,6 +222,174 @@
       "minItems": 4,
       "maxItems": 4,
       "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.auto.start"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.auto.poll"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.auto.prepare"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.auto.set"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384,
+          "not": {
+            "pattern": "[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]"
+          }
+        }
+      ],
+      "minItems": 5,
+      "maxItems": 5,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.result"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "const": "started"
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "1"
+        },
+        {
+          "const": "clipboard.result"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,15}$",
+          "not": {
+            "pattern": "[^0-9]"
+          }
+        },
+        {
+          "const": "unchanged"
+        }
+      ],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": false
     }
   ]
 }

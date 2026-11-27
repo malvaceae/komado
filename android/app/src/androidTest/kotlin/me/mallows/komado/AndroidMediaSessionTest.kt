@@ -46,6 +46,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.LinkedBlockingQueue
 
 @RunWith(AndroidJUnit4::class)
 class AndroidMediaSessionTest {
@@ -111,6 +112,8 @@ class AndroidMediaSessionTest {
         val clipboardPrepareReply = CompletableFuture<ClipboardResponse>()
         val clipboardSetReply = CompletableFuture<ClipboardResponse>()
         val clipboardLargeReply = CompletableFuture<ClipboardResponse>()
+        val automaticRequests = LinkedBlockingQueue<ClipboardRequest>()
+        val automaticReplies = LinkedBlockingQueue<ClipboardResponse>()
         channel.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) = Unit
             override fun onStateChange() = Unit
@@ -140,6 +143,7 @@ class AndroidMediaSessionTest {
                                             ClipboardOperation.Get -> if (request.sequence == 12L) clipboardLargeGetReceived.complete(request) else clipboardGetReceived.complete(request)
                                             ClipboardOperation.Prepare -> clipboardPrepareReceived.complete(request)
                                             is ClipboardOperation.Set -> clipboardSetReceived.complete(request)
+                                            else -> automaticRequests.add(request)
                                         }
                                     }
                                 }
@@ -176,6 +180,7 @@ class AndroidMediaSessionTest {
                         if (response.sequence == 10L) clipboardPrepareReply.complete(response)
                         if (response.sequence == 11L) clipboardSetReply.complete(response)
                         if (response.sequence == 12L) clipboardLargeReply.complete(response)
+                        if (response.sequence in 13L..16L) automaticReplies.add(response)
                     }
                     override fun onVideo(track: VideoTrack?) {
                         attached?.removeSink(sink)
@@ -265,6 +270,20 @@ class AndroidMediaSessionTest {
             val largeReply = ClipboardResponse(12, ClipboardResult.Text("あ".repeat(5_461)))
             assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(ClipboardCodec.encodeResponse(largeReply)), false)))
             assertEquals(largeReply, clipboardLargeReply.get(5, TimeUnit.SECONDS))
+            val automaticCases = listOf(
+                ClipboardOperation.AutoStart to ClipboardResult.Started,
+                ClipboardOperation.AutoPoll to ClipboardResult.Unchanged,
+                ClipboardOperation.AutoPrepare to ClipboardResult.Ready,
+                ClipboardOperation.AutoSet("automatic test") to ClipboardResult.Ok,
+            )
+            automaticCases.forEachIndexed { index, (operation, result) ->
+                val request = ClipboardRequest(13L + index, 1, operation)
+                instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendClipboard(request)) }
+                assertEquals(request, automaticRequests.poll(5, TimeUnit.SECONDS))
+                val response = ClipboardResponse(request.sequence, result)
+                assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(ClipboardCodec.encodeResponse(response)), false)))
+                assertEquals(response, automaticReplies.poll(5, TimeUnit.SECONDS))
+            }
             source.capturerObserver.onCapturerStarted(true)
             for (i in 0 until 50) {
                 val frame = VideoFrame(JavaI420Buffer.allocate(320, 240), 0, System.nanoTime())
