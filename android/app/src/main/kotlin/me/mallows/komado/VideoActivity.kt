@@ -124,10 +124,10 @@ class VideoActivity : Activity() {
                 sent
             }
             root.addView(specialKeys)
-            keyboard = RemoteKeyboardView(this, sendKey = { key ->
+            keyboard = RemoteKeyboardView(this, sendKey = { key, modifiers ->
                 val revision = captureRevision
                 val sequence = if (active && "keyboard.key" in supportedFeatures && firstFrameShown && revision != null) controlSequence.next() else null
-                if (sequence != null && revision != null) media?.sendKey(KeyboardKey(sequence, revision, key, 0)) == true else false
+                if (sequence != null && revision != null) media?.sendKey(KeyboardKey(sequence, revision, key, modifiers)) == true else false
             }, sendText = { text ->
                 val message = if (active && "keyboard.text" in supportedFeatures && firstFrameShown) textMapper.message(text, captureRevision) else null
                 message != null && media?.sendText(message) == true

@@ -3,16 +3,18 @@ package me.mallows.komado
 import android.content.Context
 import android.text.InputType
 import android.view.View
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import me.mallows.komado.protocol.SpecialKey
 
 /** A transient IME target; composed text stays local until committed. */
-internal class RemoteKeyboardView(context: Context, private val sendKey: (SpecialKey) -> Boolean,
+internal class RemoteKeyboardView(context: Context, private val sendKey: (SpecialKey, Int) -> Boolean,
                                   private val sendText: (String) -> Boolean) : View(context) {
     private var current: CommittedTextConnection? = null
     private var closed = false
+    private val handledKeys = mutableSetOf<Int>()
 
     init {
         isFocusable = true
@@ -37,9 +39,23 @@ internal class RemoteKeyboardView(context: Context, private val sendKey: (Specia
         input.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
     }
 
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (closed || current?.hasComposition() == true) return super.onKeyDown(keyCode, event)
+        val chord = HardwareKeyMapper.map(event) ?: return super.onKeyDown(keyCode, event)
+        if (!sendKey(chord.key, chord.modifiers)) return false
+        handledKeys.add(keyCode)
+        return true
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (handledKeys.remove(keyCode)) return true
+        return super.onKeyUp(keyCode, event)
+    }
+
     fun close() {
         if (closed) return
         closed = true
+        handledKeys.clear()
         current?.closeConnection()
         current = null
         val input = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager

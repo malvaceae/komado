@@ -15,13 +15,29 @@ import me.mallows.komado.protocol.SpecialKey
 
 @RunWith(AndroidJUnit4::class)
 class CommittedTextConnectionTest {
+    @Test fun forwardsImeKeyEventsWithModifiers() {
+        val instrument = InstrumentationRegistry.getInstrumentation()
+        instrument.runOnMainSync {
+            val sent = mutableListOf<Pair<SpecialKey, Int>>()
+            val connection = CommittedTextConnection(View(instrument.targetContext),
+                sendKey = { key, mask -> sent.add(key to mask); true }, send = { true })
+            val ctrlC = KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_C, 0, KeyEvent.META_CTRL_ON)
+            val shiftTab = KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_TAB, 0, KeyEvent.META_SHIFT_ON)
+            assertTrue(connection.sendKeyEvent(ctrlC))
+            assertTrue(connection.sendKeyEvent(shiftTab))
+            assertFalse(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A)))
+            assertEquals(listOf(SpecialKey.C to 4, SpecialKey.TAB to 8), sent)
+            connection.closeConnection()
+        }
+    }
+
     @Test fun editingKeysStayLocalDuringCompositionAndSendAfterward() {
         val instrument = InstrumentationRegistry.getInstrumentation()
         instrument.runOnMainSync {
             val keys = mutableListOf<SpecialKey>()
             val texts = mutableListOf<String>()
             val connection = CommittedTextConnection(View(instrument.targetContext),
-                sendKey = { keys.add(it); true }, send = { texts.add(it); true })
+                sendKey = { key, _ -> keys.add(key); true }, send = { texts.add(it); true })
             assertTrue(connection.setComposingText("日本", 1))
             assertTrue(connection.deleteSurroundingText(1, 0))
             assertTrue(keys.isEmpty())

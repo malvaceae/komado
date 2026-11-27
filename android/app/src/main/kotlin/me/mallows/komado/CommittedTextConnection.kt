@@ -9,7 +9,7 @@ import android.view.inputmethod.BaseInputConnection
 import me.mallows.komado.protocol.SpecialKey
 
 /** Keeps composition local and forwards only text that an IME commits. */
-internal class CommittedTextConnection(view: View, private val sendKey: (SpecialKey) -> Boolean = { false },
+internal class CommittedTextConnection(view: View, private val sendKey: (SpecialKey, Int) -> Boolean = { _, _ -> false },
                                        private val send: (String) -> Boolean) : BaseInputConnection(view, true) {
     private val content = SpannableStringBuilder().apply { Selection.setSelection(this, 0) }
     private var closed = false
@@ -45,8 +45,8 @@ internal class CommittedTextConnection(view: View, private val sendKey: (Special
         if (closed || beforeLength < 0 || afterLength < 0) return false
         if (getComposingSpanStart(content) >= 0) return super.deleteSurroundingText(beforeLength, afterLength)
         return when {
-            beforeLength == 1 && afterLength == 0 -> sendKey(SpecialKey.BACKSPACE)
-            beforeLength == 0 && afterLength == 1 -> sendKey(SpecialKey.DELETE)
+            beforeLength == 1 && afterLength == 0 -> sendKey(SpecialKey.BACKSPACE, 0)
+            beforeLength == 0 && afterLength == 1 -> sendKey(SpecialKey.DELETE, 0)
             else -> false
         }
     }
@@ -55,26 +55,16 @@ internal class CommittedTextConnection(view: View, private val sendKey: (Special
 
     override fun sendKeyEvent(event: KeyEvent): Boolean {
         if (closed) return false
-        val key = when (event.keyCode) {
-            KeyEvent.KEYCODE_DEL -> SpecialKey.BACKSPACE
-            KeyEvent.KEYCODE_FORWARD_DEL -> SpecialKey.DELETE
-            KeyEvent.KEYCODE_ENTER -> SpecialKey.ENTER
-            KeyEvent.KEYCODE_TAB -> SpecialKey.TAB
-            KeyEvent.KEYCODE_ESCAPE -> SpecialKey.ESCAPE
-            KeyEvent.KEYCODE_DPAD_LEFT -> SpecialKey.LEFT
-            KeyEvent.KEYCODE_DPAD_RIGHT -> SpecialKey.RIGHT
-            KeyEvent.KEYCODE_DPAD_UP -> SpecialKey.UP
-            KeyEvent.KEYCODE_DPAD_DOWN -> SpecialKey.DOWN
-            else -> return false
-        }
-        if (event.isShiftPressed || event.isAltPressed || event.isCtrlPressed || event.isMetaPressed) return false
+        val chord = HardwareKeyMapper.map(event) ?: return false
         if (getComposingSpanStart(content) >= 0) return false
         return when (event.action) {
-            KeyEvent.ACTION_DOWN -> sendKey(key)
+            KeyEvent.ACTION_DOWN -> sendKey(chord.key, chord.modifiers)
             KeyEvent.ACTION_UP -> true
             else -> false
         }
     }
+
+    fun hasComposition(): Boolean = getComposingSpanStart(content) >= 0
 
     override fun closeConnection() {
         closed = true
