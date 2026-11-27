@@ -71,6 +71,7 @@ final class HostModel: ObservableObject {
     private let settings: UserDefaults
     private let accessibilityStatus: () -> Bool
     private let accessibilityPrompt: () -> Void
+    private let consoleStatus: () -> Bool
     private let identityStore: HostTLSIdentityStore
     private let registry: PairedDeviceRegistry
     private let pairing: PairingCoordinator
@@ -123,10 +124,11 @@ final class HostModel: ObservableObject {
          accessibilityPrompt: @escaping () -> Void = {
              let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
              _ = AXIsProcessTrustedWithOptions(options)
-         }) {
+         }, consoleStatus: @escaping () -> Bool = { ConsoleSession.isOnConsole() }) {
         self.clipboardTransfer = clipboardTransfer
         self.accessibilityStatus = accessibilityStatus
         self.accessibilityPrompt = accessibilityPrompt
+        self.consoleStatus = consoleStatus
         self.accessibilityPermission = accessibilityStatus()
         self.settings = settings
         self.captureResolution = settings.string(forKey: Self.captureResolutionKey).flatMap(CaptureResolution.init(rawValue:)) ?? .standard
@@ -449,7 +451,7 @@ final class HostModel: ObservableObject {
                 route.close()
                 failed()
             }
-            guard ConsoleSession.isOnConsole() else {
+            guard consoleStatus() else {
                 mediaFailed(id: id)
                 error = "このユーザーの画面セッションが使用中でないため、画面転送を開始できません。"
                 return
@@ -566,7 +568,7 @@ final class HostModel: ObservableObject {
     private func receiveControl(_ input: ControlInput, id: UUID) {
         guard mediaID == id, mediaTarget?.isControl == true, allowRemoteControl,
               sharingScreen, NSApplication.shared.isProtectedDataAvailable,
-              ConsoleSession.isOnConsole(),
+              consoleStatus(),
               let mapping = capture?.frameMapping, let route = mediaRoute,
               input.sequence > lastExecutedControlSequence else {
             if mediaID == id, dragDispatcher?.isDragging == true { mediaFailed(id: id) }
