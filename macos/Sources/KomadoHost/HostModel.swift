@@ -449,6 +449,11 @@ final class HostModel: ObservableObject {
                 route.close()
                 failed()
             }
+            guard ConsoleSession.isOnConsole() else {
+                mediaFailed(id: id)
+                error = "このユーザーの画面セッションが使用中でないため、画面転送を開始できません。"
+                return
+            }
             // The notification only reports transitions; reject an already unavailable state as well.
             guard NSApplication.shared.isProtectedDataAvailable else {
                 mediaFailed(id: id)
@@ -561,8 +566,7 @@ final class HostModel: ObservableObject {
     private func receiveControl(_ input: ControlInput, id: UUID) {
         guard mediaID == id, mediaTarget?.isControl == true, allowRemoteControl,
               sharingScreen, NSApplication.shared.isProtectedDataAvailable,
-              let session = CGSessionCopyCurrentDictionary() as? [String: Any],
-              session[kCGSessionOnConsoleKey as String] as? Bool == true,
+              ConsoleSession.isOnConsole(),
               let mapping = capture?.frameMapping, let route = mediaRoute,
               input.sequence > lastExecutedControlSequence else {
             if mediaID == id, dragDispatcher?.isDragging == true { mediaFailed(id: id) }
