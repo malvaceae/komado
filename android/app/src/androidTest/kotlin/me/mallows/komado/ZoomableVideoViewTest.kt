@@ -16,6 +16,35 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ZoomableVideoViewTest {
+    @Test fun doubleTapSendsFirstClickThenDoubleClickWithoutCrossingGestures() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val renderer = RemoteVideoRenderer(activity)
+                try {
+                    val view = ZoomableVideoView(activity, renderer.view)
+                    view.layout(0, 0, 800, 800)
+                    view.setFrameSize(800, 800, 0)
+                    val calls = mutableListOf<String>()
+                    view.onVideoTap = { _, _ -> calls.add("single") }
+                    view.onVideoDoubleTap = { _, _ -> calls.add("double") }
+                    fun touch(down: Long, up: Long, x: Float) {
+                        val first = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, x, 400f, 0)
+                        val last = MotionEvent.obtain(down, up, MotionEvent.ACTION_UP, x, 400f, 0)
+                        try { view.dispatchTouchEvent(first); view.dispatchTouchEvent(last) }
+                        finally { first.recycle(); last.recycle() }
+                    }
+                    val now = SystemClock.uptimeMillis()
+                    touch(now, now + 20, 400f)
+                    touch(now + 80, now + 100, 400f)
+                    assertEquals(listOf("single", "double"), calls)
+                    touch(now + 500, now + 520, 400f)
+                    touch(now + 580, now + 600, 700f)
+                    assertEquals(listOf("single", "double", "single", "single"), calls)
+                } finally { renderer.close() }
+            }
+        }
+    }
+
     @Test fun zoomPanAndResetAffectVideoWithinViewport() {
         var renderer: RemoteVideoRenderer? = null
         var viewport: ZoomableVideoView? = null

@@ -16,6 +16,7 @@ import kotlin.math.hypot
 internal class ZoomableVideoView(context: Context, private val video: SurfaceViewRenderer) : FrameLayout(context) {
     private val zoom = VideoZoom()
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private val doubleTapSlop = ViewConfiguration.get(context).scaledDoubleTapSlop
     private var frameWidth = 0
     private var frameHeight = 0
     private var frameRotation = 0
@@ -23,6 +24,9 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     private var lastX = 0f
     private var lastY = 0f
     private var moved = false
+    private var previousTapTime = 0L
+    private var previousTapX = 0f
+    private var previousTapY = 0f
     private enum class TwoFingerMode { NONE, PENDING, PINCH, SCROLL }
     private var twoFingerMode = TwoFingerMode.NONE
     private var initialSpan = 0f
@@ -32,6 +36,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     private var scrollY = 0f
     var onVideoTap: ((Float, Float) -> Unit)? = null
     var onVideoLongPress: ((Float, Float) -> Unit)? = null
+    var onVideoDoubleTap: ((Float, Float) -> Unit)? = null
     var onVideoScroll: ((Float, Float, Float, Float) -> Unit)? = null
     private val detector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -68,9 +73,9 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     }
 
     fun mapTap(x: Float, y: Float, revision: Long?, mapper: TapClickMapper,
-               button: PointerClick.Button = PointerClick.Button.LEFT): PointerClick? =
+               button: PointerClick.Button = PointerClick.Button.LEFT, count: Int = 1): PointerClick? =
         mapper.click(x.toDouble(), y.toDouble(), width, height, frameWidth, frameHeight,
-            frameRotation, revision, zoom.scale, zoom.panX, zoom.panY, button)
+            frameRotation, revision, zoom.scale, zoom.panX, zoom.panY, button, count)
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
@@ -124,7 +129,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                 lastY = event.y
                 moved = false
             }
-            MotionEvent.ACTION_POINTER_DOWN -> { pointerId = MotionEvent.INVALID_POINTER_ID; moved = true }
+            MotionEvent.ACTION_POINTER_DOWN -> { pointerId = MotionEvent.INVALID_POINTER_ID; moved = true; previousTapTime = 0 }
             MotionEvent.ACTION_MOVE -> {
                 val index = event.findPointerIndex(pointerId)
                 if (!detector.isInProgress && index >= 0) {
@@ -134,6 +139,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                     val dy = y - lastY
                     if (moved || abs(dx) > touchSlop || abs(dy) > touchSlop) {
                         moved = true
+                        previousTapTime = 0
                         zoom.pan(dx.toDouble(), dy.toDouble())
                         applyTransform()
                         lastX = x
@@ -155,16 +161,26 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                 if (!moved && pointerId != MotionEvent.INVALID_POINTER_ID &&
                     abs(event.x - lastX) <= touchSlop && abs(event.y - lastY) <= touchSlop) {
                     if (event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) {
+                        previousTapTime = 0
                         onVideoLongPress?.invoke(event.x, event.y)
                     } else {
                         performClick()
-                        onVideoTap?.invoke(event.x, event.y)
+                        val sinceLast = event.eventTime - previousTapTime
+                        if (previousTapTime != 0L && sinceLast in 1..ViewConfiguration.getDoubleTapTimeout().toLong() &&
+                            hypot(event.x - previousTapX, event.y - previousTapY) <= doubleTapSlop) {
+                            previousTapTime = 0
+                            onVideoDoubleTap?.invoke(event.x, event.y)
+                        } else {
+                            previousTapTime = event.eventTime
+                            previousTapX = event.x; previousTapY = event.y
+                            onVideoTap?.invoke(event.x, event.y)
+                        }
                     }
-                }
+                } else { previousTapTime = 0 }
                 pointerId = MotionEvent.INVALID_POINTER_ID
                 twoFingerMode = TwoFingerMode.NONE
             }
-            MotionEvent.ACTION_CANCEL -> { pointerId = MotionEvent.INVALID_POINTER_ID; twoFingerMode = TwoFingerMode.NONE }
+            MotionEvent.ACTION_CANCEL -> { pointerId = MotionEvent.INVALID_POINTER_ID; twoFingerMode = TwoFingerMode.NONE; previousTapTime = 0 }
         }
         return true
     }

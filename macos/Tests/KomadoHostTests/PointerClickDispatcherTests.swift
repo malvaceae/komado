@@ -39,4 +39,20 @@ final class PointerClickDispatcherTests: XCTestCase {
         }
         XCTAssertEqual(events, [.rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp])
     }
+
+    @MainActor
+    func testSecondClickCarriesDoubleClickState() throws {
+        let geometry = try XCTUnwrap(CaptureGeometry(revision: 1, bounds: CGRect(x: 0, y: 0, width: 10, height: 10)))
+        let mapping = try XCTUnwrap(CaptureFrameMapping(frameSize: CGSize(width: 10, height: 10), contentRect: CGRect(x: 0, y: 0, width: 10, height: 10)))
+        var states: [Int64] = []
+        let dispatcher = PointerClickDispatcher(trusted: { true }, post: { states.append($0.getIntegerValueField(.mouseEventClickState)) })
+        let first = PointerClick(sequence: 1, captureRevision: 1, x: 500_000, y: 500_000, button: .left)
+        let second = PointerClick(sequence: 2, captureRevision: 1, x: 500_000, y: 500_000, button: .left, count: 2)
+        XCTAssertTrue(dispatcher.click(first, geometry: geometry, mapping: mapping, sessionAllowed: true))
+        XCTAssertTrue(dispatcher.click(second, geometry: geometry, mapping: mapping, sessionAllowed: true))
+        XCTAssertEqual(states, [1, 1, 2, 2])
+        let invalid = PointerClick(sequence: 3, captureRevision: 1, x: 500_000, y: 500_000, button: .right, count: 2)
+        XCTAssertFalse(dispatcher.click(invalid, geometry: geometry, mapping: mapping, sessionAllowed: true))
+        XCTAssertEqual(states.count, 4)
+    }
 }

@@ -11,9 +11,12 @@
     { "type": "string", "pattern": "^[1-9][0-9]{0,15}$", "maxLength": 16, "not": { "pattern": "[^0-9]" } },
     { "type": "string", "pattern": "^(0|[1-9][0-9]{0,5}|1000000)$", "maxLength": 7, "not": { "pattern": "[^0-9]" } },
     { "type": "string", "pattern": "^(0|[1-9][0-9]{0,5}|1000000)$", "maxLength": 7, "not": { "pattern": "[^0-9]" } },
-    { "enum": ["left", "right", "middle"] }
+    { "enum": ["left", "right", "middle"] },
+    { "const": "2" }
   ],
   "minItems": 7,
-  "maxItems": 7,
+  "maxItems": 8,
+  "if": { "minItems": 8 },
+  "then": { "prefixItems": [{}, {}, {}, {}, {}, {}, { "const": "left" }] },
   "items": false
 }

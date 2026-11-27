@@ -9,13 +9,14 @@ internal class TapClickMapper(private val sequence: ControlSequence = ControlSeq
 
     fun click(x: Double, y: Double, viewWidth: Int, viewHeight: Int, frameWidth: Int, frameHeight: Int,
               frameRotation: Int, captureRevision: Long?, zoom: Double = 1.0, panX: Double = 0.0, panY: Double = 0.0,
-              button: PointerClick.Button = PointerClick.Button.LEFT): PointerClick? {
+              button: PointerClick.Button = PointerClick.Button.LEFT, count: Int = 1): PointerClick? {
         // Rotated WebRTC frames need a separately verified coordinate transform.
-        if (frameRotation != 0 || captureRevision == null || captureRevision !in 1..PointerClickCodec.MAX_SEQUENCE) return null
+        if (frameRotation != 0 || captureRevision == null || captureRevision !in 1..PointerClickCodec.MAX_SEQUENCE ||
+            !(count == 1 || (count == 2 && button == PointerClick.Button.LEFT))) return null
         val viewport = VideoViewport.create(viewWidth.toDouble(), viewHeight.toDouble(), frameWidth.toDouble(), frameHeight.toDouble(),
             zoom = zoom, panX = panX, panY = panY, captureRevision = captureRevision) ?: return null
         val point = viewport.normalize(x, y) ?: return null
         return PointerClick(sequence.next() ?: return null, captureRevision,
-            (point.x * 1_000_000).toInt(), (point.y * 1_000_000).toInt(), button)
+            (point.x * 1_000_000).toInt(), (point.y * 1_000_000).toInt(), button, count)
     }
 }

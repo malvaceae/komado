@@ -42,6 +42,7 @@ class VideoActivity : Activity() {
     private var keyboardButton: Button? = null
     private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
+    private var lastVideoTapSent = false
     private lateinit var status: TextView
     private val firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
 
@@ -80,9 +81,13 @@ class VideoActivity : Activity() {
             viewport = ZoomableVideoView(this, video.view)
             if (controlMode) viewport?.contentDescription = getString(R.string.video_control_description)
             viewport?.onVideoTap = { x, y ->
-                sendPointerClick(x, y, PointerClick.Button.LEFT)
+                lastVideoTapSent = sendPointerClick(x, y, PointerClick.Button.LEFT)
             }
             viewport?.onVideoLongPress = { x, y -> sendPointerClick(x, y, PointerClick.Button.RIGHT) }
+            viewport?.onVideoDoubleTap = { x, y ->
+                sendPointerClick(x, y, PointerClick.Button.LEFT, count = if (lastVideoTapSent) 2 else 1)
+                lastVideoTapSent = false
+            }
             viewport?.onVideoScroll = { x, y, dx, dy ->
                 if (active && controlMode && firstFrameShown && dx.isFinite() && dy.isFinite()) {
                     val horizontal = (dx / resources.displayMetrics.density).roundToInt().coerceIn(-120, 120)
@@ -246,10 +251,12 @@ class VideoActivity : Activity() {
         specialKeys?.setAvailable(active && firstFrameShown && captureRevision != null)
     }
 
-    private fun sendPointerClick(x: Float, y: Float, button: PointerClick.Button) {
-        if (!active || !controlMode || !firstFrameShown) return
-        val click = viewport?.mapTap(x, y, captureRevision, tapMapper, button)
-        if (click != null && media?.sendClick(click) != true) stopSession(failed = true)
+    private fun sendPointerClick(x: Float, y: Float, button: PointerClick.Button, count: Int = 1): Boolean {
+        if (!active || !controlMode || !firstFrameShown) return false
+        val click = viewport?.mapTap(x, y, captureRevision, tapMapper, button, count) ?: return false
+        val sent = media?.sendClick(click) == true
+        if (!sent) stopSession(failed = true)
+        return sent
     }
 
     private fun stopSession(failed: Boolean) {

@@ -9,7 +9,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 
 /** Coordinates are millionths of the current captured image. */
-data class PointerClick(val sequence: Long, val captureRevision: Long, val x: Int, val y: Int, val button: Button) {
+data class PointerClick(val sequence: Long, val captureRevision: Long, val x: Int, val y: Int, val button: Button, val count: Int = 1) {
     enum class Button(val wireValue: String) { LEFT("left"), RIGHT("right"), MIDDLE("middle") }
 }
 
@@ -41,21 +41,28 @@ object PointerClickCodec {
                 if (sequence == 0L || revision == 0L || reader.peek() != JsonToken.STRING) throw MessageException()
                 val rawButton = reader.nextString()
                 val button = PointerClick.Button.entries.firstOrNull { it.wireValue == rawButton } ?: throw MessageException()
+                val count = if (reader.hasNext()) {
+                    if (reader.peek() != JsonToken.STRING || reader.nextString() != "2" || button != PointerClick.Button.LEFT) throw MessageException()
+                    2
+                } else 1
                 if (reader.hasNext()) throw MessageException()
                 reader.endArray()
                 if (reader.peek() != JsonToken.END_DOCUMENT) throw MessageException()
-                return PointerClick(sequence, revision, x, y, button)
+                return PointerClick(sequence, revision, x, y, button, count)
             }
         } catch (_: Exception) { throw MessageException() }
     }
 
     fun encode(click: PointerClick): ByteArray {
         if (click.sequence !in 1..MAX_SEQUENCE || click.captureRevision !in 1..MAX_SEQUENCE ||
-            click.x !in 0..1_000_000 || click.y !in 0..1_000_000) throw MessageException()
+            click.x !in 0..1_000_000 || click.y !in 0..1_000_000 ||
+            !(click.count == 1 || (click.count == 2 && click.button == PointerClick.Button.LEFT))) throw MessageException()
         val output = StringWriter()
         JsonWriter(output).use { writer ->
             writer.beginArray().value("1").value("pointer.click").value(click.sequence.toString()).value(click.captureRevision.toString())
-                .value(click.x.toString()).value(click.y.toString()).value(click.button.wireValue).endArray()
+                .value(click.x.toString()).value(click.y.toString()).value(click.button.wireValue)
+            if (click.count == 2) writer.value("2")
+            writer.endArray()
         }
         return output.toString().toByteArray(Charsets.UTF_8)
     }
