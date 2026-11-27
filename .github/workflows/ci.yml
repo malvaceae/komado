@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   macos:
     name: macOS build and tests
@@ -31,8 +35,23 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+          cache: gradle
       - name: Install Android SDK platform
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0"'
       - name: Build, lint and test
-        run: ./gradlew :core:test :security:lintDebug :app:lintDebug :app:assembleDebug
         working-directory: android
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            set +e
+            ./gradlew :core:test :security:lintDebug :app:lintDebug :app:assembleDebug 2>&1 | tee "$RUNNER_TEMP/komado-gradle.log"
+            statuses=("${PIPESTATUS[@]}")
+            set -e
+            if (( statuses[1] != 0 )); then exit "${statuses[1]}"; fi
+            if (( statuses[0] == 0 )); then exit 0; fi
+            if (( attempt == 3 )) || ! grep -Fq 'Received status code 429 from server' "$RUNNER_TEMP/komado-gradle.log"; then
+              exit "${statuses[0]}"
+            fi
+            echo "Dependency repository returned HTTP 429; retrying."
+            sleep "$((attempt * 15))"
+          done
