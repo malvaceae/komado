@@ -37,6 +37,7 @@ class VideoActivity : Activity() {
     private var controlMode = false
     private var keyboard: RemoteKeyboardView? = null
     private var keyboardButton: Button? = null
+    private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
     private lateinit var status: TextView
     private val firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
@@ -92,6 +93,15 @@ class VideoActivity : Activity() {
         }
         root.addView(zoomControls)
         if (controlMode) {
+            root.addView(TextView(this).apply { setText(R.string.special_keys_hint); setPadding(dp(8), 0, dp(8), 0) })
+            specialKeys = SpecialKeyBar(this) { key, modifiers ->
+                val revision = captureRevision
+                val sequence = if (active && firstFrameShown && revision != null) controlSequence.next() else null
+                val sent = sequence != null && revision != null && media?.sendKey(KeyboardKey(sequence, revision, key, modifiers)) == true
+                if (!sent && active) stopSession(failed = true)
+                sent
+            }
+            root.addView(specialKeys)
             keyboard = RemoteKeyboardView(this, sendKey = { key ->
                 val revision = captureRevision
                 val sequence = if (active && firstFrameShown && revision != null) controlSequence.next() else null
@@ -219,6 +229,7 @@ class VideoActivity : Activity() {
 
     private fun updateControlAvailability() {
         keyboardButton?.isEnabled = active && firstFrameShown && captureRevision != null
+        specialKeys?.setAvailable(active && firstFrameShown && captureRevision != null)
     }
 
     private fun stopSession(failed: Boolean) {
@@ -236,6 +247,7 @@ class VideoActivity : Activity() {
         media = null
         captureRevision = null
         keyboardButton?.isEnabled = false
+        specialKeys?.setAvailable(false)
         keyboard?.close()
         keyboard = null
         zoomButtons.forEach { it.isEnabled = false }
