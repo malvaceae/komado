@@ -133,6 +133,7 @@
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 8 API 26・Android 17 API 37 arm64エミュレーター | 記号ショートカット | カンマ・ピリオド・スラッシュの共通メッセージとMacの仮想キーコード、Androidの疑似キー・選択欄、旧ホスト向けの無効化をテスト。Android 17とMacを認証接続し、3種類のキー情報をMacのテスト用受信処理で確認 | 形式・判定・イベント生成と両OS間のキー情報の受信を確認。Macアプリへの実配送、キーボード配列とAndroid実機は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 8 API 26・Android 17 API 37 arm64エミュレーター | Space・追加記号ショートカット | 共通メッセージ、Macの仮想キーコード、Androidの疑似キー・選択欄、旧ホスト向けの無効化をテスト。Android 8とMacを認証接続し、9種類のキー情報をMacのテスト用受信処理で確認 | 形式・判定・イベント生成と両OS間のキー情報の受信を確認。実際のMacアプリへの配送、IME・キーボード配列とAndroid実機は未検証 |
 | 2026-11-27 | macOS 26.7.3、Apple Silicon、Android 8 API 26 arm64エミュレーター | Androidのバックグラウンド移行 | 一時的なテストでペアリング後に実画面を表示し、Activityを停止・復帰させてAndroidの終了表示とMac側の画面共有・接続の停止を確認 | 停止と復帰後の終了表示を確認。Android実機のホーム操作・画面ロック、Macのスリープ、Tailscaleは未検証。一時テストコード・登録情報・鍵・接続情報を削除 |
+| 2026-11-27 | macOS 26.7.3、Apple Silicon | 別プロセスのウインドウのサイズ変更とキャプチャ | 一時的なテストアプリのウインドウをWindow ServerとAccessibilityの位置・サイズで照合し、キャプチャ中にAccessibilityでサイズを変更して復元 | サイズ変更と復元を確認。変更によって映像フレームの表示領域が変わり、既存の安全処理がキャプチャを停止した。一般のアプリ、位置の変更、異なる最小サイズ、Androidとの連携・実機は未検証。一時テストコードはリポジトリから除去 |
 
 実画面の相互接続検証では、1280×800の映像でVideoToolboxが`kVTParameterErr`（-12902）を返し、エンコードされなかった。1152×720に縮小するとエンコード・受信に成功した。失敗時のH.264設定は`profile-level-id=42e01f`（Level 3.1）で、1280×800は4,000マクロブロックと、[WebRTCのLevel 3.1の上限](https://webrtc.googlesource.com/src/+/fb1c41a93d92d4188f068f437d80ef2c4b50c3a9/api/video_codecs/h264_profile_level_id.cc)である3,600を超えるため、これが一因の可能性がある。エラーの原因は確定しておらず、製品の解像度上限としては扱わない。
 
