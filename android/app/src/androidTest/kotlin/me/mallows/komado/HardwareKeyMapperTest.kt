@@ -1,7 +1,10 @@
 package me.mallows.komado
 
 import android.view.KeyEvent
+import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.widget.LinearLayout
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import me.mallows.komado.protocol.SpecialKey
@@ -14,6 +17,29 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class HardwareKeyMapperTest {
+    @Test fun staleInputConnectionCannotSendAfterFocusMoves() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val sent = mutableListOf<String>()
+                val keyboard = RemoteKeyboardView(activity, sendKey = { _, _ -> true }, sendText = { sent.add(it); true })
+                val other = View(activity).apply { isFocusable = true; isFocusableInTouchMode = true }
+                activity.setContentView(LinearLayout(activity).apply { addView(keyboard); addView(other) })
+                assertTrue(keyboard.requestFocus())
+                val oldInput = requireNotNull(keyboard.onCreateInputConnection(EditorInfo()))
+                assertTrue(oldInput.setComposingText("変換中", 1))
+                assertTrue(other.requestFocus())
+                assertFalse(oldInput.commitText("古い入力", 1))
+                assertFalse(oldInput.finishComposingText())
+                assertTrue(sent.isEmpty())
+                assertTrue(keyboard.requestFocus())
+                val newInput = requireNotNull(keyboard.onCreateInputConnection(EditorInfo()))
+                assertTrue(newInput.commitText("新しい入力", 1))
+                assertEquals(listOf("新しい入力"), sent)
+                keyboard.close()
+            }
+        }
+    }
+
     @Test fun mapsShortcutsSeparatelyFromText() {
         fun event(code: Int, meta: Int = 0) = KeyEvent(0, 0, KeyEvent.ACTION_DOWN, code, 0, meta)
         assertNull(HardwareKeyMapper.map(event(KeyEvent.KEYCODE_A)))

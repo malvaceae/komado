@@ -29,7 +29,12 @@ internal class RemoteKeyboardView(context: Context, private val sendKey: (Specia
 
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
-        if (!gainFocus) { handledKeys.clear(); rawText.reset() }
+        if (!gainFocus) {
+            handledKeys.clear()
+            rawText.reset()
+            current?.closeConnection()
+            current = null
+        }
     }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
