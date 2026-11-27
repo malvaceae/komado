@@ -70,7 +70,7 @@ final class HostModelTests: XCTestCase {
         model.createIdentity()
         XCTAssertNotNil(model.fingerprint)
         await model.start()
-        if model.error == "利用できるLANまたはVPNのアドレスがありません。" { throw XCTSkip("No active local interface") }
+        if model.error == "利用できるネットワークアドレスがありません。" { throw XCTSkip("No active local interface") }
         try await waitFor { model.ready || model.error != nil }
         XCTAssertNil(model.error)
         XCTAssertTrue(model.ready)

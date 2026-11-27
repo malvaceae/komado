@@ -166,7 +166,7 @@ final class SignalingServerTests: XCTestCase {
                     let count = box.nextAuthentication()
                     if count == 1 { firstAuthenticated.fulfill() }
                     if count <= 2 { authenticated.fulfill() }
-                case let .mediaRequested(id, _, _, target):
+                case let .mediaRequested(id, _, target):
                     box.setMediaSession(id)
                     let display: UInt32?
                     switch target {
@@ -219,7 +219,6 @@ final class SignalingServerTests: XCTestCase {
         let localCandidate = "a=candidate:1 1 udp 1 \(address) 54321 typ host\r\n"
         let otherCandidate = "a=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n"
         let offer = "v=0\r\ns=offer\r\nc=IN IP4 192.0.2.5\r\n" + localCandidate + otherCandidate
-        let expectedOffer = "v=0\r\ns=offer\r\nc=IN IP4 \(address)\r\n" + localCandidate
         let answer = "v=0\r\ns=answer\r\n"
         do {
             try await server.sendOffer(offer)
@@ -239,12 +238,12 @@ final class SignalingServerTests: XCTestCase {
             XCTFail("An old connection must not affect the active session")
         } catch { }
         do {
-            try await server.sendOffer("v=0\r\n" + otherCandidate)
-            XCTFail("Offer without a candidate for the signaling address must be rejected")
+            try await server.sendOffer("invalid SDP")
+            XCTFail("Invalid SDP must be rejected")
         } catch { }
         try await server.sendOffer(offer, sessionID: currentConnection)
         let receivedOffer = try await first.receive()
-        XCTAssertEqual(receivedOffer, .offer(expectedOffer))
+        XCTAssertEqual(receivedOffer, .offer(offer))
         try await first.send(.answer(answer))
         await fulfillment(of: [answerReceived], timeout: 10)
         XCTAssertEqual(box.getAnswer(), answer)

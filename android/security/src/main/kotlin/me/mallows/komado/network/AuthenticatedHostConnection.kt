@@ -3,7 +3,6 @@ package me.mallows.komado.network
 import me.mallows.komado.protocol.SignalFrame
 import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.protocol.SignalMessageCodec
-import me.mallows.komado.protocol.SdpCandidateFilter
 import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.security.DeviceSigningKey
@@ -13,7 +12,6 @@ import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
 import java.net.InetSocketAddress
-import java.net.InetAddress
 import java.net.Socket
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -27,7 +25,6 @@ class AuthenticatedHostConnection private constructor(
     private val socket: SSLSocket,
     val deviceID: UUID,
 ) : Closeable {
-    val localAddress: InetAddress get() = socket.localAddress
     private enum class MediaState { IDLE, EXPECTING_OFFER, OFFER_RECEIVED, ANSWER_SENT }
     private val mediaLock = Any()
     private var mediaState = MediaState.IDLE
@@ -130,8 +127,7 @@ class AuthenticatedHostConnection private constructor(
     fun sendAnswer(sdp: String) = synchronized(mediaLock) {
         if (closed || mediaState != MediaState.OFFER_RECEIVED) throw IOException("Unexpected signaling state")
         try {
-            val restricted = SdpCandidateFilter.restrict(sdp, socket.localAddress)
-            send(socket, SignalMessage.Answer(restricted))
+            send(socket, SignalMessage.Answer(sdp))
             mediaState = MediaState.ANSWER_SENT
         } catch (error: Exception) {
             runCatching { close() }

@@ -9,7 +9,7 @@ actor SignalingSession {
     private let handshake: ServerHandshake
     private let queue: DispatchQueue
     private let onAuthenticated: @Sendable (PairedDevice) async -> Void
-    private let onMediaRequested: @Sendable (PairedDevice, NWEndpoint.Host, MediaTarget) async -> Void
+    private let onMediaRequested: @Sendable (PairedDevice, MediaTarget) async -> Void
     private let onAnswer: @Sendable (PairedDevice, String) async -> Void
     private let onClosed: @Sendable () async -> Void
     private var decoder = SignalFrame.Decoder()
@@ -27,7 +27,7 @@ actor SignalingSession {
 
     init(connection: NWConnection, handshake: ServerHandshake, queue: DispatchQueue,
          onAuthenticated: @escaping @Sendable (PairedDevice) async -> Void,
-         onMediaRequested: @escaping @Sendable (PairedDevice, NWEndpoint.Host, MediaTarget) async -> Void,
+         onMediaRequested: @escaping @Sendable (PairedDevice, MediaTarget) async -> Void,
          onAnswer: @escaping @Sendable (PairedDevice, String) async -> Void,
          onClosed: @escaping @Sendable () async -> Void) {
         self.connection = connection
@@ -64,9 +64,7 @@ actor SignalingSession {
     func sendOffer(_ sdp: String) throws {
         guard !closed, device != nil else { throw SessionError.notAuthenticated }
         guard mediaState == .preparingOffer else { throw SessionError.unexpectedState }
-        guard case let .hostPort(host, _) = connection.currentPath?.localEndpoint else { throw SDPCandidateFilter.FilterError.invalidAddress }
-        let restricted = try SDPCandidateFilter.restrict(sdp, to: host)
-        let encoded = try SignalFrame.encode(SignalMessage.offer(restricted).encode())
+        let encoded = try SignalFrame.encode(SignalMessage.offer(sdp).encode())
         mediaState = .awaitingAnswer
         timeout?.cancel()
         timeout = Task { [weak self] in
@@ -178,13 +176,12 @@ actor SignalingSession {
                     default: target = nil; startsMedia = false
                     }
                     if startsMedia && mediaState == .idle, let target {
-                        guard case let .hostPort(host, _) = connection.currentPath?.localEndpoint else { await close(); return }
                         mediaState = .preparingOffer
                         timeout = Task { [weak self] in
                             do { try await Task.sleep(for: .seconds(30)) } catch { return }
                             await self?.close()
                         }
-                        await onMediaRequested(device, host, target)
+                        await onMediaRequested(device, target)
                         if !closed { receive() }
                         return
                     }

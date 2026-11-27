@@ -2,7 +2,6 @@ package me.mallows.komado
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import me.mallows.komado.protocol.SdpCandidateFilter
 import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerClickCodec
 import me.mallows.komado.protocol.KeyboardText
@@ -40,8 +39,6 @@ import org.webrtc.SessionDescription
 import org.webrtc.VideoFrame
 import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
-import java.net.DatagramSocket
-import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
@@ -65,7 +62,7 @@ class AndroidMediaSessionTest {
             val sdp = offer.get(10, TimeUnit.SECONDS).description
             assertTrue(sdp.contains("m=audio "))
             instrumentation.runOnMainSync {
-                receiver = AndroidMediaSession(instrumentation.targetContext, InetAddress.getByName("127.0.0.1"),
+                receiver = AndroidMediaSession(instrumentation.targetContext,
                     object : AndroidMediaSession.Listener {
                         override fun onAnswer(sdp: String) { answer.complete(sdp) }
                         override fun onCaptureReady(revision: Long) = Unit
@@ -104,10 +101,6 @@ class AndroidMediaSessionTest {
     private fun exchangeDescriptionsAndGeneratedVideo(confirmText: Boolean, sendWrongConfirmation: Boolean = true,
                                                        closeControlChannel: Boolean = false, closeLocally: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val address = DatagramSocket().use {
-            it.connect(InetAddress.getByName("192.0.2.1"), 9)
-            it.localAddress
-        }
         val egl = EglBase.create()
         val factory = MediaFactory.create(instrumentation.targetContext, egl.eglBaseContext)
         val gathered = CountDownLatch(1)
@@ -202,9 +195,9 @@ class AndroidMediaSessionTest {
             sender.setLocalDescription(DescriptionObserver(set = setLocal), offer)
             setLocal.get(10, TimeUnit.SECONDS)
             assertTrue("Sender ICE gathering timed out", gathered.await(10, TimeUnit.SECONDS))
-            val restrictedOffer = SdpCandidateFilter.restrict(sender.localDescription.description, address)
+            val offerSdp = sender.localDescription.description
             instrumentation.runOnMainSync {
-                receiver = AndroidMediaSession(instrumentation.targetContext, address, object : AndroidMediaSession.Listener {
+                receiver = AndroidMediaSession(instrumentation.targetContext, object : AndroidMediaSession.Listener {
                     override fun onAnswer(sdp: String) { answer.complete(sdp) }
                     override fun onCaptureReady(revision: Long) { if (revision == 1L) captureReady.countDown() }
                     override fun onClipboardResponse(response: ClipboardResponse) {
@@ -228,11 +221,11 @@ class AndroidMediaSessionTest {
                     override fun onTextDeliveryUnconfirmed() { textUnconfirmed.countDown() }
                 }, confirmText = confirmText)
                 assertTrue(!receiver.sendClick(PointerClick(1, 1, 500_000, 500_000, PointerClick.Button.LEFT)))
-                receiver.acceptOffer(restrictedOffer)
+                receiver.acceptOffer(offerSdp)
             }
-            val restrictedAnswer = SdpCandidateFilter.restrict(answer.get(20, TimeUnit.SECONDS), address)
+            val answerSdp = answer.get(20, TimeUnit.SECONDS)
             val setRemote = CompletableFuture<Unit>()
-            sender.setRemoteDescription(DescriptionObserver(set = setRemote), SessionDescription(SessionDescription.Type.ANSWER, restrictedAnswer))
+            sender.setRemoteDescription(DescriptionObserver(set = setRemote), SessionDescription(SessionDescription.Type.ANSWER, answerSdp))
             setRemote.get(10, TimeUnit.SECONDS)
             remoteVideo.get(20, TimeUnit.SECONDS)
             val channelDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
@@ -398,7 +391,7 @@ class AndroidMediaSessionTest {
         var receiver: AndroidMediaSession? = null
         try {
             instrumentation.runOnMainSync {
-                receiver = AndroidMediaSession(instrumentation.targetContext, InetAddress.getByName("127.0.0.1"),
+                receiver = AndroidMediaSession(instrumentation.targetContext,
                     object : AndroidMediaSession.Listener {
                         override fun onAnswer(sdp: String) = throw AssertionError("Unexpected answer")
                         override fun onCaptureReady(revision: Long) = throw AssertionError("Unexpected capture")
@@ -415,10 +408,6 @@ class AndroidMediaSessionTest {
 
     @Test fun alteredDtlsFingerprintCannotOpenControlChannel() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val address = DatagramSocket().use {
-            it.connect(InetAddress.getByName("192.0.2.1"), 9)
-            it.localAddress
-        }
         val egl = EglBase.create()
         val factory = MediaFactory.create(instrumentation.targetContext, egl.eglBaseContext)
         val gathered = CountDownLatch(1)
@@ -436,7 +425,7 @@ class AndroidMediaSessionTest {
             sender.setLocalDescription(DescriptionObserver(set = setLocal), offerFuture.get(10, TimeUnit.SECONDS))
             setLocal.get(10, TimeUnit.SECONDS)
             assertTrue(gathered.await(10, TimeUnit.SECONDS))
-            val offer = SdpCandidateFilter.restrict(sender.localDescription.description, address)
+            val offer = sender.localDescription.description
             val fingerprint = Regex("(?m)^a=fingerprint:sha-256 ([0-9A-F]{2})")
             assertTrue("No DTLS fingerprint in generated offer", fingerprint.containsMatchIn(offer))
             val alteredOffer = fingerprint.replace(offer) { match ->
@@ -444,7 +433,7 @@ class AndroidMediaSessionTest {
                 match.value.dropLast(2) + if (firstByte == "00") "01" else "00"
             }
             instrumentation.runOnMainSync {
-                receiver = AndroidMediaSession(instrumentation.targetContext, address, object : AndroidMediaSession.Listener {
+                receiver = AndroidMediaSession(instrumentation.targetContext, object : AndroidMediaSession.Listener {
                     override fun onAnswer(sdp: String) { answer.complete(sdp) }
                     override fun onCaptureReady(revision: Long) = Unit
                     override fun onVideo(track: VideoTrack?) = Unit
@@ -455,9 +444,9 @@ class AndroidMediaSessionTest {
                 })
                 receiver.acceptOffer(alteredOffer)
             }
-            val restrictedAnswer = SdpCandidateFilter.restrict(answer.get(20, TimeUnit.SECONDS), address)
+            val answerSdp = answer.get(20, TimeUnit.SECONDS)
             val setRemote = CompletableFuture<Unit>()
-            sender.setRemoteDescription(DescriptionObserver(set = setRemote), SessionDescription(SessionDescription.Type.ANSWER, restrictedAnswer))
+            sender.setRemoteDescription(DescriptionObserver(set = setRemote), SessionDescription(SessionDescription.Type.ANSWER, answerSdp))
             setRemote.get(10, TimeUnit.SECONDS)
             assertTrue("DTLS mismatch did not fail connection", connectionFailed.await(20, TimeUnit.SECONDS))
             assertTrue("Control channel opened with altered fingerprint", channel.state() != DataChannel.State.OPEN)
@@ -474,10 +463,6 @@ class AndroidMediaSessionTest {
 
     @Test fun unansweredMediaConnectionTimesOut() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val address = DatagramSocket().use {
-            it.connect(InetAddress.getByName("192.0.2.1"), 9)
-            it.localAddress
-        }
         val egl = EglBase.create()
         val factory = MediaFactory.create(instrumentation.targetContext, egl.eglBaseContext)
         val gathered = CountDownLatch(1)
@@ -493,9 +478,9 @@ class AndroidMediaSessionTest {
             sender.setLocalDescription(DescriptionObserver(set = setLocal), offerFuture.get(10, TimeUnit.SECONDS))
             setLocal.get(10, TimeUnit.SECONDS)
             assertTrue(gathered.await(10, TimeUnit.SECONDS))
-            val offer = SdpCandidateFilter.restrict(sender.localDescription.description, address)
+            val offer = sender.localDescription.description
             instrumentation.runOnMainSync {
-                receiver = AndroidMediaSession(instrumentation.targetContext, address, object : AndroidMediaSession.Listener {
+                receiver = AndroidMediaSession(instrumentation.targetContext, object : AndroidMediaSession.Listener {
                     override fun onAnswer(sdp: String) { answer.countDown() }
                     override fun onCaptureReady(revision: Long) = Unit
                     override fun onVideo(track: VideoTrack?) = Unit

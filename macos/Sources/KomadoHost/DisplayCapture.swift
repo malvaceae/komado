@@ -39,14 +39,14 @@ final class DisplayCapture {
         self.bridge = bridge
     }
 
-    static func start(display: SCDisplay, source: RTCVideoSource, route: MediaRouteGate, resolution: CaptureResolution = .standard,
+    static func start(display: SCDisplay, source: RTCVideoSource, route: MediaSessionGate, resolution: CaptureResolution = .standard,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         let size = try dimensions(width: display.width, height: display.height, resolution: resolution)
         return try await start(filter: SCContentFilter(display: display, excludingWindows: []),
                                size: size, source: source, route: route, onStopped: onStopped)
     }
 
-    static func start(window: SCWindow, source: RTCVideoSource, route: MediaRouteGate, resolution: CaptureResolution = .standard,
+    static func start(window: SCWindow, source: RTCVideoSource, route: MediaSessionGate, resolution: CaptureResolution = .standard,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         let width = window.frame.width, height = window.frame.height
         guard width.isFinite, height.isFinite, width >= 2, height >= 2,
@@ -57,7 +57,7 @@ final class DisplayCapture {
     }
 
     private static func start(filter: SCContentFilter, size: (width: Int, height: Int), source: RTCVideoSource,
-                              route: MediaRouteGate, onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
+                              route: MediaSessionGate, onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permissionRequired }
         let configuration = SCStreamConfiguration()
         configuration.width = size.width
@@ -106,10 +106,10 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
     private var mapping: CaptureFrameMapping?
     private let source: RTCVideoSource
     private let capturer: RTCVideoCapturer
-    private let route: MediaRouteGate
+    private let route: MediaSessionGate
     private let onStopped: @Sendable () -> Void
 
-    init(source: RTCVideoSource, route: MediaRouteGate, onStopped: @escaping @Sendable () -> Void) {
+    init(source: RTCVideoSource, route: MediaSessionGate, onStopped: @escaping @Sendable () -> Void) {
         self.source = source
         self.capturer = RTCVideoCapturer(delegate: source)
         self.route = route
@@ -157,7 +157,7 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
                 return true
             }
             if mapping == nil { mapping = newMapping }
-            route.withAllowedFrame { source.capturer(capturer, didCapture: frame) }
+            route.whileConnected { source.capturer(capturer, didCapture: frame) }
             return false
         }
         if invalidated { onStopped() }

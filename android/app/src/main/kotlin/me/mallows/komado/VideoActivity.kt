@@ -307,7 +307,7 @@ class VideoActivity : Activity() {
                 if (!active) return@runOnUiThread
                 try {
                     if (controlMode) configureControlFeatures()
-                    val session = AndroidMediaSession(applicationContext, established.localAddress, object : AndroidMediaSession.Listener {
+                    val session = AndroidMediaSession(applicationContext, object : AndroidMediaSession.Listener {
                         override fun onAnswer(sdp: String) {
                             if (!active) return
                             executor.execute {

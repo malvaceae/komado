@@ -21,8 +21,8 @@ final class DisplayCaptureTests: XCTestCase {
         let counter = FrameCounter()
         track.add(counter)
         defer { track.remove(counter) }
-        let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
-        route.selected(localCandidate: "candidate:1 1 udp 1 127.0.0.1 1234 typ host")
+        let route = MediaSessionGate()
+        route.connected()
         let stoppedUnexpectedly = expectation(description: "capture remains stable")
         stoppedUnexpectedly.isInverted = true
         let capture = try await DisplayCapture.start(display: display, source: source, route: route, resolution: .reduced) { stoppedUnexpectedly.fulfill() }
@@ -66,8 +66,8 @@ final class DisplayCaptureTests: XCTestCase {
         let counter = FrameCounter()
         track.add(counter)
         defer { track.remove(counter) }
-        let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
-        route.selected(localCandidate: "candidate:1 1 udp 1 127.0.0.1 1234 typ host")
+        let route = MediaSessionGate()
+        route.connected()
         let stopped = expectation(description: "closed window stops capture")
         let capture = try await DisplayCapture.start(window: capturedWindow, source: source, route: route) { stopped.fulfill() }
         try await Task.sleep(for: .seconds(2))
@@ -103,8 +103,8 @@ final class DisplayCaptureTests: XCTestCase {
         let capturedWindow = try XCTUnwrap(target)
         let factory = MediaFactory.create()
         let source = factory.videoSource(forScreenCast: true)
-        let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
-        route.selected(localCandidate: "candidate:1 1 udp 1 127.0.0.1 1234 typ host")
+        let route = MediaSessionGate()
+        route.connected()
         let stopped = expectation(description: "changed mapping stops capture")
         let capture = try await DisplayCapture.start(window: capturedWindow, source: source, route: route) { stopped.fulfill() }
         for _ in 0..<50 {

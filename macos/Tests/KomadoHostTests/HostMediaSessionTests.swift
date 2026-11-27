@@ -12,10 +12,10 @@ private final class InputCount: @unchecked Sendable {
 }
 
 final class HostMediaSessionTests: XCTestCase {
-    func testControlInputRequiresSelectedRoute() throws {
+    func testControlInputRequiresConnectedPeer() throws {
         for allowed in [false, true] {
-            let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
-            if allowed { route.selected(localCandidate: "candidate:1 1 udp 123 127.0.0.1 1234 typ host") }
+            let route = MediaSessionGate()
+            if allowed { route.connected() }
             let inputs = InputCount(), failures = InputCount()
             let delegate = HostPeerDelegate(route: route, onControl: { _ in inputs.increment() },
                                             onFailure: { failures.increment() })
@@ -43,8 +43,7 @@ final class HostMediaSessionTests: XCTestCase {
     }
 
     func testConnectionFailureClosesRouteAndNotifiesOnce() throws {
-        let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
-        route.selected(localCandidate: "candidate:1 1 udp 123 127.0.0.1 1234 typ host")
+        let route = MediaSessionGate()
         let notified = expectation(description: "Connection failure")
         notified.assertForOverFulfill = true
         let delegate = HostPeerDelegate(route: route, onControl: nil, onFailure: { notified.fulfill() })
@@ -53,17 +52,20 @@ final class HostMediaSessionTests: XCTestCase {
         let peer = try XCTUnwrap(factory.peerConnection(with: RTCConfiguration(),
             constraints: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil), delegate: delegate))
         defer { peer.close(); delegate.close() }
+        XCTAssertFalse(route.isAllowed)
+        delegate.peerConnection(peer, didChange: RTCPeerConnectionState.connected)
+        XCTAssertTrue(route.isAllowed)
         delegate.peerConnection(peer, didChange: RTCPeerConnectionState.failed)
         delegate.peerConnection(peer, didChange: RTCPeerConnectionState.failed)
         wait(for: [notified], timeout: 1)
         var forwarded = false
-        route.withAllowedFrame { forwarded = true }
+        route.whileConnected { forwarded = true }
         XCTAssertFalse(forwarded)
     }
 
     func testControlChannelClosureStopsSessionOnce() throws {
-        let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
-        route.selected(localCandidate: "candidate:1 1 udp 123 127.0.0.1 1234 typ host")
+        let route = MediaSessionGate()
+        route.connected()
         let failures = InputCount()
         let delegate = HostPeerDelegate(route: route, onControl: nil, onFailure: { failures.increment() })
         let factory = MediaFactory.create()
@@ -87,7 +89,7 @@ final class HostMediaSessionTests: XCTestCase {
 
     @MainActor
     func testOfferAndSessionLifecycle() async throws {
-        let route = MediaRouteGate(address: .ipv4(IPv4Address("127.0.0.1")!), onInvalidRoute: {})
+        let route = MediaSessionGate()
         let session = try HostMediaSession(route: route, onFailure: {})
         XCTAssertThrowsError(try session.announceCapture(revision: 1))
         XCTAssertFalse(session.sendClipboardResponse(ClipboardResponse(sequence: 1, result: .unavailable)))

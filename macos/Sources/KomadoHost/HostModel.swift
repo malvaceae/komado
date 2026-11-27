@@ -57,7 +57,6 @@ final class HostModel: ObservableObject {
     @Published var allowClipboardAutomatic = false {
         didSet { if !allowClipboardAutomatic { clipboardTransfer.stopAutomatic() } }
     }
-    @Published var vpnAddress = ""
     @Published var captureResolution: CaptureResolution {
         didSet { settings.set(captureResolution.rawValue, forKey: Self.captureResolutionKey) }
     }
@@ -91,7 +90,7 @@ final class HostModel: ObservableObject {
     private var mediaConnection: UUID?
     private var mediaTarget: MediaTarget?
     private var mediaSession: HostMediaSession?
-    private var mediaRoute: MediaRouteGate?
+    private var mediaGate: MediaSessionGate?
     private var screenMonitor: ScreenEnvironmentMonitor?
     private var mediaTask: Task<Void, Never>?
     private var capture: DisplayCapture?
@@ -208,7 +207,7 @@ final class HostModel: ObservableObject {
             }
             let selected = try selectBindings()
             guard !selected.isEmpty else {
-                error = "利用できるLANまたはVPNのアドレスがありません。"
+                error = "利用できるネットワークアドレスがありません。"
                 return
             }
             let run = UUID()
@@ -227,11 +226,6 @@ final class HostModel: ObservableObject {
             running = true
             server = newServer
             try await newServer.start()
-        } catch SelectionError.invalidVPNAddress {
-            running = false
-            ready = false
-            server = nil
-            self.error = "VPNアドレスが見つかりません。VPNの接続状態とアドレスを確認してください。"
         } catch SelectionError.tooManyAddresses {
             running = false
             ready = false
@@ -335,31 +329,18 @@ final class HostModel: ObservableObject {
     private func selectBindings() throws -> [ListenerBinding] {
         var result: [ListenerBinding] = []
         var seen = Set<String>()
-        for interface in interfaces where interface.type == .wifi || interface.type == .wiredEthernet {
+        for interface in interfaces where interface.type != .loopback {
+            let isTunnel = interface.type == .other && interface.name.hasPrefix("utun")
             for address in try ListenerAccess.addresses(on: interface) {
+                // Tunnel link-local addresses are not useful as remote endpoints.
+                if isTunnel, case let .ipv6(ip) = address, ip.rawValue.count == 16,
+                   ip.rawValue[0] == 0xfe, ip.rawValue[1] & 0xc0 == 0x80 { continue }
                 let key = "\(interface.index)|\(address)"
                 if seen.insert(key).inserted {
-                    result.append(ListenerBinding(scope: .localLink, interface: interface, address: address))
+                    result.append(ListenerBinding(scope: isTunnel ? .vpnTunnel : .localLink,
+                                                  interface: interface, address: address))
                 }
             }
-        }
-        let requested = vpnAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !requested.isEmpty {
-            let requestedHost: NWEndpoint.Host
-            if let address = IPv4Address(requested) { requestedHost = .ipv4(address) }
-            else if let address = IPv6Address(requested) { requestedHost = .ipv6(address) }
-            else { throw SelectionError.invalidVPNAddress }
-            var found = false
-            for interface in interfaces where interface.type == .other && interface.name.hasPrefix("utun") {
-                for address in try ListenerAccess.addresses(on: interface) where Self.sameAddress(address, requestedHost) {
-                    let key = "\(interface.index)|\(address)"
-                    if seen.insert(key).inserted {
-                        result.append(ListenerBinding(scope: .vpnTunnel, interface: interface, address: address))
-                    }
-                    found = true
-                }
-            }
-            guard found else { throw SelectionError.invalidVPNAddress }
         }
         // Network.framework listeners on this host can conflict on the same
         // port even when bound to different addresses. Give each route a stable
@@ -395,8 +376,8 @@ final class HostModel: ObservableObject {
             invitationExpiry = nil
             invitationCleanup = Task { try? await pairing.cancelInvitation() }
             refresh()
-        case let .mediaRequested(id, _, address, target):
-            Task { [weak self] in await self?.startMedia(address: address, connection: id, target: target) }
+        case let .mediaRequested(id, _, target):
+            Task { [weak self] in await self?.startMedia(connection: id, target: target) }
         case let .answer(id, _, sdp):
             if mediaConnection == id { applyAnswer(sdp) }
         case let .disconnected(id):
@@ -412,7 +393,7 @@ final class HostModel: ObservableObject {
         }
     }
 
-    private func startMedia(address: NWEndpoint.Host, connection: UUID, target: MediaTarget) async {
+    private func startMedia(connection: UUID, target: MediaTarget) async {
         guard let server, await server.isActive(sessionID: connection), self.server === server, running else { return }
         if mediaConnection != nil && mediaConnection != connection { stopMedia() }
         guard mediaSession == nil else { return }
@@ -434,7 +415,7 @@ final class HostModel: ObservableObject {
         let failed: @Sendable () -> Void = { [weak self] in
             Task { @MainActor [weak self] in self?.mediaFailed(id: id) }
         }
-        let route = MediaRouteGate(address: address, onInvalidRoute: failed)
+        let route = MediaSessionGate()
         do {
             let onControl: (@Sendable (ControlInput) -> Void)?
             if target.isControl {
@@ -445,7 +426,7 @@ final class HostModel: ObservableObject {
                 onControl = nil
             }
             let session = try HostMediaSession(route: route, onControl: onControl, onFailure: failed)
-            mediaRoute = route
+            mediaGate = route
             mediaSession = session
             screenMonitor = ScreenEnvironmentMonitor {
                 route.close()
@@ -473,7 +454,7 @@ final class HostModel: ObservableObject {
     }
 
     private func applyAnswer(_ sdp: String) {
-        guard let session = mediaSession, let route = mediaRoute else { return }
+        guard let session = mediaSession, let route = mediaGate else { return }
         let id = mediaID
         mediaTask = Task { [weak self] in
             do {
@@ -571,7 +552,7 @@ final class HostModel: ObservableObject {
         guard mediaID == id, mediaTarget?.isControl == true, allowRemoteControl,
               sharingScreen, NSApplication.shared.isProtectedDataAvailable,
               consoleStatus(),
-              let mapping = capture?.frameMapping, let route = mediaRoute,
+              let mapping = capture?.frameMapping, let route = mediaGate,
               input.sequence > lastExecutedControlSequence else {
             if mediaID == id, confirmedText != nil || dragDispatcher?.isDragging == true { mediaFailed(id: id) }
             return
@@ -584,7 +565,7 @@ final class HostModel: ObservableObject {
         }
         if case let .clipboard(request) = input {
             var delivered = false
-            route.withAllowedFrame {
+            route.whileConnected {
                 lastExecutedControlSequence = request.sequence
                 let result = clipboardTransfer.execute(request.operation, allowed: allowClipboardSharing,
                                                        busy: dragDispatcher?.isDragging == true,
@@ -653,7 +634,7 @@ final class HostModel: ObservableObject {
         var invalidDrag = false
         var executed = false
         var textPosted = false
-        route.withAllowedFrame {
+        route.whileConnected {
             executed = true
             lastExecutedControlSequence = input.sequence
             switch input {
@@ -698,8 +679,8 @@ final class HostModel: ObservableObject {
         controlWindow = nil
         mediaTask?.cancel()
         mediaTask = nil
-        mediaRoute?.close()
-        mediaRoute = nil
+        mediaGate?.close()
+        mediaGate = nil
         sharingScreen = false
         controllingScreen = false
         sharingWindow = false
@@ -715,17 +696,9 @@ final class HostModel: ObservableObject {
         }
     }
 
-    private static func sameAddress(_ a: NWEndpoint.Host, _ b: NWEndpoint.Host) -> Bool {
-        switch (a, b) {
-        case let (.ipv4(left), .ipv4(right)): return left.rawValue == right.rawValue
-        case let (.ipv6(left), .ipv6(right)): return left.rawValue == right.rawValue
-        default: return false
-        }
-    }
-
     private static func format(_ data: Data, separator: String) -> String {
         data.map { String(format: "%02X", $0) }.joined(separator: separator)
     }
 
-    private enum SelectionError: Error { case invalidVPNAddress, tooManyAddresses }
+    private enum SelectionError: Error { case tooManyAddresses }
 }

@@ -110,7 +110,7 @@ OfferとAnswerは認証済みTLS接続で交換します。SDPのDTLSフィン�
 
 認証済みのアイドル状態で`["1","features.list"]`を1回送ると、Macは`["1","features.listed",機能名...]`を返します。機能名は重複なしの英小文字・数字・`.`・`-`からなる48文字以下の名前で、最大32件です。現在は`pointer.click`、`pointer.double`、`pointer.drag`、`pointer.scroll`、`pointer.move`、`keyboard.text`、`keyboard.text-ack`、`keyboard.key`、`keyboard.navigation`、`keyboard.punctuation`、`keyboard.shortcut-keys`、`window.control`、`display.control`、`clipboard.manual`、`clipboard.auto`を通知します。Androidは操作開始前に一覧を取得し、`pointer.click`がなければ開始せず、一覧にない操作は送信しません。未知の機能名は無視します。新Androidから一覧非対応の旧Macへの操作接続は失敗し、従来の画面表示は利用できます。機能一覧は認証やMacの操作許可の代わりにはなりません。詳細は[ADR 0008](decisions/0008-feature-negotiation.md)を参照してください。
 
-ローカルで生成したSDPについて、シグナリング接続のローカルIPアドレスに一致するhost候補だけを残し、`c=`の接続アドレスも同じ値に揃えてから送信します。候補が残らない場合や不正な候補・行形式は送信を拒否します。製品のメディアセッションに接続し、実際に生成されたSDPを両OSの処理で絞って相互接続を確認しました。これは通知する候補の制限であり、WebRTC内部のソケットや実際の経路を固定するものではありません。
+OfferとAnswerはWebRTCが生成した候補をそのまま交換します。
 
 WebRTC接続全体またはICEの失敗・切断に加え、制御DataChannelの閉鎖を検知した場合も、両端でセッションを終了します。検証範囲は[互換性](compatibility.md)を参照してください。
 

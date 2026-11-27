@@ -3,7 +3,6 @@ package me.mallows.komado
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import me.mallows.komado.protocol.SdpCandidateFilter
 import me.mallows.komado.protocol.CaptureReadyCodec
 import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerClickCodec
@@ -17,7 +16,6 @@ import me.mallows.komado.protocol.ClipboardRequest
 import me.mallows.komado.protocol.ClipboardResponse
 import me.mallows.komado.protocol.ClipboardResult
 import me.mallows.komado.protocol.ClipboardOperation
-import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.AudioTrack
 import org.webrtc.DataChannel
 import org.webrtc.EglBase
@@ -31,14 +29,12 @@ import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.VideoTrack
-import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.util.ArrayDeque
 
 /** One receiving peer; callbacks and lifetime management use the main thread. */
 internal class AndroidMediaSession(
     context: Context,
-    private val signalingAddress: InetAddress,
     private val listener: Listener,
     private val confirmText: Boolean = false,
 ) : PeerConnection.Observer, AutoCloseable {
@@ -59,7 +55,7 @@ internal class AndroidMediaSession(
     private val peer: PeerConnection
     private var state = State.IDLE
     private var localSet = false
-    private var selectedRouteAllowed = false
+    private var connected = false
     private var remoteTrack: VideoTrack? = null
     private var trackShown = false
     private var captureRevision: Long? = null
@@ -152,7 +148,7 @@ internal class AndroidMediaSession(
 
     private fun showTrackIfReady() {
         val track = remoteTrack ?: return
-        if (selectedRouteAllowed && !trackShown) {
+        if (connected && !trackShown) {
             trackShown = true
             listener.onVideo(track)
         }
@@ -160,7 +156,7 @@ internal class AndroidMediaSession(
 
     fun requestVideoStatistics(callback: (VideoStatistics) -> Unit): Boolean {
         checkMainThread()
-        if (state != State.ANSWER_READY || !selectedRouteAllowed) return false
+        if (state != State.ANSWER_READY || !connected) return false
         return try {
             peer.getStats { report ->
                 val snapshot = VideoStatistics.from(report.statsMap)
@@ -253,7 +249,7 @@ internal class AndroidMediaSession(
     fun sendMove(move: me.mallows.komado.protocol.PointerMove): Boolean {
         checkMainThread()
         if (state != State.ANSWER_READY || captureRevision != move.captureRevision || move.sequence <= lastSentSequence ||
-            (pendingMove != null && move.sequence <= pendingMove!!.sequence) || !selectedRouteAllowed) return false
+            (pendingMove != null && move.sequence <= pendingMove!!.sequence) || !connected) return false
         val current = channel ?: return false
         if (current.state() != DataChannel.State.OPEN || runCatching { me.mallows.komado.protocol.PointerMoveCodec.encode(move) }.isFailure) return false
         if (current.bufferedAmount() >= 65_536) {
@@ -271,7 +267,7 @@ internal class AndroidMediaSession(
         val move = pendingMove ?: return
         if (move.sequence <= lastSentSequence) { pendingMove = null; return }
         val current = channel
-        if (state != State.ANSWER_READY || captureRevision != move.captureRevision || !selectedRouteAllowed ||
+        if (state != State.ANSWER_READY || captureRevision != move.captureRevision || !connected ||
             current == null || current.state() != DataChannel.State.OPEN) { pendingMove = null; fail(); return }
         if (current.bufferedAmount() >= 65_536) { handler.postDelayed(retryMove, 50); return }
         pendingMove = null
@@ -280,7 +276,7 @@ internal class AndroidMediaSession(
 
     private fun sendInput(sequence: Long, revision: Long, encode: () -> ByteArray): Boolean {
         checkMainThread()
-        if (state != State.ANSWER_READY || captureRevision != revision || sequence <= lastSentSequence || !selectedRouteAllowed) return false
+        if (state != State.ANSWER_READY || captureRevision != revision || sequence <= lastSentSequence || !connected) return false
         val current = channel ?: return false
         if (current.state() != DataChannel.State.OPEN) return false
         val data = try { encode() } catch (_: Exception) { return false }
@@ -321,15 +317,6 @@ internal class AndroidMediaSession(
         }
     }
 
-    override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {
-        val allowed = SdpCandidateFilter.permitsSelectedLocalCandidate(event.local.sdp, signalingAddress)
-        postIfOpen {
-            if (!allowed) fail() else {
-                selectedRouteAllowed = true
-                showTrackIfReady()
-            }
-        }
-    }
     override fun onTrack(transceiver: RtpTransceiver) {
         val received = transceiver.receiver.track()
         if (received is AudioTrack) {
@@ -350,7 +337,10 @@ internal class AndroidMediaSession(
         if (state == PeerConnection.IceConnectionState.FAILED || state == PeerConnection.IceConnectionState.DISCONNECTED) postIfOpen { fail() }
     }
     override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
-        if (state == PeerConnection.PeerConnectionState.FAILED || state == PeerConnection.PeerConnectionState.DISCONNECTED) postIfOpen { fail() }
+        if (state == PeerConnection.PeerConnectionState.CONNECTED) postIfOpen {
+            connected = true
+            showTrackIfReady()
+        } else if (state == PeerConnection.PeerConnectionState.FAILED || state == PeerConnection.PeerConnectionState.DISCONNECTED) postIfOpen { fail() }
     }
     override fun onDataChannel(dataChannel: DataChannel) {
         handler.post {

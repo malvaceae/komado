@@ -21,7 +21,7 @@ final class HostMediaSession {
     private var announced = false
     private var announceTimeout: Task<Void, Never>?
 
-    init(route: MediaRouteGate, onControl: (@Sendable (ControlInput) -> Void)? = nil,
+    init(route: MediaSessionGate, onControl: (@Sendable (ControlInput) -> Void)? = nil,
          onFailure: @escaping @Sendable () -> Void) throws {
         let factory = MediaFactory.create()
         let delegate = HostPeerDelegate(route: route, onControl: onControl, onFailure: onFailure)
@@ -151,7 +151,7 @@ final class HostMediaSession {
 }
 
 final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
-    private let route: MediaRouteGate
+    private let route: MediaSessionGate
     private let onFailure: @Sendable () -> Void
     private let onControl: (@Sendable (ControlInput) -> Void)?
     private let gathering: AsyncStream<Void>
@@ -163,7 +163,7 @@ final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChanne
     private let control = ControlInputGate()
     private var onChannelOpen: (@Sendable () -> Void)?
 
-    init(route: MediaRouteGate, onControl: (@Sendable (ControlInput) -> Void)?, onFailure: @escaping @Sendable () -> Void) {
+    init(route: MediaSessionGate, onControl: (@Sendable (ControlInput) -> Void)?, onFailure: @escaping @Sendable () -> Void) {
         self.route = route
         self.onControl = onControl
         self.onFailure = onFailure
@@ -241,12 +241,7 @@ final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChanne
     }
     @objc(peerConnection:didChangeConnectionState:)
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
-        if newState == .failed || newState == .disconnected {
-            fail()
-        }
-    }
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChangeLocalCandidate local: RTCIceCandidate,
-                        remoteCandidate remote: RTCIceCandidate, lastReceivedMs: Int32, changeReason: String) {
-        route.selected(localCandidate: local.sdp)
+        if newState == .connected { route.connected() }
+        else if newState == .failed || newState == .disconnected { fail() }
     }
 }

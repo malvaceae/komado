@@ -77,9 +77,7 @@ private struct HostView: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
                     Text("接続の待ち受け").font(.headline)
-                    TextField("VPNアドレス（使う場合のみ）", text: $model.vpnAddress)
-                        .disabled(model.running || model.busy)
-                    Text("同一LANからの接続を受け付けます。VPNを使う場合は、このMacのVPNアドレスも入力してください。")
+                    Text("利用可能なネットワークから接続を受け付けます。")
                         .foregroundStyle(.secondary)
                     Toggle("待ち受け中の自動スリープを抑制", isOn: $model.keepAwakeWhileListening)
                     Toggle("ログイン時にkomadoを起動", isOn: Binding(
