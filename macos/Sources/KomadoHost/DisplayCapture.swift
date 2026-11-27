@@ -93,7 +93,8 @@ final class DisplayCapture {
     static func dimensions(width: Int, height: Int, resolution: CaptureResolution = .standard) throws -> (width: Int, height: Int) {
         guard width >= 2, height >= 2 else { throw CaptureError.invalidDimensions }
         let maximum = resolution.maximum
-        let scale = min(1, Double(maximum.width) / Double(width), Double(maximum.height) / Double(height))
+        let longSide = max(width, height), shortSide = min(width, height)
+        let scale = min(1, Double(maximum.width) / Double(longSide), Double(maximum.height) / Double(shortSide))
         return (max(2, Int(Double(width) * scale) / 2 * 2),
                 max(2, Int(Double(height) * scale) / 2 * 2))
     }
