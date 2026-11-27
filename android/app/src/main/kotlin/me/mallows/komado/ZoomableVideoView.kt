@@ -8,6 +8,7 @@ import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import me.mallows.komado.input.VideoZoom
 import me.mallows.komado.protocol.PointerClick
+import me.mallows.komado.protocol.PointerDrag
 import org.webrtc.SurfaceViewRenderer
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -27,6 +28,10 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     private var previousTapTime = 0L
     private var previousTapX = 0f
     private var previousTapY = 0f
+    private var dragging = false
+    private var dragAttempted = false
+    private var dragX = 0f
+    private var dragY = 0f
     private enum class TwoFingerMode { NONE, PENDING, PINCH, SCROLL }
     private var twoFingerMode = TwoFingerMode.NONE
     private var initialSpan = 0f
@@ -38,6 +43,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     var onVideoLongPress: ((Float, Float) -> Unit)? = null
     var onVideoDoubleTap: ((Float, Float) -> Unit)? = null
     var onVideoScroll: ((Float, Float, Float, Float) -> Unit)? = null
+    var onVideoDrag: ((PointerDrag.Phase, Float, Float) -> Boolean)? = null
     private val detector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             if (twoFingerMode == TwoFingerMode.PINCH) {
@@ -98,6 +104,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && dragging) finishDrag(dragX, dragY)
         if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount == 2) {
             initialFocusX = (event.getX(0) + event.getX(1)) / 2
             initialFocusY = (event.getY(0) + event.getY(1)) / 2
@@ -128,6 +135,8 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                 lastX = event.x
                 lastY = event.y
                 moved = false
+                dragging = false
+                dragAttempted = false
             }
             MotionEvent.ACTION_POINTER_DOWN -> { pointerId = MotionEvent.INVALID_POINTER_ID; moved = true; previousTapTime = 0 }
             MotionEvent.ACTION_MOVE -> {
@@ -137,7 +146,19 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                     val y = event.getY(index)
                     val dx = x - lastX
                     val dy = y - lastY
-                    if (moved || abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                    if (!moved && onVideoDrag != null && event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout() &&
+                        (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                        moved = true
+                        dragAttempted = true
+                        previousTapTime = 0
+                        dragging = onVideoDrag?.invoke(PointerDrag.Phase.BEGIN, lastX, lastY) == true
+                        dragX = lastX; dragY = lastY
+                    }
+                    if (dragging) {
+                        if (onVideoDrag?.invoke(PointerDrag.Phase.MOVE, x, y) == true) {
+                            dragX = x; dragY = y
+                        } else { finishDrag(dragX, dragY) }
+                    } else if (!dragAttempted && (moved || abs(dx) > touchSlop || abs(dy) > touchSlop)) {
                         moved = true
                         previousTapTime = 0
                         zoom.pan(dx.toDouble(), dy.toDouble())
@@ -158,6 +179,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                 moved = true
             }
             MotionEvent.ACTION_UP -> {
+                if (dragging) finishDrag(event.x, event.y)
                 if (!moved && pointerId != MotionEvent.INVALID_POINTER_ID &&
                     abs(event.x - lastX) <= touchSlop && abs(event.y - lastY) <= touchSlop) {
                     if (event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) {
@@ -180,9 +202,20 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                 pointerId = MotionEvent.INVALID_POINTER_ID
                 twoFingerMode = TwoFingerMode.NONE
             }
-            MotionEvent.ACTION_CANCEL -> { pointerId = MotionEvent.INVALID_POINTER_ID; twoFingerMode = TwoFingerMode.NONE; previousTapTime = 0 }
+            MotionEvent.ACTION_CANCEL -> {
+                if (dragging) finishDrag(dragX, dragY)
+                pointerId = MotionEvent.INVALID_POINTER_ID; twoFingerMode = TwoFingerMode.NONE; previousTapTime = 0
+            }
         }
         return true
+    }
+
+    private fun finishDrag(x: Float, y: Float) {
+        if (!dragging) return
+        if (onVideoDrag?.invoke(PointerDrag.Phase.END, x, y) != true && (x != dragX || y != dragY)) {
+            onVideoDrag?.invoke(PointerDrag.Phase.END, dragX, dragY)
+        }
+        dragging = false
     }
 
     override fun performClick(): Boolean {

@@ -153,6 +153,10 @@ internal class AndroidMediaSession(
         return sendInput(scroll.sequence, scroll.captureRevision) { me.mallows.komado.protocol.PointerScrollCodec.encode(scroll) }
     }
 
+    fun sendDrag(drag: me.mallows.komado.protocol.PointerDrag): Boolean {
+        return sendInput(drag.sequence, drag.captureRevision) { me.mallows.komado.protocol.PointerDragCodec.encode(drag) }
+    }
+
     private fun sendInput(sequence: Long, revision: Long, encode: () -> ByteArray): Boolean {
         checkMainThread()
         if (state != State.ANSWER_READY || captureRevision != revision || sequence <= lastSentSequence || !selectedRouteAllowed) return false

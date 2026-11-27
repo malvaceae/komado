@@ -27,8 +27,10 @@ final class ControlInputGateTests: XCTestCase {
         let scroll = PointerScroll(sequence: 5, captureRevision: 4, x: 1, y: 2, horizontal: -4, vertical: 8)
         XCTAssertEqual(gate.accept(try scroll.encode(), binary: false), .scroll(scroll))
         XCTAssertNil(gate.accept(try key.encode(), binary: false))
+        let drag = PointerDrag(sequence: 6, captureRevision: 4, x: 1, y: 2, phase: .begin)
+        XCTAssertEqual(gate.accept(try drag.encode(), binary: false), .drag(drag))
         gate.close()
-        let afterClose = PointerClick(sequence: 6, captureRevision: 4, x: 1, y: 2, button: .left)
+        let afterClose = PointerClick(sequence: 7, captureRevision: 4, x: 1, y: 2, button: .left)
         XCTAssertNil(gate.accept(try afterClose.encode(), binary: false))
         XCTAssertFalse(gate.enable(revision: 4))
     }

@@ -8,6 +8,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import me.mallows.komado.protocol.PointerClick
+import me.mallows.komado.protocol.PointerDrag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -16,6 +17,43 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ZoomableVideoViewTest {
+    @Test fun longPressMoveDragsAndCancelReleases() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val renderer = RemoteVideoRenderer(activity)
+                try {
+                    val view = ZoomableVideoView(activity, renderer.view)
+                    view.layout(0, 0, 800, 800)
+                    val phases = mutableListOf<PointerDrag.Phase>()
+                    var clicks = 0
+                    view.onVideoDrag = { phase, _, _ -> phases.add(phase); true }
+                    view.onVideoTap = { _, _ -> clicks++ }
+                    view.onVideoLongPress = { _, _ -> clicks++ }
+                    val start = SystemClock.uptimeMillis()
+                    fun gesture(time: Long, cancel: Boolean) {
+                        val down = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, 200f, 400f, 0)
+                        val moved = MotionEvent.obtain(time, time + ViewConfiguration.getLongPressTimeout() + 20, MotionEvent.ACTION_MOVE, 300f, 400f, 0)
+                        val end = MotionEvent.obtain(time, time + ViewConfiguration.getLongPressTimeout() + 40,
+                            if (cancel) MotionEvent.ACTION_CANCEL else MotionEvent.ACTION_UP, 300f, 400f, 0)
+                        try { listOf(down, moved, end).forEach { view.dispatchTouchEvent(it) } }
+                        finally { listOf(down, moved, end).forEach { it.recycle() } }
+                    }
+                    gesture(start, false)
+                    gesture(start + 2_000, true)
+                    assertEquals(listOf(PointerDrag.Phase.BEGIN, PointerDrag.Phase.MOVE, PointerDrag.Phase.END,
+                        PointerDrag.Phase.BEGIN, PointerDrag.Phase.MOVE, PointerDrag.Phase.END), phases)
+                    assertEquals(0, clicks)
+                    val positions = mutableListOf<Pair<PointerDrag.Phase, Float>>()
+                    view.onVideoDrag = { phase, x, _ -> positions.add(phase to x); phase != PointerDrag.Phase.MOVE }
+                    gesture(start + 4_000, false)
+                    assertEquals(listOf(PointerDrag.Phase.BEGIN to 200f, PointerDrag.Phase.MOVE to 300f,
+                        PointerDrag.Phase.END to 200f), positions)
+                    assertEquals(0, clicks)
+                } finally { renderer.close() }
+            }
+        }
+    }
+
     @Test fun doubleTapSendsFirstClickThenDoubleClickWithoutCrossingGestures() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

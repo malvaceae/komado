@@ -85,6 +85,7 @@ final class HostModel: ObservableObject {
     private var textDispatcher: KeyboardTextDispatcher?
     private var keyDispatcher: KeyboardKeyDispatcher?
     private var scrollDispatcher: PointerScrollDispatcher?
+    private var dragDispatcher: PointerDragDispatcher?
     private var lastExecutedControlSequence: UInt64 = 0
     private var sleepActivity: IdleSleepActivity?
     private var waitingSleepActivity: IdleSleepActivity?
@@ -396,7 +397,7 @@ final class HostModel: ObservableObject {
             let onControl: (@Sendable (ControlInput) -> Void)?
             if target == .mainDisplayControl {
                 onControl = { @Sendable [weak self] input in
-                    Task { @MainActor [weak self] in self?.receiveControl(input, id: id) }
+                    DispatchQueue.main.async { [weak self] in self?.receiveControl(input, id: id) }
                 }
             } else {
                 onControl = nil
@@ -463,6 +464,7 @@ final class HostModel: ObservableObject {
                         self.textDispatcher = KeyboardTextDispatcher()
                         self.keyDispatcher = KeyboardKeyDispatcher()
                         self.scrollDispatcher = PointerScrollDispatcher()
+                        self.dragDispatcher = PointerDragDispatcher()
                         self.controllingScreen = true
                     }
                     captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, onStopped: onStopped)
@@ -501,20 +503,31 @@ final class HostModel: ObservableObject {
               let bounds = controlBounds, CGDisplayBounds(displayID) == bounds,
               let geometry = CaptureGeometry(revision: 1, bounds: bounds),
               let mapping = capture?.frameMapping, let route = mediaRoute,
-              input.sequence > lastExecutedControlSequence else { return }
+              input.sequence > lastExecutedControlSequence else {
+            if mediaID == id, dragDispatcher?.isDragging == true { mediaFailed(id: id) }
+            return
+        }
+        if dragDispatcher?.isDragging == true {
+            if case .drag = input {} else { mediaFailed(id: id); return }
+        }
         switch input {
         case .text, .key: guard FocusedWindow.isOnDisplay(bounds) else { return }
-        case .click, .scroll: break
+        case .click, .scroll, .drag: break
         }
+        var invalidDrag = false
+        var executed = false
         route.withAllowedFrame {
+            executed = true
             lastExecutedControlSequence = input.sequence
             switch input {
             case let .click(click): _ = pointerDispatcher?.click(click, geometry: geometry, mapping: mapping, sessionAllowed: true)
             case let .text(text): _ = textDispatcher?.send(text, captureRevision: geometry.revision, sessionAllowed: true)
             case let .key(key): _ = keyDispatcher?.send(key, captureRevision: geometry.revision, sessionAllowed: true)
             case let .scroll(scroll): _ = scrollDispatcher?.send(scroll, geometry: geometry, mapping: mapping, sessionAllowed: true)
+            case let .drag(drag): invalidDrag = dragDispatcher?.send(drag, geometry: geometry, mapping: mapping, sessionAllowed: true) != true
             }
         }
+        if invalidDrag || (!executed && dragDispatcher?.isDragging == true) { mediaFailed(id: id) }
     }
 
     private func stopMedia() {
@@ -527,10 +540,12 @@ final class HostModel: ObservableObject {
         textDispatcher?.close()
         keyDispatcher?.close()
         scrollDispatcher?.close()
+        dragDispatcher?.close()
         pointerDispatcher = nil
         textDispatcher = nil
         keyDispatcher = nil
         scrollDispatcher = nil
+        dragDispatcher = nil
         lastExecutedControlSequence = 0
         controlDisplayID = nil
         controlBounds = nil

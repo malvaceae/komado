@@ -6,12 +6,13 @@ enum ControlInput: Equatable, Sendable {
     case text(KeyboardText)
     case key(KeyboardKey)
     case scroll(PointerScroll)
+    case drag(PointerDrag)
 
     var sequence: UInt64 {
-        switch self { case let .click(value): value.sequence; case let .text(value): value.sequence; case let .key(value): value.sequence; case let .scroll(value): value.sequence }
+        switch self { case let .click(value): value.sequence; case let .text(value): value.sequence; case let .key(value): value.sequence; case let .scroll(value): value.sequence; case let .drag(value): value.sequence }
     }
     var captureRevision: UInt64 {
-        switch self { case let .click(value): value.captureRevision; case let .text(value): value.captureRevision; case let .key(value): value.captureRevision; case let .scroll(value): value.captureRevision }
+        switch self { case let .click(value): value.captureRevision; case let .text(value): value.captureRevision; case let .key(value): value.captureRevision; case let .scroll(value): value.captureRevision; case let .drag(value): value.captureRevision }
     }
 }
 
@@ -37,6 +38,7 @@ final class ControlInputGate: @unchecked Sendable {
         else if let text = try? KeyboardText.decode(data) { input = .text(text) }
         else if let key = try? KeyboardKey.decode(data) { input = .key(key) }
         else if let scroll = try? PointerScroll.decode(data) { input = .scroll(scroll) }
+        else if let drag = try? PointerDrag.decode(data) { input = .drag(drag) }
         else { return nil }
         return lock.withLock {
             guard !closed, revision == input.captureRevision, input.sequence > sequence else { return nil }

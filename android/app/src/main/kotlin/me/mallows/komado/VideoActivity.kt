@@ -15,6 +15,7 @@ import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerScroll
+import me.mallows.komado.protocol.PointerDrag
 import me.mallows.komado.security.DeviceSigningKey
 import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
@@ -87,6 +88,17 @@ class VideoActivity : Activity() {
             viewport?.onVideoDoubleTap = { x, y ->
                 sendPointerClick(x, y, PointerClick.Button.LEFT, count = if (lastVideoTapSent) 2 else 1)
                 lastVideoTapSent = false
+            }
+            if (controlMode) viewport?.onVideoDrag = { phase, x, y ->
+                if (!active || !firstFrameShown) false else {
+                    val location = viewport?.mapTap(x, y, captureRevision, tapMapper)
+                    if (location == null) false else {
+                        val drag = PointerDrag(location.sequence, location.captureRevision, location.x, location.y, phase)
+                        val sent = media?.sendDrag(drag) == true
+                        if (!sent) stopSession(failed = true)
+                        sent
+                    }
+                }
             }
             viewport?.onVideoScroll = { x, y, dx, dy ->
                 if (active && controlMode && firstFrameShown && dx.isFinite() && dy.isFinite()) {

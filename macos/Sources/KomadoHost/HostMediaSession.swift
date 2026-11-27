@@ -145,6 +145,7 @@ final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChanne
     private let gathering: AsyncStream<Void>
     private let continuation: AsyncStream<Void>.Continuation
     private let lock = NSLock()
+    private let controlDeliveryLock = NSLock()
     private var closed = false
     private var failureNotified = false
     private let control = ControlInputGate()
@@ -200,11 +201,13 @@ final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChanne
     }
 
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
-        guard route.isAllowed else { fail(); return }
-        guard let input = control.accept(buffer.data, binary: buffer.isBinary) else { fail(); return }
-        let callback = lock.withLock { closed ? nil : onControl }
-        guard let callback else { fail(); return }
-        callback(input)
+        controlDeliveryLock.withLock {
+            guard route.isAllowed else { fail(); return }
+            guard let input = control.accept(buffer.data, binary: buffer.isBinary) else { fail(); return }
+            let callback = lock.withLock { closed ? nil : onControl }
+            guard let callback else { fail(); return }
+            callback(input)
+        }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
