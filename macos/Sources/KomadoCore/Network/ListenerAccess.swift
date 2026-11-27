@@ -45,6 +45,7 @@ public enum ListenerAccess {
         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
         sec_protocol_options_set_local_identity(tls.securityProtocolOptions, tlsIdentity)
         let parameters = NWParameters(tls: tls, tcp: .init())
+        parameters.allowLocalEndpointReuse = true
         guard let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options else { throw AccessError.invalidAddress }
         switch address {
         case .ipv4: ip.version = .v4

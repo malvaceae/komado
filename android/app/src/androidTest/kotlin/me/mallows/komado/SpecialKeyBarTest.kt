@@ -29,23 +29,9 @@ class SpecialKeyBarTest {
                 control.performClick()
                 val dialog = bar.showShortcutKeys()!!
                 val list = dialog.listView
-                assertEquals(36, list.adapter.count)
+                assertEquals(48, list.adapter.count)
                 assertTrue(list.performItemClick(list.adapter.getView(2, null, list), 2, list.adapter.getItemId(2)))
                 assertEquals(listOf(SpecialKey.C to 4), sent)
-            }
-            scenario.onActivity {
-                bar.setAvailable(true, punctuation = true)
-                val punctuation = bar.showShortcutKeys()!!.listView
-                assertEquals(39, punctuation.adapter.count)
-                assertTrue(punctuation.performItemClick(punctuation.adapter.getView(36, null, punctuation), 36, punctuation.adapter.getItemId(36)))
-                assertEquals(SpecialKey.COMMA to 4, sent.last())
-            }
-            scenario.onActivity {
-                bar.setAvailable(true, punctuation = true, extended = true)
-                val extended = bar.showShortcutKeys()!!.listView
-                assertEquals(48, extended.adapter.count)
-                assertTrue(extended.performItemClick(extended.adapter.getView(39, null, extended), 39, extended.adapter.getItemId(39)))
-                assertEquals(SpecialKey.SPACE to 4, sent.last())
             }
             scenario.onActivity {
                 val second = bar.showShortcutKeys()!!
@@ -71,8 +57,6 @@ class SpecialKeyBarTest {
             assertFalse(escape.isEnabled)
             assertFalse(home.isEnabled)
             bar.setAvailable(true)
-            assertFalse(home.isEnabled)
-            bar.setAvailable(true, navigation = true)
             assertTrue(home.isEnabled)
             command.performClick()
             control.performClick()

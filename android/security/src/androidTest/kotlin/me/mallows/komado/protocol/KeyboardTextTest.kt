@@ -24,7 +24,6 @@ class KeyboardTextTest {
         for (i in 0 until invalid.length()) assertThrows(KeyboardTextCodec.MessageException::class.java) {
             KeyboardTextCodec.decode(invalid.getString(i).toByteArray(Charsets.UTF_8))
         }
-        assertTrue(KeyboardTextCodec.decode("[\"1\",\"keyboard.text.checked\",\"2\",\"1\",\"a\"]".toByteArray()).confirm)
         KeyboardTextCodec.encode(KeyboardText(1, 1, "あ".repeat(170)))
         assertThrows(KeyboardTextCodec.MessageException::class.java) { KeyboardTextCodec.encode(KeyboardText(1, 1, "あ".repeat(171))) }
         assertThrows(KeyboardTextCodec.MessageException::class.java) { KeyboardTextCodec.decode(ByteArray(2049)) }

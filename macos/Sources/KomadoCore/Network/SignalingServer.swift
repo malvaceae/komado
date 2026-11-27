@@ -19,11 +19,12 @@ public struct ListenerBinding {
 /// A bounded TLS listener for the initial device handshake. All listeners share
 /// one active connection and the same pairing and authentication coordinators.
 /// A single authenticated SDP offer/answer exchange is supported; unexpected
-/// messages close the connection. Recreate the server on path changes.
+/// messages close the connection. Unavailable listeners are retired separately.
 public actor SignalingServer {
     public enum ServerError: Error, Equatable { case invalidBindings, alreadyStarted, removalBusy, noConnection }
     public enum Event: Sendable {
         case listening(interfaceName: String, address: String, port: UInt16)
+        case listenerUnavailable(interfaceName: String, address: String, port: UInt16)
         case authenticated(UUID, PairedDevice)
         case mediaRequested(UUID, PairedDevice, MediaTarget)
         case answer(UUID, PairedDevice, String)
@@ -34,12 +35,15 @@ public actor SignalingServer {
     }
 
     private struct Slot: Sendable {
+        let key: String
         let interfaceName: String
         let address: String
+        let port: UInt16
         let listener: NWListener
+        var unavailable = false
     }
 
-    private let listeners: [Slot]
+    private var listeners: [Slot]
     private let pairing: PairingCoordinator
     private let authentication: DeviceAuthenticationCoordinator
     private let onEvent: @Sendable (Event) -> Void
@@ -56,10 +60,8 @@ public actor SignalingServer {
     public nonisolated static func create(identity: SecIdentity, bindings: [ListenerBinding], port: NWEndpoint.Port,
                                          pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator,
                                          onEvent: @escaping @Sendable (Event) -> Void) throws -> SignalingServer {
-        let ports = bindings.map { ($0.port ?? port).rawValue }.filter { $0 != 0 }
-        guard (1...8).contains(bindings.count),
-              Set(bindings.map { "\($0.interface.index)|\($0.address)" }).count == bindings.count,
-              Set(ports).count == ports.count else {
+        guard !bindings.isEmpty,
+              Set(bindings.map { "\($0.interface.index)|\($0.address)" }).count == bindings.count else {
             throw ServerError.invalidBindings
         }
         let listeners = try bindings.map { binding in
@@ -71,7 +73,8 @@ public actor SignalingServer {
             if case let .ipv6(address) = binding.address, let unscoped = IPv6Address(address.rawValue) {
                 displayedAddress = "\(unscoped)"
             } else { displayedAddress = "\(binding.address)" }
-            return Slot(interfaceName: binding.interface.name, address: displayedAddress, listener: listener)
+            return Slot(key: "\(binding.interface.index)|\(binding.address)", interfaceName: binding.interface.name, address: displayedAddress,
+                        port: (binding.port ?? port).rawValue, listener: listener)
         }
         return SignalingServer(listeners: listeners, pairing: pairing, authentication: authentication, onEvent: onEvent)
     }
@@ -111,11 +114,6 @@ public actor SignalingServer {
         onEvent(.stopped)
     }
 
-    /// Closing an authenticated connection must also be done on device removal.
-    public func disconnectCurrent() async {
-        if let current = active { await current.session.close() }
-    }
-
     /// Ignore a delayed teardown for a connection that has already ended.
     public func disconnect(sessionID: UUID) async {
         if let current = active, current.id == sessionID { await current.session.close() }
@@ -123,6 +121,13 @@ public actor SignalingServer {
 
     public func isActive(sessionID: UUID) -> Bool {
         !stopped && active?.id == sessionID
+    }
+
+    /// Retire only listeners whose assigned addresses are no longer available.
+    public func retainListeners(keys: Set<String>) async {
+        for index in listeners.indices where !keys.contains(listeners[index].key) {
+            await listenerUnavailable(index: index)
+        }
     }
 
     /// Sends one SDP offer only after the active device has authenticated.
@@ -149,16 +154,28 @@ public actor SignalingServer {
     }
 
     private func listenerState(index: Int, state: NWListener.State) async {
-        guard !stopped else { return }
+        guard !stopped, !listeners[index].unavailable else { return }
         switch state {
         case .ready:
             if let port = listeners[index].listener.port {
                 onEvent(.listening(interfaceName: listeners[index].interfaceName, address: listeners[index].address, port: port.rawValue))
             }
         case .failed:
+            await listenerUnavailable(index: index)
+        default: break
+        }
+    }
+
+    private func listenerUnavailable(index: Int) async {
+        guard !stopped, !listeners[index].unavailable else { return }
+        listeners[index].unavailable = true
+        let slot = listeners[index]
+        slot.listener.cancel()
+        onEvent(.listenerUnavailable(interfaceName: slot.interfaceName, address: slot.address,
+                                     port: slot.listener.port?.rawValue ?? slot.port))
+        if listeners.allSatisfy(\.unavailable) {
             onEvent(.failed)
             await stop()
-        default: break
         }
     }
 

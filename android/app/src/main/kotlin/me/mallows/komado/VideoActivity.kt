@@ -52,7 +52,6 @@ class VideoActivity : Activity() {
     private val tapMapper = TapClickMapper(controlSequence)
     private val textMapper = CommittedTextMapper(controlSequence)
     private var controlMode = false
-    @Volatile private var supportedFeatures: Set<String> = emptySet()
     private var keyboard: RemoteKeyboardView? = null
     private var keyboardButton: Button? = null
     private var trackpadButton: Button? = null
@@ -138,11 +137,11 @@ class VideoActivity : Activity() {
             viewport?.onMouseClick = { x, y, button -> sendPointerClick(x, y, button) }
             viewport?.onVideoDoubleTap = { x, y ->
                 sendPointerClick(x, y, PointerClick.Button.LEFT,
-                    count = if (lastVideoTapSent && "pointer.double" in supportedFeatures) 2 else 1)
+                    count = if (lastVideoTapSent) 2 else 1)
                 lastVideoTapSent = false
             }
             viewport?.onVideoScroll = { x, y, dx, dy ->
-                if (active && controlMode && "pointer.scroll" in supportedFeatures && firstFrameShown && dx.isFinite() && dy.isFinite()) {
+                if (active && controlMode && firstFrameShown && dx.isFinite() && dy.isFinite()) {
                     val horizontal = (dx / resources.displayMetrics.density).roundToInt().coerceIn(-120, 120)
                     val vertical = (dy / resources.displayMetrics.density).roundToInt().coerceIn(-120, 120)
                     if (horizontal != 0 || vertical != 0) {
@@ -209,7 +208,7 @@ class VideoActivity : Activity() {
             specialKeys = SpecialKeyBar(this, ::sendRemoteKey)
             controls.addView(specialKeys)
             keyboard = RemoteKeyboardView(this, sendKey = ::sendRemoteKey, sendText = { text ->
-                if (!active || "keyboard.text" !in supportedFeatures || !firstFrameShown) false else
+                if (!active || !firstFrameShown) false else
                     textMapper.send(text, captureRevision, { media?.sendText(it) == true },
                         { if (active) { textDeliveryUnconfirmed = true; stopSession(failed = true) } })
             })
@@ -243,19 +242,6 @@ class VideoActivity : Activity() {
                 }
                 if (!keep) { established.close(); return@execute }
                 runCatching { HostStore(applicationContext).recordConnection(host, System.currentTimeMillis()) }
-                if (controlMode) {
-                    val features = try { established.listFeatures() } catch (_: Exception) {
-                        runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.features_failed) } }
-                        return@execute
-                    }
-                    if ("pointer.click" !in features ||
-                        (intent.getBooleanExtra(CHOOSE_WINDOW, false) && "window.control" !in features) ||
-                        (intent.getBooleanExtra(CHOOSE_DISPLAY, false) && "display.control" !in features)) {
-                        runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.features_unsupported) } }
-                        return@execute
-                    }
-                    supportedFeatures = features
-                }
                 if (intent.getBooleanExtra(CHOOSE_WINDOW, false)) {
                     showProgress(R.string.window_list_waiting)
                     val windows = try { established.listWindows() } catch (_: Exception) {
@@ -330,7 +316,7 @@ class VideoActivity : Activity() {
                             status.setText(R.string.text_delivery_unconfirmed)
                         }
                         override fun onClipboardResponse(response: ClipboardResponse) { handleClipboardResponse(response) }
-                    }, confirmText = controlMode && "keyboard.text-ack" in supportedFeatures)
+                    })
                     media = session
                     session.acceptOffer(offer)
                 } catch (_: Exception) { stopSession(failed = true) }
@@ -364,24 +350,20 @@ class VideoActivity : Activity() {
 
     private fun updateControlAvailability() {
         val available = active && firstFrameShown && captureRevision != null
-        keyboardButton?.isEnabled = available && "keyboard.text" in supportedFeatures
-        trackpadButton?.isEnabled = available && "pointer.move" in supportedFeatures && viewport?.supportsTrackpad() == true
+        keyboardButton?.isEnabled = available
+        trackpadButton?.isEnabled = available && viewport?.supportsTrackpad() == true
         trackpadSettingsButton?.isEnabled = trackpadButton?.isEnabled == true && trackpadEnabled
-        val clipboardAvailable = available && controlMode && "clipboard.manual" in supportedFeatures && clipboardAction == null
+        val clipboardAvailable = available && controlMode && clipboardAction == null
         clipboardSendButton?.isEnabled = clipboardAvailable
         clipboardReceiveButton?.isEnabled = clipboardAvailable
         statisticsButton?.isEnabled = active && firstFrameShown
-        automaticSwitch?.isEnabled = available && controlMode && "clipboard.auto" in supportedFeatures
-        specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures,
-            "keyboard.navigation" in supportedFeatures, "keyboard.punctuation" in supportedFeatures,
-            "keyboard.shortcut-keys" in supportedFeatures)
+        automaticSwitch?.isEnabled = available && controlMode
+        specialKeys?.setAvailable(available)
     }
-
-    private fun canSendKey(key: SpecialKey): Boolean = supportsSpecialKey(key, supportedFeatures)
 
     private fun sendRemoteKey(key: SpecialKey, modifiers: Int): Boolean {
         val revision = captureRevision ?: return false
-        if (!active || !firstFrameShown || !canSendKey(key)) return false
+        if (!active || !firstFrameShown) return false
         val sequence = controlSequence.next()
         val sent = sequence != null && media?.sendKey(KeyboardKey(sequence, revision, key, modifiers)) == true
         if (!sent && active) stopSession(failed = true)
@@ -389,7 +371,7 @@ class VideoActivity : Activity() {
     }
 
     private fun requestClipboard(get: Boolean) {
-        if (!active || !hasWindowFocus() || clipboardAction != null || "clipboard.manual" !in supportedFeatures) return
+        if (!active || !hasWindowFocus() || clipboardAction != null) return
         val revision = captureRevision ?: return
         val sequence = controlSequence.next() ?: run { showClipboardMessage(R.string.clipboard_unavailable); return }
         val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -639,14 +621,14 @@ class VideoActivity : Activity() {
 
     private fun configureControlFeatures() {
         val descriptions = mutableListOf(getString(if (trackpadEnabled) R.string.control_trackpad else R.string.control_tap))
-        if ("pointer.double" in supportedFeatures) descriptions.add(getString(R.string.control_double))
+        descriptions.add(getString(R.string.control_double))
         descriptions.add(getString(R.string.control_long_press))
-        if ("pointer.drag" in supportedFeatures) descriptions.add(getString(R.string.control_drag))
-        if ("pointer.scroll" in supportedFeatures) descriptions.add(getString(R.string.control_scroll))
-        if ("pointer.move" in supportedFeatures) descriptions.add(getString(R.string.control_hover))
+        descriptions.add(getString(R.string.control_drag))
+        descriptions.add(getString(R.string.control_scroll))
+        descriptions.add(getString(R.string.control_hover))
         descriptions.add(getString(R.string.control_zoom))
         viewport?.contentDescription = descriptions.joinToString("。", postfix = "。")
-        viewport?.onVideoHover = if ("pointer.move" !in supportedFeatures) null else { x, y ->
+        viewport?.onVideoHover = { x, y ->
             if (active && firstFrameShown) {
                 val location = viewport?.mapTap(x, y, captureRevision, tapMapper)
                 if (location != null) {
@@ -655,7 +637,7 @@ class VideoActivity : Activity() {
                 }
             }
         }
-        viewport?.onVideoDrag = if ("pointer.drag" !in supportedFeatures) null else { phase, x, y ->
+        viewport?.onVideoDrag = { phase, x, y ->
             if (!active || !firstFrameShown) false else {
                 val location = viewport?.mapTap(x, y, captureRevision, tapMapper)
                 if (location == null) false else {
@@ -695,7 +677,6 @@ class VideoActivity : Activity() {
         runCatching { media?.close() }
         media = null
         captureRevision = null
-        supportedFeatures = emptySet()
         viewport?.setTrackpadMode(false)
         trackpadEnabled = false
         viewport?.onVideoHover = null

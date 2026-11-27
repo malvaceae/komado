@@ -6,7 +6,7 @@
   "type": "array",
   "prefixItems": [
     { "const": "1" },
-    { "enum": ["keyboard.text", "keyboard.text.checked"] },
+    { "const": "keyboard.text" },
     { "type": "string", "pattern": "^[1-9][0-9]{0,15}$", "maxLength": 16, "not": { "pattern": "[^0-9]" } },
     { "type": "string", "pattern": "^[1-9][0-9]{0,15}$", "maxLength": 16, "not": { "pattern": "[^0-9]" } },
     { "type": "string", "minLength": 1, "maxLength": 512, "not": { "pattern": "[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f]" } }

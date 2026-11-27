@@ -50,7 +50,7 @@ final class ControlInputGate: @unchecked Sendable {
         let input: ControlInput
         switch type {
         case "pointer.click": guard let value = try? PointerClick.decode(data) else { return nil }; input = .click(value)
-        case "keyboard.text", "keyboard.text.checked": guard let value = try? KeyboardText.decode(data) else { return nil }; input = .text(value)
+        case "keyboard.text": guard let value = try? KeyboardText.decode(data) else { return nil }; input = .text(value)
         case "keyboard.key": guard let value = try? KeyboardKey.decode(data) else { return nil }; input = .key(value)
         case "pointer.scroll": guard let value = try? PointerScroll.decode(data) else { return nil }; input = .scroll(value)
         case "pointer.drag": guard let value = try? PointerDrag.decode(data) else { return nil }; input = .drag(value)

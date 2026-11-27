@@ -149,18 +149,11 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
         guard timestamp.isNumeric else { stopForUnusableFrame(); return }
         let frame = RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: image), rotation: ._0, timeStampNs: timestamp.value)
         let newMapping = Self.frameMapping(attachments: attachments.first!, image: image)
-        let invalidated = lock.withLock {
-            guard active else { return false }
-            if let mapping, mapping != newMapping {
-                active = false
-                route.close()
-                return true
-            }
-            if mapping == nil { mapping = newMapping }
+        lock.withLock {
+            guard active else { return }
+            mapping = newMapping
             route.whileConnected { source.capturer(capturer, didCapture: frame) }
-            return false
         }
-        if invalidated { onStopped() }
     }
 
     private func stopForUnusableFrame() {
@@ -179,8 +172,10 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
               let scale = attachments[.scaleFactor] as? CGFloat, scale.isFinite, scale > 0 else { return nil }
         let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale,
                             width: rect.width * scale, height: rect.height * scale)
-        return CaptureFrameMapping(frameSize: CGSize(width: CVPixelBufferGetWidth(image), height: CVPixelBufferGetHeight(image)),
-                                   contentRect: pixels)
+        let size = CGSize(width: CVPixelBufferGetWidth(image), height: CVPixelBufferGetHeight(image))
+        guard pixels.minX >= -1, pixels.minY >= -1,
+              pixels.maxX <= size.width + 1, pixels.maxY <= size.height + 1 else { return nil }
+        return CaptureFrameMapping(frameSize: size, contentRect: pixels.intersection(CGRect(origin: .zero, size: size)))
     }
 }
 

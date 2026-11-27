@@ -6,28 +6,26 @@ public struct KeyboardText: Equatable, Sendable {
     public let sequence: UInt64
     public let captureRevision: UInt64
     public let text: String
-    public let confirm: Bool
 
-    public init(sequence: UInt64, captureRevision: UInt64, text: String, confirm: Bool = false) {
+    public init(sequence: UInt64, captureRevision: UInt64, text: String) {
         self.sequence = sequence
         self.captureRevision = captureRevision
         self.text = text
-        self.confirm = confirm
     }
 
     public static func decode(_ data: Data) throws -> KeyboardText {
         guard (1...2048).contains(data.count), !SignalMessage.hasTrailingComma(data),
               let fields = (try? JSONSerialization.jsonObject(with: data)) as? [String], fields.count == 5,
-              fields[0] == "1", ["keyboard.text", "keyboard.text.checked"].contains(fields[1]),
+              fields[0] == "1", fields[1] == "keyboard.text",
               let sequence = positiveInteger(fields[2]), let revision = positiveInteger(fields[3]),
               validText(fields[4]) else { throw MessageError.invalid }
-        return KeyboardText(sequence: sequence, captureRevision: revision, text: fields[4], confirm: fields[1] == "keyboard.text.checked")
+        return KeyboardText(sequence: sequence, captureRevision: revision, text: fields[4])
     }
 
     public func encode() throws -> Data {
         guard (1...PointerClick.maximumSequence).contains(sequence), (1...PointerClick.maximumSequence).contains(captureRevision),
               Self.validText(text) else { throw MessageError.invalid }
-        let data = try JSONSerialization.data(withJSONObject: ["1", confirm ? "keyboard.text.checked" : "keyboard.text", String(sequence), String(captureRevision), text])
+        let data = try JSONSerialization.data(withJSONObject: ["1", "keyboard.text", String(sequence), String(captureRevision), text])
         guard try Self.decode(data) == self else { throw MessageError.invalid }
         return data
     }

@@ -16,8 +16,6 @@ final class KeyboardTextTests: XCTestCase {
             XCTAssertEqual(try KeyboardText.decode(message.encode()), message)
         }
         for value in invalid { XCTAssertThrowsError(try KeyboardText.decode(Data(value.utf8))) }
-        XCTAssertTrue(try KeyboardText.decode(Data("[\"1\",\"keyboard.text.checked\",\"2\",\"1\",\"a\"]".utf8)).confirm)
-        XCTAssertFalse(try KeyboardText.decode(Data(valid[0].utf8)).confirm)
         XCTAssertNoThrow(try KeyboardText(sequence: 1, captureRevision: 1, text: String(repeating: "あ", count: 170)).encode())
         XCTAssertThrowsError(try KeyboardText(sequence: 1, captureRevision: 1, text: String(repeating: "あ", count: 171)).encode())
         XCTAssertThrowsError(try KeyboardText.decode(Data(repeating: 0, count: 2049)))

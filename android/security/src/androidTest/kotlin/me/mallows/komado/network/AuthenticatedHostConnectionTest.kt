@@ -82,10 +82,6 @@ class AuthenticatedHostConnectionTest {
                         }
                         assertTrue(verified)
                         send(socket, SignalMessage.Accepted(id))
-                        if (index == 0) {
-                            assertEquals(SignalMessage.ListFeatures, receive(socket))
-                            send(socket, SignalMessage.Features(listOf("pointer.click", "pointer.drag")))
-                        }
                         assertEquals(SignalMessage.StartMedia, receive(socket))
                         if (index == 0) {
                             send(socket, SignalMessage.Offer("v=0\r\ns=offer\r\n"))
@@ -106,8 +102,6 @@ class AuthenticatedHostConnectionTest {
                 assertEquals(id, paired.deviceID)
                 assertThrows(IOException::class.java) { paired.sendAnswer("v=0\r\ns=answer\r\n") }
                 assertThrows(IOException::class.java) { paired.receiveOffer() }
-                assertEquals(setOf("pointer.click", "pointer.drag"), paired.listFeatures())
-                assertThrows(IOException::class.java) { paired.listFeatures() }
                 paired.requestMedia()
                 assertThrows(IOException::class.java) { paired.requestMedia() }
                 assertEquals("v=0\r\ns=offer\r\n", paired.receiveOffer())
@@ -206,35 +200,6 @@ class AuthenticatedHostConnectionTest {
                     AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, wrong, "Android test", ByteArray(32), key)
                 }
                 assertFalse(store.containsAlias(deviceAlias))
-                task.get(20, TimeUnit.SECONDS)
-            } finally {
-                server.close()
-                executor.shutdownNow()
-                executor.awaitTermination(10, TimeUnit.SECONDS)
-            }
-        }
-    }
-
-    @Test fun oldHostClosingOnFeatureRequestDoesNotStartControl() {
-        withServer { server, fingerprint ->
-            val executor = Executors.newSingleThreadExecutor()
-            val task = executor.submit {
-                (server.accept() as SSLSocket).use { socket ->
-                    socket.soTimeout = 10_000
-                    socket.startHandshake()
-                    assertTrue(receive(socket) is SignalMessage.Pair)
-                    send(socket, SignalMessage.Challenge(ByteArray(32)))
-                    assertTrue(receive(socket) is SignalMessage.Proof)
-                    send(socket, SignalMessage.Accepted(UUID.randomUUID()))
-                    assertEquals(SignalMessage.ListFeatures, receive(socket))
-                }
-            }
-            try {
-                val connection = AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint,
-                    "Android test", ByteArray(32), key)
-                assertThrows(IOException::class.java) { connection.listFeatures() }
-                assertThrows(IOException::class.java) { connection.requestMedia(control = true) }
-                connection.close()
                 task.get(20, TimeUnit.SECONDS)
             } finally {
                 server.close()

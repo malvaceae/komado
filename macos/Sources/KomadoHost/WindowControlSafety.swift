@@ -9,8 +9,6 @@ struct ControlWindowSnapshot: Equatable {
 }
 
 extension ControlWindowSnapshot {
-    /// Refuse the entire snapshot when a window cannot be interpreted; an
-    /// unknown front window must not be silently treated as transparent.
     static func onScreen() -> [ControlWindowSnapshot]? {
         guard let raw = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] else { return nil }
@@ -21,9 +19,9 @@ extension ControlWindowSnapshot {
                   let dictionary = item[kCGWindowBounds as String] as? [String: Any],
                   let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary),
                   [bounds.minX, bounds.minY, bounds.width, bounds.height, bounds.maxX, bounds.maxY].allSatisfy(\.isFinite),
-                  bounds.width >= 0, bounds.height >= 0 else { return nil }
+                  bounds.width >= 0, bounds.height >= 0 else { continue }
             let alpha = (item[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
-            guard alpha.isFinite else { return nil }
+            guard alpha.isFinite else { continue }
             if alpha <= 0 || bounds.isEmpty { continue }
             result.append(ControlWindowSnapshot(id: id, processID: pid, bounds: bounds))
         }
@@ -34,26 +32,26 @@ extension ControlWindowSnapshot {
 struct WindowControlSafety {
     let target: ControlWindowSnapshot
 
-    func targetIsUnchanged(in windows: [ControlWindowSnapshot]) -> Bool {
-        windows.filter { $0.id == target.id } == [target]
+    func currentTarget(in windows: [ControlWindowSnapshot]) -> ControlWindowSnapshot? {
+        let matches = windows.filter { $0.id == target.id }
+        guard matches.count == 1, let current = matches.first, current.processID == target.processID else { return nil }
+        return current
     }
 
-    /// Reject moved, resized, closed or replaced targets and points where
-    /// Accessibility hit-testing resolves to another window.
+    /// Reject closed or replaced targets and points that hit another window.
     func permits(point: CGPoint, hitProcessID: Int32, hitBounds: CGRect,
                  windows: [ControlWindowSnapshot]) -> Bool {
-        guard point.x.isFinite, point.y.isFinite, target.bounds.contains(point),
-              hitProcessID == target.processID, hitBounds == target.bounds,
-              targetIsUnchanged(in: windows) else { return false }
-        return windows.filter { $0.processID == target.processID && $0.bounds == target.bounds }.count == 1
+        guard let current = currentTarget(in: windows), point.x.isFinite, point.y.isFinite,
+              current.bounds.contains(point), hitProcessID == current.processID, hitBounds == current.bounds else { return false }
+        return windows.filter { $0.processID == current.processID && $0.bounds == current.bounds }.count == 1
     }
 
     /// The focused AX window must belong to the same process and geometry.
     /// Reject identical window bounds in the same process as ambiguous.
     func permitsKeyboard(focusedProcessID: Int32, focusedBounds: CGRect,
                          windows: [ControlWindowSnapshot]) -> Bool {
-        guard focusedProcessID == target.processID, focusedBounds == target.bounds,
-              targetIsUnchanged(in: windows) else { return false }
-        return windows.filter { $0.processID == target.processID && $0.bounds == target.bounds }.count == 1
+        guard let current = currentTarget(in: windows), focusedProcessID == current.processID,
+              focusedBounds == current.bounds else { return false }
+        return windows.filter { $0.processID == current.processID && $0.bounds == current.bounds }.count == 1
     }
 }

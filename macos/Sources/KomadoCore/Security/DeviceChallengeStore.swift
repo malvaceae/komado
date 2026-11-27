@@ -80,7 +80,4 @@ public actor DeviceChallengeStore {
         pending.removeValue(forKey: sessionID)
     }
 
-    public func invalidate(deviceID: UUID) {
-        pending = pending.filter { $0.value.deviceID != deviceID }
-    }
 }

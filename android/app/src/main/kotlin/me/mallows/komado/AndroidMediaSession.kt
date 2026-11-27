@@ -36,7 +36,6 @@ import java.util.ArrayDeque
 internal class AndroidMediaSession(
     context: Context,
     private val listener: Listener,
-    private val confirmText: Boolean = false,
 ) : PeerConnection.Observer, AutoCloseable {
     interface Listener {
         fun onAnswer(sdp: String)
@@ -173,13 +172,10 @@ internal class AndroidMediaSession(
 
     fun sendText(text: KeyboardText): Boolean {
         checkMainThread()
-        if (confirmText && pendingText.size >= 64) return false
-        val outgoing = text.copy(confirm = confirmText)
-        if (!sendInput(outgoing.sequence, outgoing.captureRevision) { KeyboardTextCodec.encode(outgoing) }) return false
-        if (confirmText) {
-            pendingText.addLast(outgoing.sequence)
-            if (pendingText.size == 1) handler.postDelayed(textTimeout, 10_000)
-        }
+        if (pendingText.size >= 64) return false
+        if (!sendInput(text.sequence, text.captureRevision) { KeyboardTextCodec.encode(text) }) return false
+        pendingText.addLast(text.sequence)
+        if (pendingText.size == 1) handler.postDelayed(textTimeout, 10_000)
         return true
     }
 
@@ -190,7 +186,7 @@ internal class AndroidMediaSession(
 
     private fun receiveTextPosted(data: ByteArray): Boolean {
         val sequence = try { KeyboardTextPostedCodec.decode(data) } catch (_: Exception) { return false }
-        if (!confirmText || pendingText.peekFirst() != sequence) { fail(); return true }
+        if (pendingText.peekFirst() != sequence) { fail(); return true }
         pendingText.removeFirst()
         handler.removeCallbacks(textTimeout)
         if (pendingText.isNotEmpty()) handler.postDelayed(textTimeout, 10_000)

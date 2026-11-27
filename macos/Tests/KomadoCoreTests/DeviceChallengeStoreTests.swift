@@ -66,26 +66,20 @@ final class DeviceChallengeStoreTests: XCTestCase {
         XCTAssertNil(retry)
     }
 
-    func testExpiryDisconnectAndRevocationInvalidateChallenges() async throws {
+    func testExpiryAndDisconnectInvalidateChallenges() async throws {
         let clock = TestTime()
         let store = DeviceChallengeStore(now: { clock.now() }, makeChallenge: { Data(repeating: 5, count: 32) })
         let key = P256.Signing.PrivateKey(), device = UUID()
-        let expired = UUID(), disconnected = UUID(), revoked = UUID()
+        let expired = UUID(), disconnected = UUID()
         let challenge = try await store.issue(sessionID: expired, deviceID: device, registeredPublicKeyDER: key.publicKey.derRepresentation)
         _ = try await store.issue(sessionID: disconnected, deviceID: device, registeredPublicKeyDER: key.publicKey.derRepresentation)
-        _ = try await store.issue(sessionID: revoked, deviceID: device, registeredPublicKeyDER: key.publicKey.derRepresentation)
         let sig = try signature(key, challenge: challenge)
         await store.invalidate(sessionID: disconnected)
         let disconnectedResult = await store.verifyAndConsume(sessionID: disconnected, signatureDER: sig)
         clock.advance(.seconds(30))
         let expiredResult = await store.verifyAndConsume(sessionID: expired, signatureDER: sig)
-        // New challenge is still live when the device is revoked.
-        _ = try await store.issue(sessionID: revoked, deviceID: device, registeredPublicKeyDER: key.publicKey.derRepresentation)
-        await store.invalidate(deviceID: device)
-        let revokedResult = await store.verifyAndConsume(sessionID: revoked, signatureDER: sig)
         XCTAssertNil(disconnectedResult)
         XCTAssertNil(expiredResult)
-        XCTAssertNil(revokedResult)
     }
 
     func testDuplicateSessionCapacityAndInvalidKeyAreRejected() async throws {

@@ -82,23 +82,26 @@ class AndroidMediaSessionTest {
     }
 
     @Test fun exchangesDescriptionsAndReceivesGeneratedVideo() {
-        exchangeDescriptionsAndGeneratedVideo(confirmText = false)
-        exchangeDescriptionsAndGeneratedVideo(confirmText = true)
+        exchangeDescriptionsAndGeneratedVideo(duplicateCapture = true)
+    }
+
+    @Test fun rejectsIncorrectTextConfirmation() {
+        exchangeDescriptionsAndGeneratedVideo()
     }
 
     @Test fun unconfirmedTextTimesOut() {
-        exchangeDescriptionsAndGeneratedVideo(confirmText = true, sendWrongConfirmation = false)
+        exchangeDescriptionsAndGeneratedVideo(sendWrongConfirmation = false)
     }
 
     @Test fun remoteControlChannelClosureReportsUnconfirmedText() {
-        exchangeDescriptionsAndGeneratedVideo(confirmText = true, closeControlChannel = true)
+        exchangeDescriptionsAndGeneratedVideo(closeControlChannel = true)
     }
 
     @Test fun localCloseWhileRemoteChannelClosesIsSafe() {
-        exchangeDescriptionsAndGeneratedVideo(confirmText = true, closeLocally = true)
+        exchangeDescriptionsAndGeneratedVideo(closeLocally = true)
     }
 
-    private fun exchangeDescriptionsAndGeneratedVideo(confirmText: Boolean, sendWrongConfirmation: Boolean = true,
+    private fun exchangeDescriptionsAndGeneratedVideo(sendWrongConfirmation: Boolean = true, duplicateCapture: Boolean = false,
                                                        closeControlChannel: Boolean = false, closeLocally: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val egl = EglBase.create()
@@ -219,7 +222,7 @@ class AndroidMediaSessionTest {
                         remoteVideo.completeExceptionally(IllegalStateException("Media session failed"))
                     }
                     override fun onTextDeliveryUnconfirmed() { textUnconfirmed.countDown() }
-                }, confirmText = confirmText)
+                })
                 assertTrue(!receiver.sendClick(PointerClick(1, 1, 500_000, 500_000, PointerClick.Button.LEFT)))
                 receiver.acceptOffer(offerSdp)
             }
@@ -260,18 +263,17 @@ class AndroidMediaSessionTest {
                 assertTrue(!current.sendMove(move))
             }
             assertTrue(clickReceived.get(5, TimeUnit.SECONDS) == click)
-            assertEquals(text.copy(confirm = confirmText), textReceived.get(5, TimeUnit.SECONDS))
-            if (confirmText) {
-                instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).hasUnconfirmedText()) }
-                assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(KeyboardTextPostedCodec.encode(text.sequence)), false)))
-                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-                var acknowledged = false
-                while (!acknowledged && System.nanoTime() < deadline) {
-                    instrumentation.runOnMainSync { acknowledged = !requireNotNull(receiver).hasUnconfirmedText() }
-                    if (!acknowledged) Thread.sleep(25)
-                }
-                assertTrue("Text posting confirmation was not accepted", acknowledged)
+            assertEquals(text, textReceived.get(5, TimeUnit.SECONDS))
+            instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).hasUnconfirmedText()) }
+            assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(KeyboardTextPostedCodec.encode(text.sequence)), false)))
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            var acknowledged = false
+            while (!acknowledged && System.nanoTime() < deadline) {
+                instrumentation.runOnMainSync { acknowledged = !requireNotNull(receiver).hasUnconfirmedText() }
+                if (!acknowledged) Thread.sleep(25)
             }
+            assertTrue("Text posting confirmation was not accepted", acknowledged)
+
             assertTrue(keyReceived.get(5, TimeUnit.SECONDS) == key)
             assertTrue(scrollReceived.get(5, TimeUnit.SECONDS) == scroll)
             assertTrue(dragCount.await(5, TimeUnit.SECONDS))
@@ -348,10 +350,10 @@ class AndroidMediaSessionTest {
                 assertEquals(240, snapshot.height)
             }
             source.capturerObserver.onCapturerStopped()
-            if (confirmText) {
+            if (!duplicateCapture) {
                 val laterText = KeyboardText(21, 1, "sample")
                 instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendText(laterText)) }
-                assertEquals(laterText.copy(confirm = true), laterTextReceived.get(5, TimeUnit.SECONDS))
+                assertEquals(laterText, laterTextReceived.get(5, TimeUnit.SECONDS))
                 if (closeLocally) {
                     instrumentation.runOnMainSync {
                         channel.close()

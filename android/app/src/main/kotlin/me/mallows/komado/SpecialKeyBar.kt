@@ -13,13 +13,9 @@ import me.mallows.komado.protocol.SpecialKey
 internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, Int) -> Boolean) : HorizontalScrollView(context) {
     private val row = LinearLayout(context)
     private val controls = mutableListOf<android.view.View>()
-    private val navigationControls = mutableListOf<android.view.View>()
     private val modifiers = mutableListOf<Pair<ToggleButton, Int>>()
     private var picker: AlertDialog? = null
     private var available = false
-    private var navigationAvailable = false
-    private var punctuationAvailable = false
-    private var extendedAvailable = false
 
     init {
         isHorizontalScrollBarEnabled = true
@@ -49,19 +45,14 @@ internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, In
         listOf("Home" to SpecialKey.HOME, "End" to SpecialKey.END,
             "PgUp" to SpecialKey.PAGEUP, "PgDn" to SpecialKey.PAGEDOWN).forEach { (label, key) ->
             val button = Button(context).apply { text = label; setOnClickListener { dispatch(key) } }
-            navigationControls.add(button)
             addControl(button)
         }
         setAvailable(false)
     }
 
-    fun setAvailable(value: Boolean, navigation: Boolean = false, punctuation: Boolean = false, extended: Boolean = false) {
+    fun setAvailable(value: Boolean) {
         available = value
-        navigationAvailable = value && navigation
-        punctuationAvailable = value && punctuation
-        extendedAvailable = value && extended
         controls.forEach { it.isEnabled = value }
-        navigationControls.forEach { it.isEnabled = navigationAvailable }
         if (!value) {
             modifiers.forEach { it.first.isChecked = false }
             picker?.dismiss()
@@ -75,8 +66,7 @@ internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, In
     }
 
     private fun dispatch(key: SpecialKey) {
-        if (!available || (key.isNavigation && !navigationAvailable) || (key.isPunctuation && !punctuationAvailable) ||
-            (key.isExtendedShortcut && !extendedAvailable)) return
+        if (!available) return
         val mask = modifiers.fold(0) { result, (button, value) -> if (button.isChecked) result or value else result }
         send(key, mask)
     }
@@ -85,10 +75,10 @@ internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, In
         if (!available || picker != null) return null
         val names = ('A'..'Z').map { it.toString() to SpecialKey.valueOf(it.toString()) } +
             ('0'..'9').map { it.toString() to SpecialKey.valueOf("DIGIT$it") } +
-            (if (punctuationAvailable) listOf("," to SpecialKey.COMMA, "." to SpecialKey.PERIOD, "/" to SpecialKey.SLASH) else emptyList()) +
-            (if (extendedAvailable) listOf("Space" to SpecialKey.SPACE, "-" to SpecialKey.MINUS, "=" to SpecialKey.EQUAL,
+            listOf("," to SpecialKey.COMMA, "." to SpecialKey.PERIOD, "/" to SpecialKey.SLASH) +
+            listOf("Space" to SpecialKey.SPACE, "-" to SpecialKey.MINUS, "=" to SpecialKey.EQUAL,
                 "[" to SpecialKey.LEFTBRACKET, "]" to SpecialKey.RIGHTBRACKET, "\\" to SpecialKey.BACKSLASH,
-                ";" to SpecialKey.SEMICOLON, "'" to SpecialKey.APOSTROPHE, "`" to SpecialKey.GRAVE) else emptyList())
+                ";" to SpecialKey.SEMICOLON, "'" to SpecialKey.APOSTROPHE, "`" to SpecialKey.GRAVE)
         val dialog = AlertDialog.Builder(context).setTitle(R.string.shortcut_key).setItems(names.map { it.first }.toTypedArray()) { _, index ->
             dispatch(names[index].second)
         }.setNegativeButton(R.string.cancel, null).setOnDismissListener { picker = null }.show()

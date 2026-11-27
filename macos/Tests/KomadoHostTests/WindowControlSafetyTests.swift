@@ -7,12 +7,14 @@ final class WindowControlSafetyTests: XCTestCase {
         let target = ControlWindowSnapshot(id: 1, processID: 10, bounds: CGRect(x: 100, y: 100, width: 200, height: 200))
         let other = ControlWindowSnapshot(id: 2, processID: 20, bounds: target.bounds)
         let guardrail = WindowControlSafety(target: target)
-        XCTAssertTrue(guardrail.targetIsUnchanged(in: [other, target]))
-        XCTAssertFalse(guardrail.targetIsUnchanged(in: []))
-        XCTAssertFalse(guardrail.targetIsUnchanged(in: [.init(id: 1, processID: 10, bounds: target.bounds.offsetBy(dx: 1, dy: 0))]))
-        XCTAssertFalse(guardrail.targetIsUnchanged(in: [.init(id: 1, processID: 10, bounds: target.bounds.insetBy(dx: 0, dy: 1))]))
-        XCTAssertFalse(guardrail.targetIsUnchanged(in: [.init(id: 1, processID: 11, bounds: target.bounds)]))
-        XCTAssertFalse(guardrail.targetIsUnchanged(in: [target, target]))
+        XCTAssertEqual(guardrail.currentTarget(in: [other, target]), target)
+        XCTAssertNil(guardrail.currentTarget(in: []))
+        let moved = ControlWindowSnapshot(id: 1, processID: 10, bounds: target.bounds.offsetBy(dx: 1, dy: 0))
+        let resized = ControlWindowSnapshot(id: 1, processID: 10, bounds: target.bounds.insetBy(dx: 0, dy: 1))
+        XCTAssertEqual(guardrail.currentTarget(in: [moved]), moved)
+        XCTAssertEqual(guardrail.currentTarget(in: [resized]), resized)
+        XCTAssertNil(guardrail.currentTarget(in: [.init(id: 1, processID: 11, bounds: target.bounds)]))
+        XCTAssertNil(guardrail.currentTarget(in: [target, target]))
     }
 
     func testPointerRequiresUnchangedVisibleTopmostTarget() {
@@ -25,6 +27,8 @@ final class WindowControlSafetyTests: XCTestCase {
         XCTAssertFalse(guardrail.permits(point: CGPoint(x: 120, y: 120), hitProcessID: 10, hitBounds: target.bounds, windows: []))
         XCTAssertFalse(guardrail.permits(point: CGPoint(x: 120, y: 120), hitProcessID: 10, hitBounds: target.bounds, windows: [.init(id: 1, processID: 11, bounds: target.bounds)]))
         XCTAssertFalse(guardrail.permits(point: CGPoint(x: 120, y: 120), hitProcessID: 10, hitBounds: target.bounds, windows: [.init(id: 1, processID: 10, bounds: target.bounds.offsetBy(dx: 1, dy: 0))]))
+        let moved = ControlWindowSnapshot(id: 1, processID: 10, bounds: target.bounds.offsetBy(dx: 10, dy: 20))
+        XCTAssertTrue(guardrail.permits(point: CGPoint(x: 130, y: 140), hitProcessID: 10, hitBounds: moved.bounds, windows: [moved]))
         XCTAssertFalse(guardrail.permits(point: CGPoint(x: CGFloat.nan, y: 120), hitProcessID: 10, hitBounds: target.bounds, windows: [target]))
         XCTAssertFalse(guardrail.permits(point: CGPoint(x: 120, y: 120), hitProcessID: 10, hitBounds: target.bounds,
                                         windows: [target, .init(id: 3, processID: 10, bounds: target.bounds)]))
@@ -37,6 +41,8 @@ final class WindowControlSafetyTests: XCTestCase {
         XCTAssertFalse(guardrail.permitsKeyboard(focusedProcessID: 11, focusedBounds: target.bounds, windows: [target]))
         XCTAssertFalse(guardrail.permitsKeyboard(focusedProcessID: 10, focusedBounds: target.bounds.offsetBy(dx: 1, dy: 0), windows: [target]))
         XCTAssertFalse(guardrail.permitsKeyboard(focusedProcessID: 10, focusedBounds: target.bounds, windows: []))
+        let moved = ControlWindowSnapshot(id: 1, processID: 10, bounds: target.bounds.offsetBy(dx: 10, dy: 20))
+        XCTAssertTrue(guardrail.permitsKeyboard(focusedProcessID: 10, focusedBounds: moved.bounds, windows: [moved]))
         let duplicate = ControlWindowSnapshot(id: 2, processID: 10, bounds: target.bounds)
         XCTAssertFalse(guardrail.permitsKeyboard(focusedProcessID: 10, focusedBounds: target.bounds, windows: [target, duplicate]))
     }

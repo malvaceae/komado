@@ -47,6 +47,7 @@ final class ListenerAccessTests: XCTestCase {
         let parameters = try ListenerAccess.parameters(identity: identity, scope: .localLink, interface: interface,
                                                        address: address, port: .any)
         XCTAssertTrue(parameters.acceptLocalOnly)
+        XCTAssertTrue(parameters.allowLocalEndpointReuse)
         XCTAssertEqual(parameters.requiredInterface?.index, interface.index)
         XCTAssertThrowsError(try ListenerAccess.parameters(identity: identity, scope: .localLink, interface: interface,
                                                             address: .ipv4(IPv4Address("0.0.0.0")!), port: .any)) {

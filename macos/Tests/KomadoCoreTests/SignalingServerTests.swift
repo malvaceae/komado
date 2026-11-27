@@ -116,6 +116,65 @@ private final class ServerTestPeer: @unchecked Sendable {
 }
 
 final class SignalingServerTests: XCTestCase {
+    func testRemovingOneListenerKeepsOtherAvailable() async throws {
+        let box = ServerTestBox(), pathReady = expectation(description: "network path")
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { path in
+            if box.setInterface(path.availableInterfaces.first { $0.type == .wifi || $0.type == .wiredEthernet }) {
+                pathReady.fulfill()
+            }
+        }
+        monitor.start(queue: DispatchQueue.global())
+        defer { monitor.cancel() }
+        await fulfillment(of: [pathReady], timeout: 10)
+        let interface = try XCTUnwrap(box.getInterface())
+        let addresses = try ListenerAccess.addresses(on: interface)
+        guard let ipv4 = addresses.first(where: { if case .ipv4 = $0 { return true }; return false }),
+              let ipv6 = addresses.first(where: { if case .ipv6 = $0 { return true }; return false }) else {
+            throw XCTSkip("Requires IPv4 and IPv6")
+        }
+        let service = "me.mallows.komado.test.listener.\(UUID().uuidString)"
+        defer {
+            SecItemDelete([kSecClass: kSecClassKey, kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+                           kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+                           kSecAttrApplicationTag: Data("\(service).private-key".utf8)] as CFDictionary)
+            SecItemDelete([kSecClass: kSecClassGenericPassword, kSecAttrService: service,
+                           kSecAttrAccount: "certificate-v1"] as CFDictionary)
+        }
+        let identity = try HostTLSIdentityStore(service: service).create()
+        let registry = PairedDeviceRegistry(service: "\(service).devices")
+        let ready = expectation(description: "both listeners")
+        ready.expectedFulfillmentCount = 2
+        let removed = expectation(description: "one listener removed")
+        let failed = expectation(description: "remaining listener stays active")
+        failed.isInverted = true
+        let server = try SignalingServer.create(identity: identity.identity,
+            bindings: [ListenerBinding(scope: .localLink, interface: interface, address: ipv4),
+                       ListenerBinding(scope: .localLink, interface: interface, address: ipv6)], port: .any,
+            pairing: PairingCoordinator(registry: registry, now: { .zero }),
+            authentication: DeviceAuthenticationCoordinator(registry: registry, now: { .zero })) { event in
+                switch event {
+                case let .listening(_, address, port):
+                    if address == "\(ipv4)" { box.setPort(port) }
+                    ready.fulfill()
+                case .listenerUnavailable: removed.fulfill()
+                case .failed: failed.fulfill()
+                default: break
+                }
+            }
+        try await server.start()
+        await fulfillment(of: [ready], timeout: 10)
+        await server.retainListeners(keys: ["\(interface.index)|\(ipv4)"])
+        await fulfillment(of: [removed, failed], timeout: 1)
+        let peer = ServerTestPeer(host: ipv4, port: try XCTUnwrap(box.getPort()).asPort(), fingerprint: identity.fingerprintSHA256)
+        try await peer.start()
+        try await peer.send(.startMedia)
+        let response = try await peer.receive()
+        XCTAssertEqual(response, .rejected)
+        peer.connection.cancel()
+        await server.stop()
+    }
+
     func testLocalServerPairsAndAuthenticatesAgain() async throws {
         let box = ServerTestBox(), pathReady = expectation(description: "network path")
         let monitor = NWPathMonitor()
@@ -154,8 +213,8 @@ final class SignalingServerTests: XCTestCase {
         let selectedMediaRequested = expectation(description: "selected display requested")
         let controlRequested = expectation(description: "control requested")
         let answerReceived = expectation(description: "SDP answer")
-        let disconnected = expectation(description: "ten disconnections")
-        disconnected.expectedFulfillmentCount = 10
+        let disconnected = expectation(description: "nine disconnections")
+        disconnected.expectedFulfillmentCount = 9
         let server = try SignalingServer.create(identity: identity.identity,
             bindings: [ListenerBinding(scope: .localLink, interface: interface, address: address)],
             port: .any, pairing: pairing, authentication: auth) { event in
@@ -197,9 +256,6 @@ final class SignalingServerTests: XCTestCase {
         try await first.send(.proof(signature))
         guard case let .accepted(deviceID) = try await first.receive() else { return XCTFail("Expected acceptance") }
         await fulfillment(of: [firstAuthenticated], timeout: 10)
-        try await first.send(.listFeatures)
-        let features = try await first.receive()
-        XCTAssertEqual(features, .features(["pointer.click", "pointer.double", "pointer.drag", "pointer.scroll", "pointer.move", "keyboard.text", "keyboard.text-ack", "keyboard.key", "keyboard.navigation", "keyboard.punctuation", "keyboard.shortcut-keys", "window.control", "display.control", "clipboard.manual", "clipboard.auto"]))
         try await first.send(.listDisplays)
         guard case let .displays(displays) = try await first.receive(), let display = displays.first else {
             return XCTFail("Expected a nonempty display list")
@@ -253,7 +309,7 @@ final class SignalingServerTests: XCTestCase {
         } catch { }
         first.connection.cancel()
         // The server permits the next connection after it observes this close.
-        await server.disconnectCurrent()
+        await server.disconnect(sessionID: currentConnection)
         let second = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
         try await second.start()
         try await second.send(.authenticate(deviceID: deviceID))
@@ -272,7 +328,7 @@ final class SignalingServerTests: XCTestCase {
         XCTAssertTrue(box.getRequestedControl())
         let secondID = try XCTUnwrap(box.getLastAuthenticated())
         second.connection.cancel()
-        await server.disconnectCurrent()
+        await server.disconnect(sessionID: secondID)
         let unlisted = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
         try await unlisted.start()
         try await unlisted.send(.authenticate(deviceID: deviceID))
@@ -345,7 +401,7 @@ final class SignalingServerTests: XCTestCase {
         let unknownWindowStillActive = await server.isActive(sessionID: unknownWindowID)
         XCTAssertFalse(unknownWindowStillActive, "A window not delivered to the peer must be rejected")
         unknownWindow.connection.cancel()
-        await server.disconnectCurrent()
+        await server.disconnect(sessionID: unknownWindowID)
         let control = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
         try await control.start()
         try await control.send(.authenticate(deviceID: deviceID))
@@ -357,7 +413,7 @@ final class SignalingServerTests: XCTestCase {
         try await control.send(.startControl)
         await fulfillment(of: [controlRequested], timeout: 10)
         control.connection.cancel()
-        await server.disconnectCurrent()
+        await server.disconnect(sessionID: try XCTUnwrap(box.getMediaSession()))
         let removed = try await server.removeDevice(id: deviceID)
         XCTAssertTrue(removed)
         let third = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
@@ -374,20 +430,12 @@ final class SignalingServerTests: XCTestCase {
             XCTFail("Invalid frame must close the connection")
         } catch { }
         fourth.connection.cancel()
-        await server.disconnectCurrent()
         let unauthenticated = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
         try await unauthenticated.start()
         try await unauthenticated.send(.startControl)
         let unauthenticatedResponse = try await unauthenticated.receive()
         XCTAssertEqual(unauthenticatedResponse, .rejected)
         unauthenticated.connection.cancel()
-        await server.disconnectCurrent()
-        let unauthenticatedFeatures = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
-        try await unauthenticatedFeatures.start()
-        try await unauthenticatedFeatures.send(.listFeatures)
-        let unauthenticatedFeatureResponse = try await unauthenticatedFeatures.receive()
-        XCTAssertEqual(unauthenticatedFeatureResponse, .rejected)
-        unauthenticatedFeatures.connection.cancel()
         await fulfillment(of: [disconnected], timeout: 10)
         XCTAssertEqual(try registry.all().count, 0)
         await server.stop()

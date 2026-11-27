@@ -23,8 +23,6 @@ sealed interface SignalMessage {
     data object Rejected : SignalMessage
     data object StartMedia : SignalMessage
     data object StartControl : SignalMessage
-    data object ListFeatures : SignalMessage
-    data class Features(val values: List<String>) : SignalMessage
     data class StartDisplay(val id: Long) : SignalMessage
     data class StartDisplayControl(val id: Long) : SignalMessage
     data object ListDisplays : SignalMessage
@@ -95,15 +93,6 @@ object SignalMessageCodec {
                 "control.start" -> {
                     if (fields.size != 2) throw MessageException()
                     SignalMessage.StartControl
-                }
-                "features.list" -> {
-                    if (fields.size != 2) throw MessageException()
-                    SignalMessage.ListFeatures
-                }
-                "features.listed" -> {
-                    val values = fields.drop(2)
-                    if (values.size > 32 || values.toSet().size != values.size || values.any { !validFeature(it) }) throw MessageException()
-                    SignalMessage.Features(values)
                 }
                 "display.list" -> {
                     if (fields.size != 2) throw MessageException()
@@ -179,8 +168,6 @@ object SignalMessageCodec {
             SignalMessage.Rejected -> listOf("1", "rejected")
             SignalMessage.StartMedia -> listOf("1", "start")
             SignalMessage.StartControl -> listOf("1", "control.start")
-            SignalMessage.ListFeatures -> listOf("1", "features.list")
-            is SignalMessage.Features -> listOf("1", "features.listed") + message.values
             is SignalMessage.StartDisplay -> listOf("1", "start", message.id.toString())
             is SignalMessage.StartDisplayControl -> listOf("1", "display.control", message.id.toString())
             SignalMessage.ListDisplays -> listOf("1", "display.list")
@@ -216,9 +203,6 @@ object SignalMessageCodec {
         decode(bytes)
         return bytes
     }
-
-    private fun validFeature(value: String): Boolean = value.length in 1..48 && value[0] in 'a'..'z' &&
-        value.drop(1).all { it in 'a'..'z' || it in '0'..'9' || it == '-' || it == '.' }
 
     private fun validName(name: String): Boolean {
         if (name.length > 256) return false

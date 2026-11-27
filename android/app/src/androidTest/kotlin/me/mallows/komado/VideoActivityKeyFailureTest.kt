@@ -16,7 +16,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class VideoActivityKeyFailureTest {
-    @Test fun keyboardSendFailureEndsSessionButUnsupportedKeyDoesNot() {
+    @Test fun keyboardSendFailureEndsSession() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val intent = Intent(context, VideoActivity::class.java).putExtra(VideoActivity.CONTROL_MODE, true)
         ActivityScenario.launch<VideoActivity>(intent).use { scenario ->
@@ -26,9 +26,6 @@ class VideoActivityKeyFailureTest {
                 readyWithoutChannel(activity)
                 assertFalse(keyboard.onKeyDown(KeyEvent.KEYCODE_MOVE_HOME,
                     KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MOVE_HOME)))
-                assertTrue(field(activity, "active").getBoolean(activity))
-                assertFalse(keyboard.onKeyDown(KeyEvent.KEYCODE_ESCAPE,
-                    KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ESCAPE)))
                 assertFalse(field(activity, "active").getBoolean(activity))
                 assertTrue(hasText(activity.window.decorView, activity.getString(R.string.screen_disconnected)))
             }
@@ -55,7 +52,6 @@ class VideoActivityKeyFailureTest {
         field(activity, "active").setBoolean(activity, true)
         field(activity, "firstFrameShown").setBoolean(activity, true)
         field(activity, "captureRevision").set(activity, 1L)
-        field(activity, "supportedFeatures").set(activity, setOf("keyboard.key"))
     }
 
     private fun field(target: Any, name: String) = target.javaClass.getDeclaredField(name).apply { isAccessible = true }

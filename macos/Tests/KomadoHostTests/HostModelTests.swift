@@ -75,6 +75,7 @@ final class HostModelTests: XCTestCase {
         XCTAssertNil(model.error)
         XCTAssertTrue(model.ready)
         XCTAssertFalse(model.addresses.isEmpty)
+        XCTAssertEqual(Set(model.pairingEndpoints.map(\.port)).count, 1)
         XCTAssertTrue(try waitingAssertionExists())
         model.keepAwakeWhileListening = false
         XCTAssertFalse(try waitingAssertionExists())

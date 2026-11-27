@@ -3,22 +3,6 @@ package me.mallows.komado
 import android.view.KeyEvent
 import me.mallows.komado.protocol.SpecialKey
 
-internal val SpecialKey.isNavigation: Boolean
-    get() = this == SpecialKey.HOME || this == SpecialKey.END || this == SpecialKey.PAGEUP || this == SpecialKey.PAGEDOWN
-internal val SpecialKey.isPunctuation: Boolean
-    get() = this == SpecialKey.COMMA || this == SpecialKey.PERIOD || this == SpecialKey.SLASH
-internal val SpecialKey.isExtendedShortcut: Boolean
-    get() = when (this) {
-        SpecialKey.SPACE, SpecialKey.MINUS, SpecialKey.EQUAL, SpecialKey.LEFTBRACKET, SpecialKey.RIGHTBRACKET,
-        SpecialKey.BACKSLASH, SpecialKey.SEMICOLON, SpecialKey.APOSTROPHE, SpecialKey.GRAVE -> true
-        else -> false
-    }
-
-internal fun supportsSpecialKey(key: SpecialKey, features: Set<String>): Boolean =
-    "keyboard.key" in features && (!key.isNavigation || "keyboard.navigation" in features) &&
-        (!key.isPunctuation || "keyboard.punctuation" in features) &&
-        (!key.isExtendedShortcut || "keyboard.shortcut-keys" in features)
-
 /** Text without shortcut modifiers remains the IME's responsibility. */
 internal object HardwareKeyMapper {
     data class Chord(val key: SpecialKey, val modifiers: Int)

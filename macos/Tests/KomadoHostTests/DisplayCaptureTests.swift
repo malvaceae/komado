@@ -81,7 +81,7 @@ final class DisplayCaptureTests: XCTestCase {
     }
 
     @MainActor
-    func testWindowResizeStopsCaptureWhenFrameMappingChanges() async throws {
+    func testWindowResizeKeepsCaptureAndUpdatesMapping() async throws {
         guard CGPreflightScreenCaptureAccess() else { throw XCTSkip("Screen capture permission unavailable for test runner") }
         _ = NSApplication.shared
         let window = NSWindow(contentRect: CGRect(x: 40, y: 40, width: 360, height: 260),
@@ -105,20 +105,22 @@ final class DisplayCaptureTests: XCTestCase {
         let source = factory.videoSource(forScreenCast: true)
         let route = MediaSessionGate()
         route.connected()
-        let stopped = expectation(description: "changed mapping stops capture")
+        let stopped = expectation(description: "resizing does not stop capture")
+        stopped.isInverted = true
         let capture = try await DisplayCapture.start(window: capturedWindow, source: source, route: route) { stopped.fulfill() }
         for _ in 0..<50 {
             if capture.frameMapping != nil { break }
             try await Task.sleep(for: .milliseconds(100))
         }
-        XCTAssertNotNil(capture.frameMapping)
+        let originalMapping = try XCTUnwrap(capture.frameMapping)
         var frame = window.frame
         frame.size.width += 60
         frame.size.height += 40
         window.setFrame(frame, display: true)
-        await fulfillment(of: [stopped], timeout: 10)
-        XCTAssertNil(capture.frameMapping)
-        XCTAssertFalse(route.isAllowed)
+        await fulfillment(of: [stopped], timeout: 2)
+        XCTAssertNotNil(capture.frameMapping)
+        XCTAssertNotEqual(capture.frameMapping, originalMapping)
+        XCTAssertTrue(route.isAllowed)
         try await capture.stop()
     }
 }

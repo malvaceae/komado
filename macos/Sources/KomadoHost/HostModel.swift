@@ -226,11 +226,6 @@ final class HostModel: ObservableObject {
             running = true
             server = newServer
             try await newServer.start()
-        } catch SelectionError.tooManyAddresses {
-            running = false
-            ready = false
-            server = nil
-            self.error = "利用可能なアドレスが多すぎるため、待ち受けを開始できませんでした。"
         } catch {
             running = false
             ready = false
@@ -316,13 +311,15 @@ final class HostModel: ObservableObject {
         interfaces = current
         networkReady = true
         guard running else { return }
-        let stillAvailable = bindings.allSatisfy { binding in
+        let available = bindings.filter { binding in
             guard let interface = current.first(where: { $0.index == binding.interface.index }) else { return false }
             return (try? ListenerAccess.addresses(on: interface).contains(binding.address)) == true
         }
-        if !stillAvailable {
+        if available.isEmpty {
             await stop()
             error = "ネットワークが変わったため待ち受けを停止しました。もう一度開始してください。"
+        } else if available.count != bindings.count {
+            await server?.retainListeners(keys: Set(available.map { "\($0.interface.index)|\($0.address)" }))
         }
     }
 
@@ -342,20 +339,12 @@ final class HostModel: ObservableObject {
                 }
             }
         }
-        // Network.framework listeners on this host can conflict on the same
-        // port even when bound to different addresses. Give each route a stable
-        // port and show it alongside the corresponding address.
-        result.sort { left, right in
+        return result.sorted { left, right in
             if left.interface.index != right.interface.index { return left.interface.index < right.interface.index }
             let leftV4: Bool = { if case .ipv4 = left.address { return true }; return false }()
             let rightV4: Bool = { if case .ipv4 = right.address { return true }; return false }()
             if leftV4 != rightV4 { return leftV4 }
             return "\(left.address)" < "\(right.address)"
-        }
-        guard result.count <= 8 else { throw SelectionError.tooManyAddresses }
-        return result.enumerated().map { index, binding in
-            ListenerBinding(scope: binding.scope, interface: binding.interface, address: binding.address,
-                            port: NWEndpoint.Port(rawValue: 48365 + UInt16(index))!)
         }
     }
 
@@ -367,6 +356,15 @@ final class HostModel: ObservableObject {
             let item = endpoint.displayName
             if listening.insert(item).inserted { addresses.append(item); pairingEndpoints.append(endpoint) }
             ready = listening.count == bindings.count
+        case let .listenerUnavailable(interfaceName, address, port):
+            let endpoint = PairingEndpoint(interfaceName: interfaceName, address: address, port: port)
+            listening.remove(endpoint.displayName)
+            addresses.removeAll { $0 == endpoint.displayName }
+            pairingEndpoints.removeAll { $0 == endpoint }
+            bindings.removeAll {
+                $0.interface.name == interfaceName && "\($0.address)".split(separator: "%").first.map(String.init) == address
+            }
+            ready = !listening.isEmpty && listening.count == bindings.count
         case let .authenticated(id, device):
             connectedSession = id
             connectedDevice = device.name
@@ -548,7 +546,7 @@ final class HostModel: ObservableObject {
 
     private func receiveControl(_ input: ControlInput, id: UUID) {
         let confirmedText: KeyboardText?
-        if case let .text(value) = input, value.confirm { confirmedText = value } else { confirmedText = nil }
+        if case let .text(value) = input { confirmedText = value } else { confirmedText = nil }
         guard mediaID == id, mediaTarget?.isControl == true, allowRemoteControl,
               sharingScreen, NSApplication.shared.isProtectedDataAvailable,
               consoleStatus(),
@@ -580,14 +578,14 @@ final class HostModel: ObservableObject {
         }
         let geometry: CaptureGeometry
         if let window = controlWindow {
-            guard let candidate = CaptureGeometry(revision: 1, bounds: window.target.bounds),
-                  let windows = ControlWindowSnapshot.onScreen() else {
+            guard let windows = ControlWindowSnapshot.onScreen() else {
                 if confirmedText != nil || dragDispatcher?.isDragging == true { mediaFailed(id: id) }
                 return
             }
-            guard window.targetIsUnchanged(in: windows) else {
+            guard let current = window.currentTarget(in: windows),
+                  let candidate = CaptureGeometry(revision: 1, bounds: current.bounds) else {
                 mediaFailed(id: id)
-                error = "操作対象のウインドウの状態が変わったため、接続を終了しました。接続し直してください。"
+                error = "操作対象のウインドウを確認できなくなったため、接続を終了しました。"
                 return
             }
             geometry = candidate
@@ -700,5 +698,4 @@ final class HostModel: ObservableObject {
         data.map { String(format: "%02X", $0) }.joined(separator: separator)
     }
 
-    private enum SelectionError: Error { case tooManyAddresses }
 }
