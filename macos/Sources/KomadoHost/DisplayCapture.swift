@@ -6,6 +6,23 @@ import KomadoCore
 import ScreenCaptureKit
 import WebRTC
 
+enum CaptureResolution: String, CaseIterable, Identifiable {
+    case standard, reduced
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .standard: "標準（最大1280 × 720）"
+        case .reduced: "低解像度（最大854 × 480）"
+        }
+    }
+    var maximum: (width: Int, height: Int) {
+        switch self {
+        case .standard: (1280, 720)
+        case .reduced: (854, 480)
+        }
+    }
+}
+
 /// Captures a display into a WebRTC video source. The caller must stop it when
 /// the session ends and handle an unexpected stop by closing that session.
 @MainActor
@@ -22,19 +39,19 @@ final class DisplayCapture {
         self.bridge = bridge
     }
 
-    static func start(display: SCDisplay, source: RTCVideoSource, route: MediaRouteGate,
+    static func start(display: SCDisplay, source: RTCVideoSource, route: MediaRouteGate, resolution: CaptureResolution = .standard,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
-        let size = try dimensions(width: display.width, height: display.height)
+        let size = try dimensions(width: display.width, height: display.height, resolution: resolution)
         return try await start(filter: SCContentFilter(display: display, excludingWindows: []),
                                size: size, source: source, route: route, onStopped: onStopped)
     }
 
-    static func start(window: SCWindow, source: RTCVideoSource, route: MediaRouteGate,
+    static func start(window: SCWindow, source: RTCVideoSource, route: MediaRouteGate, resolution: CaptureResolution = .standard,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         let width = window.frame.width, height = window.frame.height
         guard width.isFinite, height.isFinite, width >= 2, height >= 2,
               width <= Double(Int32.max), height <= Double(Int32.max) else { throw CaptureError.invalidDimensions }
-        let size = try dimensions(width: Int(width.rounded(.up)), height: Int(height.rounded(.up)))
+        let size = try dimensions(width: Int(width.rounded(.up)), height: Int(height.rounded(.up)), resolution: resolution)
         return try await start(filter: SCContentFilter(desktopIndependentWindow: window),
                                size: size, source: source, route: route, onStopped: onStopped)
     }
@@ -73,9 +90,10 @@ final class DisplayCapture {
     }
 
     /// Conservative initial size pending encoder and device-specific testing.
-    static func dimensions(width: Int, height: Int) throws -> (width: Int, height: Int) {
+    static func dimensions(width: Int, height: Int, resolution: CaptureResolution = .standard) throws -> (width: Int, height: Int) {
         guard width >= 2, height >= 2 else { throw CaptureError.invalidDimensions }
-        let scale = min(1, 1280 / Double(width), 720 / Double(height))
+        let maximum = resolution.maximum
+        let scale = min(1, Double(maximum.width) / Double(width), Double(maximum.height) / Double(height))
         return (max(2, Int(Double(width) * scale) / 2 * 2),
                 max(2, Int(Double(height) * scale) / 2 * 2))
     }

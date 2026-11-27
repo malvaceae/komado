@@ -57,6 +57,9 @@ final class HostModel: ObservableObject {
         didSet { if !allowClipboardAutomatic { clipboardTransfer.stopAutomatic() } }
     }
     @Published var vpnAddress = ""
+    @Published var captureResolution: CaptureResolution {
+        didSet { settings.set(captureResolution.rawValue, forKey: Self.captureResolutionKey) }
+    }
     @Published var keepAwakeWhileListening: Bool {
         didSet {
             settings.set(keepAwakeWhileListening, forKey: Self.keepAwakeKey)
@@ -103,6 +106,7 @@ final class HostModel: ObservableObject {
     private var waitingSleepActivity: IdleSleepActivity?
     private static let port: NWEndpoint.Port = 48365
     private static let keepAwakeKey = "keepAwakeWhileListening"
+    private static let captureResolutionKey = "captureResolution"
 
     convenience init() {
         self.init(identityStore: HostTLSIdentityStore(), registry: PairedDeviceRegistry(),
@@ -114,6 +118,7 @@ final class HostModel: ObservableObject {
          clipboardTransfer: ClipboardTransfer = ClipboardTransfer()) {
         self.clipboardTransfer = clipboardTransfer
         self.settings = settings
+        self.captureResolution = settings.string(forKey: Self.captureResolutionKey).flatMap(CaptureResolution.init(rawValue:)) ?? .standard
         self.keepAwakeWhileListening = settings.bool(forKey: Self.keepAwakeKey)
         self.identityStore = identityStore
         self.registry = registry
@@ -447,6 +452,7 @@ final class HostModel: ObservableObject {
                 try await session.applyAnswer(sdp)
                 guard let self, self.mediaID == id, !Task.isCancelled else { return }
                 guard let target = self.mediaTarget else { throw HostMediaSession.SessionError.creationFailed }
+                let resolution = self.captureResolution
                 let onScreenOnly: Bool
                 switch target {
                 case .window, .windowControl: onScreenOnly = false
@@ -488,7 +494,7 @@ final class HostModel: ObservableObject {
                         self.moveDispatcher = PointerMoveDispatcher()
                         self.controllingScreen = true
                     }
-                    captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, onStopped: onStopped)
+                    captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, resolution: resolution, onStopped: onStopped)
                 case let .window(info, processID), let .windowControl(info, processID):
                     guard let window = content.windows.first(where: {
                         WindowCatalog.matches(window: $0, info: info, processID: processID)
@@ -512,7 +518,7 @@ final class HostModel: ObservableObject {
                     self.sharingDisplayName = "\(info.application) — \(info.title)"
                     self.sharingWindow = true
                     self.sharingScreen = true
-                    captured = try await DisplayCapture.start(window: window, source: session.videoSource, route: route, onStopped: onStopped)
+                    captured = try await DisplayCapture.start(window: window, source: session.videoSource, route: route, resolution: resolution, onStopped: onStopped)
                 }
                 guard self.mediaID == id, !Task.isCancelled else { try? await captured.stop(); return }
                 self.capture = captured

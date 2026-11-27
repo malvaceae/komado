@@ -81,6 +81,13 @@ private struct HostView: View {
                     Text("同一LANからの接続を受け付けます。VPNを使う場合は、このMacのVPNアドレスも入力してください。")
                         .foregroundStyle(.secondary)
                     Toggle("待ち受け中の自動スリープを抑制", isOn: $model.keepAwakeWhileListening)
+                    Picker("映像の最大解像度", selection: $model.captureResolution) {
+                        ForEach(CaptureResolution.allCases) { resolution in
+                            Text(resolution.label).tag(resolution)
+                        }
+                    }
+                    Text("次に画面共有を開始するときに適用します。")
+                        .foregroundStyle(.secondary)
                     Toggle("Androidからの操作を許可", isOn: $model.allowRemoteControl)
                     Toggle("クリップボード共有を許可", isOn: $model.allowClipboardSharing)
                         .disabled(!model.allowRemoteControl)

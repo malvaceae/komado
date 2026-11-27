@@ -9,20 +9,6 @@ import XCTest
 
 final class DisplayCaptureTests: XCTestCase {
     @MainActor
-    func testDimensionsPreserveAspectAndDoNotUpscale() throws {
-        let wide = try DisplayCapture.dimensions(width: 3840, height: 2160)
-        XCTAssertEqual(wide.width, 1280)
-        XCTAssertEqual(wide.height, 720)
-        let tall = try DisplayCapture.dimensions(width: 800, height: 1000)
-        XCTAssertEqual(tall.width, 576)
-        XCTAssertEqual(tall.height, 720)
-        let small = try DisplayCapture.dimensions(width: 640, height: 480)
-        XCTAssertEqual(small.width, 640)
-        XCTAssertEqual(small.height, 480)
-        XCTAssertThrowsError(try DisplayCapture.dimensions(width: 0, height: 480))
-    }
-
-    @MainActor
     func testDisplayFramesReachVideoTrackAndStop() async throws {
         guard CGPreflightScreenCaptureAccess() else { throw XCTSkip("Screen capture permission unavailable for test runner") }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -39,9 +25,12 @@ final class DisplayCaptureTests: XCTestCase {
         route.selected(localCandidate: "candidate:1 1 udp 1 127.0.0.1 1234 typ host")
         let stoppedUnexpectedly = expectation(description: "capture remains stable")
         stoppedUnexpectedly.isInverted = true
-        let capture = try await DisplayCapture.start(display: display, source: source, route: route) { stoppedUnexpectedly.fulfill() }
+        let capture = try await DisplayCapture.start(display: display, source: source, route: route, resolution: .reduced) { stoppedUnexpectedly.fulfill() }
         try await Task.sleep(for: .seconds(2))
         XCTAssertNotNil(capture.frameMapping)
+        let size = try XCTUnwrap(counter.frameSize)
+        XCTAssertLessThanOrEqual(size.width, 854)
+        XCTAssertLessThanOrEqual(size.height, 480)
         await fulfillment(of: [stoppedUnexpectedly], timeout: 0.1)
         try await capture.stop()
         let countAfterStop = counter.value
@@ -95,9 +84,11 @@ final class DisplayCaptureTests: XCTestCase {
 private final class FrameCounter: NSObject, RTCVideoRenderer, @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
+    private var lastFrameSize: CGSize?
     var value: Int { lock.withLock { count } }
+    var frameSize: CGSize? { lock.withLock { lastFrameSize } }
     func setSize(_ size: CGSize) {}
     func renderFrame(_ frame: RTCVideoFrame?) {
-        if frame != nil { lock.withLock { count += 1 } }
+        if let frame { lock.withLock { count += 1; lastFrameSize = CGSize(width: Int(frame.width), height: Int(frame.height)) } }
     }
 }

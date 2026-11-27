@@ -25,6 +25,17 @@ final class HostModelTests: XCTestCase {
                               pairing: pairing, authentication: auth, settings: settings)
         XCTAssertFalse(model.allowRemoteControl)
         XCTAssertFalse(model.keepAwakeWhileListening)
+        XCTAssertEqual(model.captureResolution, .standard)
+        model.captureResolution = .reduced
+        XCTAssertEqual(settings.string(forKey: "captureResolution"), "reduced")
+        let restored = HostModel(identityStore: HostTLSIdentityStore(service: service), registry: registry,
+                                 pairing: pairing, authentication: auth, settings: settings)
+        XCTAssertEqual(restored.captureResolution, .reduced)
+        settings.set("invalid", forKey: "captureResolution")
+        let invalid = HostModel(identityStore: HostTLSIdentityStore(service: service), registry: registry,
+                                pairing: pairing, authentication: auth, settings: settings)
+        XCTAssertEqual(invalid.captureResolution, .standard)
+        settings.set("reduced", forKey: "captureResolution")
         model.keepAwakeWhileListening = true
         XCTAssertTrue(settings.bool(forKey: "keepAwakeWhileListening"))
         XCTAssertFalse(try waitingAssertionExists())
