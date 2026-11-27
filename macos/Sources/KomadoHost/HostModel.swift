@@ -576,6 +576,12 @@ final class HostModel: ObservableObject {
             if mediaID == id, confirmedText != nil || dragDispatcher?.isDragging == true { mediaFailed(id: id) }
             return
         }
+        guard accessibilityStatus() else {
+            accessibilityPermission = false
+            mediaFailed(id: id)
+            error = "アクセシビリティの許可が失われたため、接続を終了しました。"
+            return
+        }
         if case let .clipboard(request) = input {
             var delivered = false
             route.withAllowedFrame {
