@@ -101,6 +101,8 @@ class AndroidMediaSessionTest {
         val keyReceived = CompletableFuture<KeyboardKey>()
         val navigationReceived = CompletableFuture<KeyboardKey>()
         val punctuationReceived = CompletableFuture<KeyboardKey>()
+        val extendedReceived = ConcurrentLinkedQueue<KeyboardKey>()
+        val extendedCount = CountDownLatch(2)
         val scrollReceived = CompletableFuture<PointerScroll>()
         val dragsReceived = ConcurrentLinkedQueue<PointerDrag>()
         val dragCount = CountDownLatch(3)
@@ -131,7 +133,9 @@ class AndroidMediaSessionTest {
                         val key = runCatching { KeyboardKeyCodec.decode(bytes) }.getOrNull()
                         if (key != null) {
                             if (key.sequence == 17L) navigationReceived.complete(key)
-                            else if (key.sequence == 18L) punctuationReceived.complete(key) else keyReceived.complete(key)
+                            else if (key.sequence == 18L) punctuationReceived.complete(key)
+                            else if (key.sequence in 19L..20L) { extendedReceived.add(key); extendedCount.countDown() }
+                            else keyReceived.complete(key)
                         }
                         else {
                             val scroll = runCatching { PointerScrollCodec.decode(bytes) }.getOrNull()
@@ -295,6 +299,10 @@ class AndroidMediaSessionTest {
             val comma = KeyboardKey(18, 1, SpecialKey.COMMA, 1)
             instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendKey(comma)) }
             assertEquals(comma, punctuationReceived.get(5, TimeUnit.SECONDS))
+            val extended = listOf(KeyboardKey(19, 1, SpecialKey.SPACE, 4), KeyboardKey(20, 1, SpecialKey.MINUS, 1))
+            instrumentation.runOnMainSync { extended.forEach { assertTrue(requireNotNull(receiver).sendKey(it)) } }
+            assertTrue(extendedCount.await(5, TimeUnit.SECONDS))
+            assertEquals(extended, extendedReceived.toList())
             source.capturerObserver.onCapturerStarted(true)
             for (i in 0 until 50) {
                 val frame = VideoFrame(JavaI420Buffer.allocate(320, 240), 0, System.nanoTime())

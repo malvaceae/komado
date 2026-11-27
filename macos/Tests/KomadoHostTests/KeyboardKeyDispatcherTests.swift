@@ -10,7 +10,11 @@ final class KeyboardKeyDispatcherTests: XCTestCase {
         var events: [CGEvent] = []
         let dispatcher = KeyboardKeyDispatcher(trusted: { true }, post: { events.append($0) })
         let cases: [(KeyboardKey.Key, Int)] = [(.home, kVK_Home), (.end, kVK_End), (.pageup, kVK_PageUp), (.pagedown, kVK_PageDown),
-                                                (.comma, kVK_ANSI_Comma), (.period, kVK_ANSI_Period), (.slash, kVK_ANSI_Slash)]
+                                                (.comma, kVK_ANSI_Comma), (.period, kVK_ANSI_Period), (.slash, kVK_ANSI_Slash),
+                                                (.space, kVK_Space), (.minus, kVK_ANSI_Minus), (.equal, kVK_ANSI_Equal),
+                                                (.leftbracket, kVK_ANSI_LeftBracket), (.rightbracket, kVK_ANSI_RightBracket),
+                                                (.backslash, kVK_ANSI_Backslash), (.semicolon, kVK_ANSI_Semicolon),
+                                                (.apostrophe, kVK_ANSI_Quote), (.grave, kVK_ANSI_Grave)]
         for (index, (key, expected)) in cases.enumerated() {
             XCTAssertTrue(dispatcher.send(KeyboardKey(sequence: UInt64(index + 1), captureRevision: 1, key: key, modifiers: 0),
                                           captureRevision: 1, sessionAllowed: true))

@@ -7,10 +7,17 @@ internal val SpecialKey.isNavigation: Boolean
     get() = this == SpecialKey.HOME || this == SpecialKey.END || this == SpecialKey.PAGEUP || this == SpecialKey.PAGEDOWN
 internal val SpecialKey.isPunctuation: Boolean
     get() = this == SpecialKey.COMMA || this == SpecialKey.PERIOD || this == SpecialKey.SLASH
+internal val SpecialKey.isExtendedShortcut: Boolean
+    get() = when (this) {
+        SpecialKey.SPACE, SpecialKey.MINUS, SpecialKey.EQUAL, SpecialKey.LEFTBRACKET, SpecialKey.RIGHTBRACKET,
+        SpecialKey.BACKSLASH, SpecialKey.SEMICOLON, SpecialKey.APOSTROPHE, SpecialKey.GRAVE -> true
+        else -> false
+    }
 
 internal fun supportsSpecialKey(key: SpecialKey, features: Set<String>): Boolean =
     "keyboard.key" in features && (!key.isNavigation || "keyboard.navigation" in features) &&
-        (!key.isPunctuation || "keyboard.punctuation" in features)
+        (!key.isPunctuation || "keyboard.punctuation" in features) &&
+        (!key.isExtendedShortcut || "keyboard.shortcut-keys" in features)
 
 /** Text without shortcut modifiers remains the IME's responsibility. */
 internal object HardwareKeyMapper {
@@ -39,6 +46,22 @@ internal object HardwareKeyMapper {
                     KeyEvent.KEYCODE_COMMA -> SpecialKey.COMMA
                     KeyEvent.KEYCODE_PERIOD -> SpecialKey.PERIOD
                     else -> SpecialKey.SLASH
+                }
+            }
+            KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_MINUS, KeyEvent.KEYCODE_EQUALS, KeyEvent.KEYCODE_LEFT_BRACKET,
+            KeyEvent.KEYCODE_RIGHT_BRACKET, KeyEvent.KEYCODE_BACKSLASH, KeyEvent.KEYCODE_SEMICOLON,
+            KeyEvent.KEYCODE_APOSTROPHE, KeyEvent.KEYCODE_GRAVE -> {
+                if (modifiers and 7 == 0) return null
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_SPACE -> SpecialKey.SPACE
+                    KeyEvent.KEYCODE_MINUS -> SpecialKey.MINUS
+                    KeyEvent.KEYCODE_EQUALS -> SpecialKey.EQUAL
+                    KeyEvent.KEYCODE_LEFT_BRACKET -> SpecialKey.LEFTBRACKET
+                    KeyEvent.KEYCODE_RIGHT_BRACKET -> SpecialKey.RIGHTBRACKET
+                    KeyEvent.KEYCODE_BACKSLASH -> SpecialKey.BACKSLASH
+                    KeyEvent.KEYCODE_SEMICOLON -> SpecialKey.SEMICOLON
+                    KeyEvent.KEYCODE_APOSTROPHE -> SpecialKey.APOSTROPHE
+                    else -> SpecialKey.GRAVE
                 }
             }
             in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 -> SpecialKey.valueOf("F${event.keyCode - KeyEvent.KEYCODE_F1 + 1}")

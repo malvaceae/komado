@@ -38,6 +38,17 @@ class HardwareKeyMapperTest {
         assertFalse(supportsSpecialKey(SpecialKey.COMMA, setOf("keyboard.key", "keyboard.navigation")))
         assertFalse(supportsSpecialKey(SpecialKey.COMMA, setOf("keyboard.punctuation")))
         assertTrue(supportsSpecialKey(SpecialKey.COMMA, setOf("keyboard.key", "keyboard.punctuation")))
+        val extended = listOf(KeyEvent.KEYCODE_SPACE to SpecialKey.SPACE, KeyEvent.KEYCODE_MINUS to SpecialKey.MINUS,
+            KeyEvent.KEYCODE_EQUALS to SpecialKey.EQUAL, KeyEvent.KEYCODE_LEFT_BRACKET to SpecialKey.LEFTBRACKET,
+            KeyEvent.KEYCODE_RIGHT_BRACKET to SpecialKey.RIGHTBRACKET, KeyEvent.KEYCODE_BACKSLASH to SpecialKey.BACKSLASH,
+            KeyEvent.KEYCODE_SEMICOLON to SpecialKey.SEMICOLON, KeyEvent.KEYCODE_APOSTROPHE to SpecialKey.APOSTROPHE,
+            KeyEvent.KEYCODE_GRAVE to SpecialKey.GRAVE)
+        extended.forEach { (code, key) ->
+            assertNull(HardwareKeyMapper.map(event(code)))
+            assertEquals(HardwareKeyMapper.Chord(key, 4), HardwareKeyMapper.map(event(code, KeyEvent.META_CTRL_ON)))
+            assertFalse(supportsSpecialKey(key, setOf("keyboard.key", "keyboard.punctuation")))
+            assertTrue(supportsSpecialKey(key, setOf("keyboard.key", "keyboard.shortcut-keys")))
+        }
     }
 
     @Test fun physicalKeysAreSentOnceAndCompositionStaysLocal() {

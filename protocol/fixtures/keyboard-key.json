@@ -11,7 +11,16 @@
     "[\"1\",\"keyboard.key\",\"8\",\"1\",\"pagedown\",\"0\"]",
     "[\"1\",\"keyboard.key\",\"9\",\"1\",\"comma\",\"1\"]",
     "[\"1\",\"keyboard.key\",\"10\",\"1\",\"period\",\"1\"]",
-    "[\"1\",\"keyboard.key\",\"11\",\"1\",\"slash\",\"1\"]"
+    "[\"1\",\"keyboard.key\",\"11\",\"1\",\"slash\",\"1\"]",
+    "[\"1\",\"keyboard.key\",\"12\",\"1\",\"space\",\"4\"]",
+    "[\"1\",\"keyboard.key\",\"13\",\"1\",\"minus\",\"4\"]",
+    "[\"1\",\"keyboard.key\",\"14\",\"1\",\"equal\",\"4\"]",
+    "[\"1\",\"keyboard.key\",\"15\",\"1\",\"leftbracket\",\"4\"]",
+    "[\"1\",\"keyboard.key\",\"16\",\"1\",\"rightbracket\",\"4\"]",
+    "[\"1\",\"keyboard.key\",\"17\",\"1\",\"backslash\",\"4\"]",
+    "[\"1\",\"keyboard.key\",\"18\",\"1\",\"semicolon\",\"4\"]",
+    "[\"1\",\"keyboard.key\",\"19\",\"1\",\"apostrophe\",\"4\"]",
+    "[\"1\",\"keyboard.key\",\"20\",\"1\",\"grave\",\"4\"]"
   ],
   "invalid": [
     "[\"1\",\"keyboard.key\",\"0\",\"1\",\"tab\",\"0\"]",

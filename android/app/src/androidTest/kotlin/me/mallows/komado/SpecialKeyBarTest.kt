@@ -41,6 +41,13 @@ class SpecialKeyBarTest {
                 assertEquals(SpecialKey.COMMA to 4, sent.last())
             }
             scenario.onActivity {
+                bar.setAvailable(true, punctuation = true, extended = true)
+                val extended = bar.showShortcutKeys()!!.listView
+                assertEquals(48, extended.adapter.count)
+                assertTrue(extended.performItemClick(extended.adapter.getView(39, null, extended), 39, extended.adapter.getItemId(39)))
+                assertEquals(SpecialKey.SPACE to 4, sent.last())
+            }
+            scenario.onActivity {
                 val second = bar.showShortcutKeys()!!
                 bar.setAvailable(false)
                 assertFalse(second.isShowing)

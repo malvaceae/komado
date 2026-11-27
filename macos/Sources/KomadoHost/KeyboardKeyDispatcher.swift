@@ -59,6 +59,15 @@ final class KeyboardKeyDispatcher {
         case .comma: kVK_ANSI_Comma
         case .period: kVK_ANSI_Period
         case .slash: kVK_ANSI_Slash
+        case .space: kVK_Space
+        case .minus: kVK_ANSI_Minus
+        case .equal: kVK_ANSI_Equal
+        case .leftbracket: kVK_ANSI_LeftBracket
+        case .rightbracket: kVK_ANSI_RightBracket
+        case .backslash: kVK_ANSI_Backslash
+        case .semicolon: kVK_ANSI_Semicolon
+        case .apostrophe: kVK_ANSI_Quote
+        case .grave: kVK_ANSI_Grave
         case .a: kVK_ANSI_A
         case .b: kVK_ANSI_B
         case .c: kVK_ANSI_C
