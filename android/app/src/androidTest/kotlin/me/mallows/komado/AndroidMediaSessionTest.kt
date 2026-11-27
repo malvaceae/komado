@@ -14,6 +14,8 @@ import me.mallows.komado.protocol.PointerScroll
 import me.mallows.komado.protocol.PointerScrollCodec
 import me.mallows.komado.protocol.PointerDrag
 import me.mallows.komado.protocol.PointerDragCodec
+import me.mallows.komado.protocol.PointerMove
+import me.mallows.komado.protocol.PointerMoveCodec
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -93,6 +95,7 @@ class AndroidMediaSessionTest {
         val scrollReceived = CompletableFuture<PointerScroll>()
         val dragsReceived = ConcurrentLinkedQueue<PointerDrag>()
         val dragCount = CountDownLatch(3)
+        val moveReceived = CompletableFuture<PointerMove>()
         channel.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) = Unit
             override fun onStateChange() = Unit
@@ -110,8 +113,12 @@ class AndroidMediaSessionTest {
                         else {
                             val scroll = runCatching { PointerScrollCodec.decode(bytes) }.getOrNull()
                             if (scroll != null) scrollReceived.complete(scroll)
-                            else runCatching { PointerDragCodec.decode(bytes) }.onSuccess { dragsReceived.add(it); dragCount.countDown() }
-                                .onFailure { scrollReceived.completeExceptionally(it) }
+                            else {
+                                val drag = runCatching { PointerDragCodec.decode(bytes) }.getOrNull()
+                                if (drag != null) { dragsReceived.add(drag); dragCount.countDown() }
+                                else runCatching { PointerMoveCodec.decode(bytes) }.onSuccess { moveReceived.complete(it) }
+                                    .onFailure { moveReceived.completeExceptionally(it) }
+                            }
                         }
                     }
                 }
@@ -171,6 +178,7 @@ class AndroidMediaSessionTest {
             val drags = listOf(PointerDrag(5, 1, 500_000, 500_000, PointerDrag.Phase.BEGIN),
                 PointerDrag(6, 1, 600_000, 500_000, PointerDrag.Phase.MOVE),
                 PointerDrag(7, 1, 600_000, 500_000, PointerDrag.Phase.END))
+            val move = PointerMove(8, 1, 400_000, 300_000)
             instrumentation.runOnMainSync {
                 val current = requireNotNull(receiver)
                 assertTrue(!current.sendClick(click.copy(captureRevision = 2)))
@@ -186,6 +194,8 @@ class AndroidMediaSessionTest {
                 assertTrue(!current.sendScroll(scroll))
                 drags.forEach { assertTrue(current.sendDrag(it)) }
                 assertTrue(!current.sendDrag(drags.last()))
+                assertTrue(current.sendMove(move))
+                assertTrue(!current.sendMove(move))
             }
             assertTrue(clickReceived.get(5, TimeUnit.SECONDS) == click)
             assertTrue(textReceived.get(5, TimeUnit.SECONDS) == text)
@@ -193,6 +203,7 @@ class AndroidMediaSessionTest {
             assertTrue(scrollReceived.get(5, TimeUnit.SECONDS) == scroll)
             assertTrue(dragCount.await(5, TimeUnit.SECONDS))
             assertTrue(dragsReceived.toList() == drags)
+            assertTrue(moveReceived.get(5, TimeUnit.SECONDS) == move)
             source.capturerObserver.onCapturerStarted(true)
             for (i in 0 until 50) {
                 val frame = VideoFrame(JavaI420Buffer.allocate(320, 240), 0, System.nanoTime())

@@ -2,6 +2,7 @@ package me.mallows.komado
 
 import android.content.Context
 import android.view.KeyEvent
+import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.ViewConfiguration
@@ -44,6 +45,14 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     var onVideoDoubleTap: ((Float, Float) -> Unit)? = null
     var onVideoScroll: ((Float, Float, Float, Float) -> Unit)? = null
     var onVideoDrag: ((PointerDrag.Phase, Float, Float) -> Boolean)? = null
+    var onVideoHover: ((Float, Float) -> Unit)? = null
+    private var hoverScheduled = false
+    private var hoverX = 0f
+    private var hoverY = 0f
+    private val sendHover = Runnable {
+        hoverScheduled = false
+        onVideoHover?.invoke(hoverX, hoverY)
+    }
     private val detector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             if (twoFingerMode == TwoFingerMode.PINCH) {
@@ -221,6 +230,28 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     override fun performClick(): Boolean {
         super.performClick()
         return true
+    }
+
+    override fun onHoverEvent(event: MotionEvent): Boolean {
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE) && onVideoHover != null) {
+            if (event.actionMasked == MotionEvent.ACTION_HOVER_MOVE) {
+                hoverX = event.x; hoverY = event.y
+                if (!hoverScheduled) { hoverScheduled = true; postOnAnimation(sendHover) }
+                return true
+            }
+            if (event.actionMasked == MotionEvent.ACTION_HOVER_EXIT) {
+                removeCallbacks(sendHover)
+                hoverScheduled = false
+            }
+        }
+        return super.onHoverEvent(event)
+    }
+
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(sendHover)
+        hoverScheduled = false
+        super.onDetachedFromWindow()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {

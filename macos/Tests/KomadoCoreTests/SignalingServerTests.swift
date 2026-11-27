@@ -194,7 +194,7 @@ final class SignalingServerTests: XCTestCase {
         await fulfillment(of: [firstAuthenticated], timeout: 10)
         try await first.send(.listFeatures)
         let features = try await first.receive()
-        XCTAssertEqual(features, .features(["pointer.click", "pointer.double", "pointer.drag", "pointer.scroll", "keyboard.text", "keyboard.key"]))
+        XCTAssertEqual(features, .features(["pointer.click", "pointer.double", "pointer.drag", "pointer.scroll", "pointer.move", "keyboard.text", "keyboard.key"]))
         try await first.send(.listDisplays)
         guard case let .displays(displays) = try await first.receive(), let display = displays.first else {
             return XCTFail("Expected a nonempty display list")

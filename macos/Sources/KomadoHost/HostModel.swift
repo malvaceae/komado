@@ -86,6 +86,7 @@ final class HostModel: ObservableObject {
     private var keyDispatcher: KeyboardKeyDispatcher?
     private var scrollDispatcher: PointerScrollDispatcher?
     private var dragDispatcher: PointerDragDispatcher?
+    private var moveDispatcher: PointerMoveDispatcher?
     private var lastExecutedControlSequence: UInt64 = 0
     private var sleepActivity: IdleSleepActivity?
     private var waitingSleepActivity: IdleSleepActivity?
@@ -465,6 +466,7 @@ final class HostModel: ObservableObject {
                         self.keyDispatcher = KeyboardKeyDispatcher()
                         self.scrollDispatcher = PointerScrollDispatcher()
                         self.dragDispatcher = PointerDragDispatcher()
+                        self.moveDispatcher = PointerMoveDispatcher()
                         self.controllingScreen = true
                     }
                     captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, onStopped: onStopped)
@@ -512,7 +514,7 @@ final class HostModel: ObservableObject {
         }
         switch input {
         case .text, .key: guard FocusedWindow.isOnDisplay(bounds) else { return }
-        case .click, .scroll, .drag: break
+        case .click, .scroll, .drag, .move: break
         }
         var invalidDrag = false
         var executed = false
@@ -525,6 +527,7 @@ final class HostModel: ObservableObject {
             case let .key(key): _ = keyDispatcher?.send(key, captureRevision: geometry.revision, sessionAllowed: true)
             case let .scroll(scroll): _ = scrollDispatcher?.send(scroll, geometry: geometry, mapping: mapping, sessionAllowed: true)
             case let .drag(drag): invalidDrag = dragDispatcher?.send(drag, geometry: geometry, mapping: mapping, sessionAllowed: true) != true
+            case let .move(move): _ = moveDispatcher?.send(move, geometry: geometry, mapping: mapping, sessionAllowed: true)
             }
         }
         if invalidDrag || (!executed && dragDispatcher?.isDragging == true) { mediaFailed(id: id) }
@@ -541,11 +544,13 @@ final class HostModel: ObservableObject {
         keyDispatcher?.close()
         scrollDispatcher?.close()
         dragDispatcher?.close()
+        moveDispatcher?.close()
         pointerDispatcher = nil
         textDispatcher = nil
         keyDispatcher = nil
         scrollDispatcher = nil
         dragDispatcher = nil
+        moveDispatcher = nil
         lastExecutedControlSequence = 0
         controlDisplayID = nil
         controlBounds = nil

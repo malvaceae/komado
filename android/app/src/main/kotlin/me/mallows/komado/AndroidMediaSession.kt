@@ -56,6 +56,8 @@ internal class AndroidMediaSession(
     private var lastSentSequence = 0L
     private var channel: DataChannel? = null
     private val timeout = Runnable { fail() }
+    private var pendingMove: me.mallows.komado.protocol.PointerMove? = null
+    private val retryMove = Runnable { flushMove() }
 
     init {
         checkMainThread()
@@ -157,6 +159,35 @@ internal class AndroidMediaSession(
         return sendInput(drag.sequence, drag.captureRevision) { me.mallows.komado.protocol.PointerDragCodec.encode(drag) }
     }
 
+    /** Coalesce hover updates while the reliable channel is congested. */
+    fun sendMove(move: me.mallows.komado.protocol.PointerMove): Boolean {
+        checkMainThread()
+        if (state != State.ANSWER_READY || captureRevision != move.captureRevision || move.sequence <= lastSentSequence ||
+            (pendingMove != null && move.sequence <= pendingMove!!.sequence) || !selectedRouteAllowed) return false
+        val current = channel ?: return false
+        if (current.state() != DataChannel.State.OPEN || runCatching { me.mallows.komado.protocol.PointerMoveCodec.encode(move) }.isFailure) return false
+        if (current.bufferedAmount() >= 65_536) {
+            if (pendingMove == null || move.sequence > pendingMove!!.sequence) pendingMove = move
+            handler.removeCallbacks(retryMove)
+            handler.postDelayed(retryMove, 50)
+            return true
+        }
+        pendingMove = null
+        handler.removeCallbacks(retryMove)
+        return sendInput(move.sequence, move.captureRevision) { me.mallows.komado.protocol.PointerMoveCodec.encode(move) }
+    }
+
+    private fun flushMove() {
+        val move = pendingMove ?: return
+        if (move.sequence <= lastSentSequence) { pendingMove = null; return }
+        val current = channel
+        if (state != State.ANSWER_READY || captureRevision != move.captureRevision || !selectedRouteAllowed ||
+            current == null || current.state() != DataChannel.State.OPEN) { pendingMove = null; fail(); return }
+        if (current.bufferedAmount() >= 65_536) { handler.postDelayed(retryMove, 50); return }
+        pendingMove = null
+        if (!sendInput(move.sequence, move.captureRevision) { me.mallows.komado.protocol.PointerMoveCodec.encode(move) }) fail()
+    }
+
     private fun sendInput(sequence: Long, revision: Long, encode: () -> ByteArray): Boolean {
         checkMainThread()
         if (state != State.ANSWER_READY || captureRevision != revision || sequence <= lastSentSequence || !selectedRouteAllowed) return false
@@ -177,6 +208,8 @@ internal class AndroidMediaSession(
         if (state == State.CLOSED) return
         state = State.CLOSED
         handler.removeCallbacks(timeout)
+        handler.removeCallbacks(retryMove)
+        pendingMove = null
         try {
             if (trackShown) listener.onVideo(null)
         } finally {

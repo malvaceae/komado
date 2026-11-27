@@ -47,6 +47,7 @@
     <string name="control_long_press">長押しで右クリック</string>
     <string name="control_drag">長押し後の移動でドラッグ</string>
     <string name="control_scroll">2本指の移動でスクロール</string>
+    <string name="control_hover">マウスの移動でカーソルを移動</string>
     <string name="control_zoom">ピンチで拡大・縮小</string>
     <string name="features_failed">Macの機能情報を取得できませんでした。Macのアプリと接続状態を確認してください。</string>
     <string name="features_unsupported">このMacは画面の操作に対応していません。</string>

@@ -2,6 +2,7 @@ package me.mallows.komado
 
 import android.os.SystemClock
 import android.view.MotionEvent
+import android.view.InputDevice
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
@@ -17,6 +18,44 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ZoomableVideoViewTest {
+    @Test fun mouseHoverCoalescesAndCancelsWhenLeaving() {
+        var renderer: RemoteVideoRenderer? = null
+        var viewport: ZoomableVideoView? = null
+        val positions = mutableListOf<Pair<Float, Float>>()
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    renderer = RemoteVideoRenderer(activity)
+                    viewport = ZoomableVideoView(activity, renderer!!.view).apply { onVideoHover = { x, y -> positions.add(x to y) } }
+                    val root = FrameLayout(activity)
+                    root.addView(viewport, FrameLayout.LayoutParams(800, 800))
+                    activity.setContentView(root)
+                }
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                scenario.onActivity {
+                    val view = requireNotNull(viewport)
+                    val time = SystemClock.uptimeMillis()
+                    val first = MotionEvent.obtain(time, time, MotionEvent.ACTION_HOVER_MOVE, 100f, 100f, 0).apply { source = InputDevice.SOURCE_MOUSE }
+                    val second = MotionEvent.obtain(time, time + 1, MotionEvent.ACTION_HOVER_MOVE, 200f, 300f, 0).apply { source = InputDevice.SOURCE_MOUSE }
+                    try { assertTrue(view.onHoverEvent(first)); assertTrue(view.onHoverEvent(second)) }
+                    finally { first.recycle(); second.recycle() }
+                }
+                Thread.sleep(150)
+                scenario.onActivity {
+                    assertEquals(listOf(200f to 300f), positions)
+                    val view = requireNotNull(viewport)
+                    val time = SystemClock.uptimeMillis()
+                    val move = MotionEvent.obtain(time, time, MotionEvent.ACTION_HOVER_MOVE, 300f, 400f, 0).apply { source = InputDevice.SOURCE_MOUSE }
+                    val exit = MotionEvent.obtain(time, time + 1, MotionEvent.ACTION_HOVER_EXIT, 300f, 400f, 0).apply { source = InputDevice.SOURCE_MOUSE }
+                    try { view.onHoverEvent(move); view.onHoverEvent(exit) }
+                    finally { move.recycle(); exit.recycle() }
+                }
+                Thread.sleep(150)
+                scenario.onActivity { assertEquals(1, positions.size); renderer!!.close(); renderer = null }
+            }
+        } finally { renderer?.let { InstrumentationRegistry.getInstrumentation().runOnMainSync { it.close() } } }
+    }
+
     @Test fun longPressMoveDragsAndCancelReleases() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

@@ -16,6 +16,7 @@ import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerScroll
 import me.mallows.komado.protocol.PointerDrag
+import me.mallows.komado.protocol.PointerMove
 import me.mallows.komado.security.DeviceSigningKey
 import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
@@ -273,8 +274,18 @@ class VideoActivity : Activity() {
         descriptions.add(getString(R.string.control_long_press))
         if ("pointer.drag" in supportedFeatures) descriptions.add(getString(R.string.control_drag))
         if ("pointer.scroll" in supportedFeatures) descriptions.add(getString(R.string.control_scroll))
+        if ("pointer.move" in supportedFeatures) descriptions.add(getString(R.string.control_hover))
         descriptions.add(getString(R.string.control_zoom))
         viewport?.contentDescription = descriptions.joinToString("。", postfix = "。")
+        viewport?.onVideoHover = if ("pointer.move" !in supportedFeatures) null else { x, y ->
+            if (active && firstFrameShown) {
+                val location = viewport?.mapTap(x, y, captureRevision, tapMapper)
+                if (location != null) {
+                    val move = PointerMove(location.sequence, location.captureRevision, location.x, location.y)
+                    if (media?.sendMove(move) != true) stopSession(failed = true)
+                }
+            }
+        }
         viewport?.onVideoDrag = if ("pointer.drag" !in supportedFeatures) null else { phase, x, y ->
             if (!active || !firstFrameShown) false else {
                 val location = viewport?.mapTap(x, y, captureRevision, tapMapper)
@@ -311,6 +322,7 @@ class VideoActivity : Activity() {
         media = null
         captureRevision = null
         supportedFeatures = emptySet()
+        viewport?.onVideoHover = null
         keyboardButton?.isEnabled = false
         specialKeys?.setAvailable(false)
         keyboard?.close()

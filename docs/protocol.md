@@ -42,6 +42,12 @@ Androidのメイン画面操作モードでは、映像へのタップを左ク�
 
 Androidでは二本指の移動と間隔の変化を判定し、移動をスクロール、間隔の変化をピンチ拡大に割り当てます。感度、スクロール方向、送信位置に対する対象アプリの動作は実機で未検証です。機能一覧に`pointer.scroll`がある場合だけ送信します。
 
+## ポインター移動（初期実装）
+
+`control`チャネルで`["1","pointer.move",連番,キャプチャリビジョン,X,Y]`を送ります。座標、連番とリビジョンはクリックと共通で、Macは対象領域とセッション状態を確認してマウス移動イベントを生成します。[スキーマ](../protocol/schemas/pointer-move-v1.schema.json)と[共通テストデータ](../protocol/fixtures/pointer-move.json)を両OSで使います。
+
+Androidではマウスのホバー位置を画面更新単位でまとめます。Reliable / Orderedの制御チャネルが混雑した場合は最新の移動のみ保持し、送信可能になれば送ります。別の操作が先に送信されて古くなった移動は破棄します。現段階では独立したUnreliableチャネルは未実装です。機能一覧に`pointer.move`がある場合だけ送信します。マウス実機やMacのOSへの配送は未検証です。
+
 ## ドラッグ（初期実装）
 
 `control`チャネルで`["1","pointer.drag",連番,キャプチャリビジョン,X,Y,段階]`を送ります。座標、連番とリビジョンはクリックと共通で、段階は`begin`、`move`、`end`です。[スキーマ](../protocol/schemas/pointer-drag-v1.schema.json)と[共通テストデータ](../protocol/fixtures/pointer-drag.json)を両OSで使います。
@@ -78,7 +84,7 @@ OfferとAnswerは認証済みTLS接続で交換します。SDPのDTLSフィン�
 
 `["1","control.start"]`は認証後のメイン画面の操作要求です。Macで操作許可とAccessibility権限が必要で、従来の`start`は表示のみです。操作開始時はMacで許可を表示し、操作セッション終了時に許可を解除します。
 
-認証済みのアイドル状態で`["1","features.list"]`を1回送ると、Macは`["1","features.listed",機能名...]`を返します。機能名は重複なしの英小文字・数字・`.`・`-`からなる48文字以下の名前で、最大32件です。現在は`pointer.click`、`pointer.double`、`pointer.drag`、`pointer.scroll`、`keyboard.text`、`keyboard.key`を通知します。Androidは操作開始前に一覧を取得し、`pointer.click`がなければ開始せず、一覧にない操作は送信しません。未知の機能名は無視します。新Androidから一覧非対応の旧Macへの操作接続は失敗し、従来の画面表示は利用できます。機能一覧は認証やMacの操作許可の代わりにはなりません。詳細は[ADR 0008](decisions/0008-feature-negotiation.md)を参照してください。
+認証済みのアイドル状態で`["1","features.list"]`を1回送ると、Macは`["1","features.listed",機能名...]`を返します。機能名は重複なしの英小文字・数字・`.`・`-`からなる48文字以下の名前で、最大32件です。現在は`pointer.click`、`pointer.double`、`pointer.drag`、`pointer.scroll`、`pointer.move`、`keyboard.text`、`keyboard.key`を通知します。Androidは操作開始前に一覧を取得し、`pointer.click`がなければ開始せず、一覧にない操作は送信しません。未知の機能名は無視します。新Androidから一覧非対応の旧Macへの操作接続は失敗し、従来の画面表示は利用できます。機能一覧は認証やMacの操作許可の代わりにはなりません。詳細は[ADR 0008](decisions/0008-feature-negotiation.md)を参照してください。
 
 ローカルで生成したSDPについて、シグナリング接続のローカルIPアドレスに一致するhost候補だけを残し、`c=`の接続アドレスも同じ値に揃えてから送信します。候補が残らない場合や不正な候補・行形式は送信を拒否します。製品のメディアセッションに接続し、実際に生成されたSDPを両OSの処理で絞って相互接続を確認しました。これは通知する候補の制限であり、WebRTC内部のソケットや実際の経路を固定するものではありません。
 
