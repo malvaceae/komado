@@ -152,6 +152,7 @@ class VideoActivity : Activity() {
             }
             root.addView(viewport, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         } catch (_: Exception) { active = false; status.setText(R.string.screen_failed) }
+        val controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val zoomControls = LinearLayout(this)
         listOf(R.string.zoom_out to { viewport?.zoomBy(1.0 / 1.5) },
             R.string.zoom_in to { viewport?.zoomBy(1.5) }, R.string.zoom_reset to { viewport?.resetZoom() }).forEach { (label, action) ->
@@ -159,7 +160,7 @@ class VideoActivity : Activity() {
             zoomButtons.add(button)
             zoomControls.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        root.addView(zoomControls)
+        controls.addView(zoomControls)
         if (controlMode) {
             trackpadButton = Button(this).apply {
                 setText(R.string.enable_trackpad)
@@ -180,7 +181,7 @@ class VideoActivity : Activity() {
             val trackpadControls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             trackpadControls.addView(trackpadButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             trackpadControls.addView(trackpadSettingsButton)
-            root.addView(trackpadControls)
+            controls.addView(trackpadControls)
             clipboardSendButton = Button(this).apply {
                 setText(R.string.clipboard_send); isEnabled = false; setOnClickListener { requestClipboard(get = false) }
             }
@@ -190,7 +191,7 @@ class VideoActivity : Activity() {
             val clipboardControls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             clipboardControls.addView(clipboardSendButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             clipboardControls.addView(clipboardReceiveButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            root.addView(clipboardControls)
+            controls.addView(clipboardControls)
             automaticSwitch = CheckBox(this).apply {
                 setText(R.string.clipboard_automatic)
                 isEnabled = false
@@ -199,8 +200,8 @@ class VideoActivity : Activity() {
                     if (checked) beginAutomaticClipboard() else suspendAutomaticClipboard()
                 }
             }
-            root.addView(automaticSwitch)
-            root.addView(TextView(this).apply { setText(R.string.special_keys_hint); setPadding(dp(8), 0, dp(8), 0) })
+            controls.addView(automaticSwitch)
+            controls.addView(TextView(this).apply { setText(R.string.special_keys_hint); setPadding(dp(8), 0, dp(8), 0) })
             specialKeys = SpecialKeyBar(this) { key, modifiers ->
                 val revision = captureRevision
                 val sequence = if (active && firstFrameShown && revision != null) controlSequence.next() else null
@@ -208,7 +209,7 @@ class VideoActivity : Activity() {
                 if (!sent && active) stopSession(failed = true)
                 sent
             }
-            root.addView(specialKeys)
+            controls.addView(specialKeys)
             keyboard = RemoteKeyboardView(this, sendKey = { key, modifiers ->
                 val revision = captureRevision
                 val sequence = if (active && "keyboard.key" in supportedFeatures && firstFrameShown && revision != null) controlSequence.next() else null
@@ -217,15 +218,16 @@ class VideoActivity : Activity() {
                 val message = if (active && "keyboard.text" in supportedFeatures && firstFrameShown) textMapper.message(text, captureRevision) else null
                 message != null && media?.sendText(message) == true
             })
-            root.addView(keyboard, LinearLayout.LayoutParams(1, 1))
+            controls.addView(keyboard, LinearLayout.LayoutParams(1, 1))
             keyboardButton = Button(this).apply {
                 setText(R.string.show_keyboard)
                 isEnabled = false
                 setOnClickListener { keyboard?.showKeyboard() }
             }
-            root.addView(keyboardButton)
+            controls.addView(keyboardButton)
         }
-        root.addView(Button(this).apply { setText(R.string.close_screen); setOnClickListener { finish() } })
+        controls.addView(Button(this).apply { setText(R.string.close_screen); setOnClickListener { finish() } })
+        root.addView(VideoControlsScrollView(this).apply { addView(controls) })
         setContentView(root)
         if (host == null || pairing == null || !active) {
             stopSession(failed = true)
