@@ -60,7 +60,7 @@ class VideoActivity : Activity() {
     private var clipboardReceiveButton: Button? = null
     private enum class ClipboardAction { GET, PREPARE_SEND, SEND }
     private var clipboardAction: ClipboardAction? = null
-    private var clipboardChangedDuringRequest = false
+    private var clipboardChangeGuard: ClipboardChangeGuard? = null
     private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
@@ -346,12 +346,16 @@ class VideoActivity : Activity() {
         val revision = captureRevision ?: return
         val sequence = controlSequence.next() ?: run { showClipboardMessage(R.string.clipboard_unavailable); return }
         val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboardChangedDuringRequest = false
-        val listener = ClipboardManager.OnPrimaryClipChangedListener { clipboardChangedDuringRequest = true }
+        val guard = ClipboardChangeGuard(runCatching { manager.primaryClipDescription?.timestamp }.getOrNull())
+        val listener = ClipboardManager.OnPrimaryClipChangedListener {
+            guard.onNotification(runCatching { manager.primaryClipDescription?.timestamp }.getOrNull())
+        }
         if (runCatching { manager.addPrimaryClipChangedListener(listener) }.isFailure) {
             showClipboardMessage(R.string.clipboard_unavailable); return
         }
+        clipboardChangeGuard = guard
         clipboardListener = listener
+        guard.afterRegistration(runCatching { manager.primaryClipDescription?.timestamp }.getOrNull())
         val operation = if (get) ClipboardOperation.Get else ClipboardOperation.Prepare
         if (media?.sendClipboard(ClipboardRequest(sequence, revision, operation)) != true) {
             removeClipboardListener(); showClipboardMessage(R.string.clipboard_unavailable); return
@@ -363,7 +367,7 @@ class VideoActivity : Activity() {
     private fun handleClipboardResponse(response: ClipboardResponse) {
         val action = clipboardAction ?: return
         clipboardAction = null
-        val changed = clipboardChangedDuringRequest
+        val changed = clipboardChangeGuard?.changed != false
         if (action == ClipboardAction.PREPARE_SEND && response.result == ClipboardResult.Ready) {
             val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             val text = if (active && hasWindowFocus() && !changed) ClipboardContent.text(runCatching { manager.primaryClip }.getOrNull()) else null
@@ -402,6 +406,7 @@ class VideoActivity : Activity() {
     private fun removeClipboardListener() {
         val listener = clipboardListener ?: return
         clipboardListener = null
+        clipboardChangeGuard = null
         val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         runCatching { manager.removePrimaryClipChangedListener(listener) }
     }
