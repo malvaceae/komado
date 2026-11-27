@@ -18,6 +18,8 @@ actor SignalingSession {
     private var ready = false
     private var device: PairedDevice?
     private var mediaState: MediaState = .idle
+    private var featuresRequested = false
+    private static let controlFeatures = ["pointer.click", "pointer.double", "pointer.drag", "pointer.scroll", "keyboard.text", "keyboard.key"]
     private var displaySnapshot: [DisplayInfo]?
     private var windowSnapshot: [WindowSelection]?
     private var nextWindowOffset: UInt16? = 0
@@ -109,6 +111,14 @@ actor SignalingSession {
                 }
                 let message = try SignalMessage.decode(frame)
                 if let device {
+                    if message == .listFeatures && mediaState == .idle && !featuresRequested {
+                        featuresRequested = true
+                        let response = try SignalFrame.encode(SignalMessage.features(Self.controlFeatures).encode())
+                        connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                            Task { await self?.sentCatalog(error: error) }
+                        })
+                        return
+                    }
                     if message == .listDisplays && mediaState == .idle && displaySnapshot == nil {
                         let displays = try DisplayCatalog.active()
                         let response = try SignalFrame.encode(SignalMessage.displays(displays).encode())

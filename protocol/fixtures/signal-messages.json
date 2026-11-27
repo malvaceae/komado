@@ -8,6 +8,9 @@
     "[\"1\",\"rejected\"]",
     "[\"1\",\"start\"]",
     "[\"1\",\"control.start\"]",
+    "[\"1\",\"features.list\"]",
+    "[\"1\",\"features.listed\"]",
+    "[\"1\",\"features.listed\",\"pointer.click\",\"pointer.drag\",\"keyboard.text\"]",
     "[\"1\",\"start\",\"123\"]",
     "[\"1\",\"display.list\"]",
     "[\"1\",\"display.listed\",\"1\",\"2560\",\"1440\",\"4294967295\",\"1920\",\"1080\"]",
@@ -20,6 +23,10 @@
     "[\"1\",\"answer\",\"v=0\\r\\no=- 1 1 IN IP4 0.0.0.0\\r\\ns=-\\r\\nt=0 0\\r\\n\"]"
   ],
   "invalid": [
+    "[\"1\",\"features.list\",\"extra\"]",
+    "[\"1\",\"features.listed\",\"Pointer.click\"]",
+    "[\"1\",\"features.listed\",\"pointer.click\",\"pointer.click\"]",
+    "[\"1\",\"features.listed\",\"\"]",
     "[\"2\",\"rejected\"]",
     "[\"1\",\"auth\",\"550E8400-E29B-41D4-A716-446655440000\"]",
     "[\"1\",\"auth\",\"1-1-1-1-1\"]",

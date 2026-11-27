@@ -26,6 +26,8 @@ final class SignalMessageTests: XCTestCase {
         XCTAssertThrowsError(try SignalMessage.pair(name: "Android", invitation: Data(repeating: 0, count: 32), publicKeyDER: Data()).encode())
         XCTAssertThrowsError(try SignalMessage.decode(Data([0xff])))
         XCTAssertThrowsError(try SignalMessage.decode(Data(repeating: 0x20, count: SignalFrame.maximumPayload + 1)))
+        XCTAssertThrowsError(try SignalMessage.features(Array(repeating: "pointer.click", count: 2)).encode())
+        XCTAssertThrowsError(try SignalMessage.features((0...32).map { "feature.\($0)" }).encode())
     }
 
     func testDisplayListBoundariesAndDuplicateIDs() throws {

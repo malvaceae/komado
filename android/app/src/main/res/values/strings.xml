@@ -41,7 +41,15 @@
     <string name="modifier_option">Option</string>
     <string name="modifier_control">Control</string>
     <string name="modifier_shift">Shift</string>
-    <string name="video_control_description">Macの画面。タップでクリック、ダブルタップでダブルクリック、長押しで右クリック、長押し後の移動でドラッグ、2本指の移動でスクロール、ピンチで拡大・縮小します。</string>
+    <string name="video_control_initial_description">Macの画面</string>
+    <string name="control_tap">Macの画面。タップでクリック</string>
+    <string name="control_double">ダブルタップでダブルクリック</string>
+    <string name="control_long_press">長押しで右クリック</string>
+    <string name="control_drag">長押し後の移動でドラッグ</string>
+    <string name="control_scroll">2本指の移動でスクロール</string>
+    <string name="control_zoom">ピンチで拡大・縮小</string>
+    <string name="features_failed">Macの機能情報を取得できませんでした。Macのアプリと接続状態を確認してください。</string>
+    <string name="features_unsupported">このMacは画面の操作に対応していません。</string>
     <string name="select_screen">画面を選択</string>
     <string name="screen_option">画面 %1$d（%2$d × %3$d px）</string>
     <string name="screen_selection_failed">画面一覧を取得できませんでした。Macの状態とアプリのバージョンを確認してください。</string>

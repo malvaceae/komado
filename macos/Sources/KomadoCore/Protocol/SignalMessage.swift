@@ -37,6 +37,8 @@ public enum SignalMessage: Equatable, Sendable {
     case rejected
     case startMedia
     case startControl
+    case listFeatures
+    case features([String])
     case startDisplay(UInt32)
     case listDisplays
     case displays([DisplayInfo])
@@ -81,6 +83,14 @@ public enum SignalMessage: Equatable, Sendable {
         case "control.start":
             guard fields.count == 2 else { throw MessageError.invalid }
             return .startControl
+        case "features.list":
+            guard fields.count == 2 else { throw MessageError.invalid }
+            return .listFeatures
+        case "features.listed":
+            let values = Array(fields.dropFirst(2))
+            guard values.count <= 32, Set(values).count == values.count,
+                  values.allSatisfy(validFeature) else { throw MessageError.invalid }
+            return .features(values)
         case "display.list":
             guard fields.count == 2 else { throw MessageError.invalid }
             return .listDisplays
@@ -146,6 +156,8 @@ public enum SignalMessage: Equatable, Sendable {
         case .rejected: fields = ["1", "rejected"]
         case .startMedia: fields = ["1", "start"]
         case .startControl: fields = ["1", "control.start"]
+        case .listFeatures: fields = ["1", "features.list"]
+        case let .features(values): fields = ["1", "features.listed"] + values
         case let .startDisplay(id):
             guard id > 0 else { throw MessageError.invalid }
             fields = ["1", "start", String(id)]
@@ -179,6 +191,12 @@ public enum SignalMessage: Equatable, Sendable {
     private static func validName(_ name: String) -> Bool {
         name.utf8.count <= 256 && !name.trimmingCharacters(in: CharacterSet(charactersIn: " ")).isEmpty &&
             !name.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+    }
+
+    private static func validFeature(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        guard (1...48).contains(bytes.count), let first = bytes.first, (97...122).contains(first) else { return false }
+        return bytes.dropFirst().allSatisfy { (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 46 }
     }
 
     private static func positiveInteger(_ value: String, max: UInt64) -> UInt64? {

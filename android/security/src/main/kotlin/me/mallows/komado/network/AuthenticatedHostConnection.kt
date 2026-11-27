@@ -32,8 +32,23 @@ class AuthenticatedHostConnection private constructor(
     private val mediaLock = Any()
     private var mediaState = MediaState.IDLE
     private var displaysRequested = false
+    private var featuresRequested = false
     private var windowsRequested = false
     @Volatile private var closed = false
+
+    /** Queries supported input features once after authentication, before starting media. */
+    fun listFeatures(): Set<String> = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE || featuresRequested) throw IOException("Unexpected signaling state")
+        featuresRequested = true
+        val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        try {
+            send(socket, SignalMessage.ListFeatures)
+            (receive(socket) as? SignalMessage.Features)?.values?.toSet() ?: throw IOException("Expected feature list")
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        } finally { timeout.cancel(false) }
+    }
 
     /** Request one media session after device authentication. */
     fun requestMedia(displayId: Long? = null, windowId: Long? = null, control: Boolean = false) = synchronized(mediaLock) {

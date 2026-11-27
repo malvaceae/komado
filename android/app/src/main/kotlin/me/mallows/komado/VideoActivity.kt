@@ -39,6 +39,7 @@ class VideoActivity : Activity() {
     private val tapMapper = TapClickMapper(controlSequence)
     private val textMapper = CommittedTextMapper(controlSequence)
     private var controlMode = false
+    @Volatile private var supportedFeatures: Set<String> = emptySet()
     private var keyboard: RemoteKeyboardView? = null
     private var keyboardButton: Button? = null
     private var specialKeys: SpecialKeyBar? = null
@@ -80,28 +81,18 @@ class VideoActivity : Activity() {
             })
             renderer = video
             viewport = ZoomableVideoView(this, video.view)
-            if (controlMode) viewport?.contentDescription = getString(R.string.video_control_description)
+            if (controlMode) viewport?.contentDescription = getString(R.string.video_control_initial_description)
             viewport?.onVideoTap = { x, y ->
                 lastVideoTapSent = sendPointerClick(x, y, PointerClick.Button.LEFT)
             }
             viewport?.onVideoLongPress = { x, y -> sendPointerClick(x, y, PointerClick.Button.RIGHT) }
             viewport?.onVideoDoubleTap = { x, y ->
-                sendPointerClick(x, y, PointerClick.Button.LEFT, count = if (lastVideoTapSent) 2 else 1)
+                sendPointerClick(x, y, PointerClick.Button.LEFT,
+                    count = if (lastVideoTapSent && "pointer.double" in supportedFeatures) 2 else 1)
                 lastVideoTapSent = false
             }
-            if (controlMode) viewport?.onVideoDrag = { phase, x, y ->
-                if (!active || !firstFrameShown) false else {
-                    val location = viewport?.mapTap(x, y, captureRevision, tapMapper)
-                    if (location == null) false else {
-                        val drag = PointerDrag(location.sequence, location.captureRevision, location.x, location.y, phase)
-                        val sent = media?.sendDrag(drag) == true
-                        if (!sent) stopSession(failed = true)
-                        sent
-                    }
-                }
-            }
             viewport?.onVideoScroll = { x, y, dx, dy ->
-                if (active && controlMode && firstFrameShown && dx.isFinite() && dy.isFinite()) {
+                if (active && controlMode && "pointer.scroll" in supportedFeatures && firstFrameShown && dx.isFinite() && dy.isFinite()) {
                     val horizontal = (dx / resources.displayMetrics.density).roundToInt().coerceIn(-120, 120)
                     val vertical = (dy / resources.displayMetrics.density).roundToInt().coerceIn(-120, 120)
                     if (horizontal != 0 || vertical != 0) {
@@ -135,10 +126,10 @@ class VideoActivity : Activity() {
             root.addView(specialKeys)
             keyboard = RemoteKeyboardView(this, sendKey = { key ->
                 val revision = captureRevision
-                val sequence = if (active && firstFrameShown && revision != null) controlSequence.next() else null
+                val sequence = if (active && "keyboard.key" in supportedFeatures && firstFrameShown && revision != null) controlSequence.next() else null
                 if (sequence != null && revision != null) media?.sendKey(KeyboardKey(sequence, revision, key, 0)) == true else false
             }, sendText = { text ->
-                val message = if (active && firstFrameShown) textMapper.message(text, captureRevision) else null
+                val message = if (active && "keyboard.text" in supportedFeatures && firstFrameShown) textMapper.message(text, captureRevision) else null
                 message != null && media?.sendText(message) == true
             })
             root.addView(keyboard, LinearLayout.LayoutParams(1, 1))
@@ -164,6 +155,17 @@ class VideoActivity : Activity() {
                 }
                 if (!keep) { established.close(); return@execute }
                 runCatching { HostStore(applicationContext).recordConnection(host, System.currentTimeMillis()) }
+                if (controlMode) {
+                    val features = try { established.listFeatures() } catch (_: Exception) {
+                        runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.features_failed) } }
+                        return@execute
+                    }
+                    if ("pointer.click" !in features) {
+                        runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.features_unsupported) } }
+                        return@execute
+                    }
+                    supportedFeatures = features
+                }
                 if (intent.getBooleanExtra(CHOOSE_WINDOW, false)) {
                     showProgress(R.string.window_list_waiting)
                     val windows = try { established.listWindows() } catch (_: Exception) {
@@ -214,6 +216,7 @@ class VideoActivity : Activity() {
             runOnUiThread {
                 if (!active) return@runOnUiThread
                 try {
+                    if (controlMode) configureControlFeatures()
                     val session = AndroidMediaSession(applicationContext, established.localAddress, object : AndroidMediaSession.Listener {
                         override fun onAnswer(sdp: String) {
                             if (!active) return
@@ -259,8 +262,30 @@ class VideoActivity : Activity() {
     }
 
     private fun updateControlAvailability() {
-        keyboardButton?.isEnabled = active && firstFrameShown && captureRevision != null
-        specialKeys?.setAvailable(active && firstFrameShown && captureRevision != null)
+        val available = active && firstFrameShown && captureRevision != null
+        keyboardButton?.isEnabled = available && "keyboard.text" in supportedFeatures
+        specialKeys?.setAvailable(available && "keyboard.key" in supportedFeatures)
+    }
+
+    private fun configureControlFeatures() {
+        val descriptions = mutableListOf(getString(R.string.control_tap))
+        if ("pointer.double" in supportedFeatures) descriptions.add(getString(R.string.control_double))
+        descriptions.add(getString(R.string.control_long_press))
+        if ("pointer.drag" in supportedFeatures) descriptions.add(getString(R.string.control_drag))
+        if ("pointer.scroll" in supportedFeatures) descriptions.add(getString(R.string.control_scroll))
+        descriptions.add(getString(R.string.control_zoom))
+        viewport?.contentDescription = descriptions.joinToString("。", postfix = "。")
+        viewport?.onVideoDrag = if ("pointer.drag" !in supportedFeatures) null else { phase, x, y ->
+            if (!active || !firstFrameShown) false else {
+                val location = viewport?.mapTap(x, y, captureRevision, tapMapper)
+                if (location == null) false else {
+                    val drag = PointerDrag(location.sequence, location.captureRevision, location.x, location.y, phase)
+                    val sent = media?.sendDrag(drag) == true
+                    if (!sent) stopSession(failed = true)
+                    sent
+                }
+            }
+        }
     }
 
     private fun sendPointerClick(x: Float, y: Float, button: PointerClick.Button, count: Int = 1): Boolean {
@@ -285,6 +310,7 @@ class VideoActivity : Activity() {
         runCatching { media?.close() }
         media = null
         captureRevision = null
+        supportedFeatures = emptySet()
         keyboardButton?.isEnabled = false
         specialKeys?.setAvailable(false)
         keyboard?.close()

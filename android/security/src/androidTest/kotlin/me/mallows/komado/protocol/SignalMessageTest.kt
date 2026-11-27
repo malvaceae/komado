@@ -36,6 +36,8 @@ class SignalMessageTest {
         assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.encode(SignalMessage.Proof(byteArrayOf())) }
         assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.decode(byteArrayOf(-1)) }
         assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.decode(ByteArray(16_385) { 32 }) }
+        assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.encode(SignalMessage.Features(listOf("pointer.click", "pointer.click"))) }
+        assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.encode(SignalMessage.Features((0..32).map { "feature.$it" })) }
     }
 
     @Test fun displayListBoundariesAndDuplicateIds() {
