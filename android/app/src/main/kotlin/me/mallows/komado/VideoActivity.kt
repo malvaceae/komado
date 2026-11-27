@@ -87,6 +87,7 @@ class VideoActivity : Activity() {
                 lastVideoTapSent = sendPointerClick(x, y, PointerClick.Button.LEFT)
             }
             viewport?.onVideoLongPress = { x, y -> sendPointerClick(x, y, PointerClick.Button.RIGHT) }
+            viewport?.onMouseClick = { x, y, button -> sendPointerClick(x, y, button) }
             viewport?.onVideoDoubleTap = { x, y ->
                 sendPointerClick(x, y, PointerClick.Button.LEFT,
                     count = if (lastVideoTapSent && "pointer.double" in supportedFeatures) 2 else 1)

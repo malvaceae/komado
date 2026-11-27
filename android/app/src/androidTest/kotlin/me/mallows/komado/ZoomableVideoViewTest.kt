@@ -56,6 +56,53 @@ class ZoomableVideoViewTest {
         } finally { renderer?.let { InstrumentationRegistry.getInstrumentation().runOnMainSync { it.close() } } }
     }
 
+    @Test fun mouseButtonsAndDragDoNotBecomeTouchGestures() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val renderer = RemoteVideoRenderer(activity)
+                try {
+                    val view = ZoomableVideoView(activity, renderer.view)
+                    view.layout(0, 0, 800, 800)
+                    val clicks = mutableListOf<PointerClick.Button>()
+                    val phases = mutableListOf<PointerDrag.Phase>()
+                    view.onVideoTap = { _, _ -> clicks.add(PointerClick.Button.LEFT) }
+                    view.onMouseClick = { _, _, button -> clicks.add(button) }
+                    view.onVideoLongPress = { _, _ -> throw AssertionError("Mouse hold became a touch long press") }
+                    view.onVideoDrag = { phase, _, _ -> phases.add(phase); true }
+                    val now = SystemClock.uptimeMillis()
+                    fun mouse(time: Long, action: Int, x: Float, buttons: Int) {
+                        val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE })
+                        val coords = arrayOf(MotionEvent.PointerCoords().apply { this.x = x; y = 400f; pressure = 1f; size = 1f })
+                        val event = MotionEvent.obtain(now, time, action, 1, properties, coords, 0, buttons, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+                        try {
+                            if (action == MotionEvent.ACTION_BUTTON_PRESS) view.onGenericMotionEvent(event)
+                            else view.onTouchEvent(event)
+                        } finally { event.recycle() }
+                    }
+                    mouse(now, MotionEvent.ACTION_DOWN, 200f, MotionEvent.BUTTON_SECONDARY)
+                    mouse(now + 700, MotionEvent.ACTION_UP, 200f, 0)
+                    mouse(now + 1000, MotionEvent.ACTION_DOWN, 200f, MotionEvent.BUTTON_TERTIARY)
+                    mouse(now + 1020, MotionEvent.ACTION_UP, 200f, 0)
+                    mouse(now + 2000, MotionEvent.ACTION_DOWN, 200f, MotionEvent.BUTTON_PRIMARY)
+                    mouse(now + 2020, MotionEvent.ACTION_UP, 200f, 0)
+                    assertEquals(listOf(PointerClick.Button.RIGHT, PointerClick.Button.MIDDLE, PointerClick.Button.LEFT), clicks)
+                    mouse(now + 3000, MotionEvent.ACTION_DOWN, 200f, MotionEvent.BUTTON_PRIMARY)
+                    mouse(now + 3020, MotionEvent.ACTION_MOVE, 300f, MotionEvent.BUTTON_PRIMARY)
+                    mouse(now + 3040, MotionEvent.ACTION_CANCEL, 300f, 0)
+                    assertEquals(listOf(PointerDrag.Phase.BEGIN, PointerDrag.Phase.MOVE, PointerDrag.Phase.END), phases)
+                    mouse(now + 4000, MotionEvent.ACTION_DOWN, 200f, MotionEvent.BUTTON_SECONDARY)
+                    mouse(now + 4020, MotionEvent.ACTION_MOVE, 300f, MotionEvent.BUTTON_SECONDARY)
+                    mouse(now + 4040, MotionEvent.ACTION_UP, 300f, 0)
+                    mouse(now + 5000, MotionEvent.ACTION_DOWN, 200f, MotionEvent.BUTTON_PRIMARY)
+                    mouse(now + 5020, MotionEvent.ACTION_BUTTON_PRESS, 200f, MotionEvent.BUTTON_PRIMARY or MotionEvent.BUTTON_SECONDARY)
+                    mouse(now + 5040, MotionEvent.ACTION_UP, 200f, 0)
+                    assertEquals(3, clicks.size)
+                    assertEquals(3, phases.size)
+                } finally { renderer.close() }
+            }
+        }
+    }
+
     @Test fun longPressMoveDragsAndCancelReleases() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

@@ -33,6 +33,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     private var dragAttempted = false
     private var dragX = 0f
     private var dragY = 0f
+    private var mouseButton: PointerClick.Button? = null
     private enum class TwoFingerMode { NONE, PENDING, PINCH, SCROLL }
     private var twoFingerMode = TwoFingerMode.NONE
     private var initialSpan = 0f
@@ -46,6 +47,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     var onVideoScroll: ((Float, Float, Float, Float) -> Unit)? = null
     var onVideoDrag: ((PointerDrag.Phase, Float, Float) -> Boolean)? = null
     var onVideoHover: ((Float, Float) -> Unit)? = null
+    var onMouseClick: ((Float, Float, PointerClick.Button) -> Unit)? = null
     private var hoverScheduled = false
     private var hoverX = 0f
     private var hoverY = 0f
@@ -113,6 +115,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE)) return onMouseTouch(event)
         if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && dragging) finishDrag(dragX, dragY)
         if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount == 2) {
             initialFocusX = (event.getX(0) + event.getX(1)) / 2
@@ -219,6 +222,72 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
         return true
     }
 
+    private fun onMouseTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                removeCallbacks(sendHover)
+                hoverScheduled = false
+                mouseButton = when (event.buttonState) {
+                    MotionEvent.BUTTON_PRIMARY -> PointerClick.Button.LEFT
+                    MotionEvent.BUTTON_SECONDARY -> PointerClick.Button.RIGHT
+                    MotionEvent.BUTTON_TERTIARY -> PointerClick.Button.MIDDLE
+                    else -> null
+                }
+                lastX = event.x; lastY = event.y
+                moved = false; dragging = false; dragAttempted = false
+                if (mouseButton != PointerClick.Button.LEFT) previousTapTime = 0
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val expected = when (mouseButton) {
+                    PointerClick.Button.LEFT -> MotionEvent.BUTTON_PRIMARY
+                    PointerClick.Button.RIGHT -> MotionEvent.BUTTON_SECONDARY
+                    PointerClick.Button.MIDDLE -> MotionEvent.BUTTON_TERTIARY
+                    null -> 0
+                }
+                if (expected == 0 || event.buttonState != expected) {
+                    if (dragging) finishDrag(dragX, dragY)
+                    mouseButton = null; moved = true; previousTapTime = 0
+                } else if (!moved && (abs(event.x - lastX) > touchSlop || abs(event.y - lastY) > touchSlop)) {
+                    moved = true; previousTapTime = 0
+                    if (mouseButton == PointerClick.Button.LEFT && onVideoDrag != null) {
+                        dragAttempted = true
+                        dragging = onVideoDrag?.invoke(PointerDrag.Phase.BEGIN, lastX, lastY) == true
+                        dragX = lastX; dragY = lastY
+                    }
+                }
+                if (dragging) {
+                    if (onVideoDrag?.invoke(PointerDrag.Phase.MOVE, event.x, event.y) == true) {
+                        dragX = event.x; dragY = event.y
+                    } else finishDrag(dragX, dragY)
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (dragging) finishDrag(event.x, event.y)
+                val button = if (event.buttonState == 0) mouseButton else null
+                if (!moved && button != null && abs(event.x - lastX) <= touchSlop && abs(event.y - lastY) <= touchSlop) {
+                    if (button == PointerClick.Button.LEFT) {
+                        performClick()
+                        val sinceLast = event.eventTime - previousTapTime
+                        if (previousTapTime != 0L && sinceLast in 1..ViewConfiguration.getDoubleTapTimeout().toLong() &&
+                            hypot(event.x - previousTapX, event.y - previousTapY) <= doubleTapSlop) {
+                            previousTapTime = 0
+                            onVideoDoubleTap?.invoke(event.x, event.y)
+                        } else {
+                            previousTapTime = event.eventTime; previousTapX = event.x; previousTapY = event.y
+                            onVideoTap?.invoke(event.x, event.y)
+                        }
+                    } else onMouseClick?.invoke(event.x, event.y, button)
+                } else previousTapTime = 0
+                mouseButton = null
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                if (dragging) finishDrag(dragX, dragY)
+                mouseButton = null; previousTapTime = 0
+            }
+        }
+        return true
+    }
+
     private fun finishDrag(x: Float, y: Float) {
         if (!dragging) return
         if (onVideoDrag?.invoke(PointerDrag.Phase.END, x, y) != true && (x != dragX || y != dragY)) {
@@ -230,6 +299,23 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     override fun performClick(): Boolean {
         super.performClick()
         return true
+    }
+
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE) && event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS && mouseButton != null) {
+            val expected = when (mouseButton) {
+                PointerClick.Button.LEFT -> MotionEvent.BUTTON_PRIMARY
+                PointerClick.Button.RIGHT -> MotionEvent.BUTTON_SECONDARY
+                PointerClick.Button.MIDDLE -> MotionEvent.BUTTON_TERTIARY
+                null -> 0
+            }
+            if (event.buttonState != expected) {
+                if (dragging) finishDrag(dragX, dragY)
+                mouseButton = null; moved = true; previousTapTime = 0
+            }
+            return true
+        }
+        return super.onGenericMotionEvent(event)
     }
 
     override fun onHoverEvent(event: MotionEvent): Boolean {
