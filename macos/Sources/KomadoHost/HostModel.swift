@@ -596,6 +596,11 @@ final class HostModel: ObservableObject {
                 if dragDispatcher?.isDragging == true { mediaFailed(id: id) }
                 return
             }
+            guard window.targetIsUnchanged(in: windows) else {
+                mediaFailed(id: id)
+                error = "操作対象のウインドウの状態が変わったため、接続を終了しました。接続し直してください。"
+                return
+            }
             geometry = candidate
             let allowed: Bool
             switch input {

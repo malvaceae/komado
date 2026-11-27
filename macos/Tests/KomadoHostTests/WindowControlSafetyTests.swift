@@ -3,6 +3,18 @@ import XCTest
 @testable import KomadoHost
 
 final class WindowControlSafetyTests: XCTestCase {
+    func testTargetChangeIsDetectedWithoutConfusingOtherWindows() {
+        let target = ControlWindowSnapshot(id: 1, processID: 10, bounds: CGRect(x: 100, y: 100, width: 200, height: 200))
+        let other = ControlWindowSnapshot(id: 2, processID: 20, bounds: target.bounds)
+        let guardrail = WindowControlSafety(target: target)
+        XCTAssertTrue(guardrail.targetIsUnchanged(in: [other, target]))
+        XCTAssertFalse(guardrail.targetIsUnchanged(in: []))
+        XCTAssertFalse(guardrail.targetIsUnchanged(in: [.init(id: 1, processID: 10, bounds: target.bounds.offsetBy(dx: 1, dy: 0))]))
+        XCTAssertFalse(guardrail.targetIsUnchanged(in: [.init(id: 1, processID: 10, bounds: target.bounds.insetBy(dx: 0, dy: 1))]))
+        XCTAssertFalse(guardrail.targetIsUnchanged(in: [.init(id: 1, processID: 11, bounds: target.bounds)]))
+        XCTAssertFalse(guardrail.targetIsUnchanged(in: [target, target]))
+    }
+
     func testPointerRequiresUnchangedVisibleTopmostTarget() {
         let target = ControlWindowSnapshot(id: 1, processID: 10, bounds: CGRect(x: 100, y: 100, width: 200, height: 200))
         let other = ControlWindowSnapshot(id: 2, processID: 20, bounds: CGRect(x: 150, y: 150, width: 50, height: 50))

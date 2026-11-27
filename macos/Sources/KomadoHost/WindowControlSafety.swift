@@ -34,13 +34,17 @@ extension ControlWindowSnapshot {
 struct WindowControlSafety {
     let target: ControlWindowSnapshot
 
+    func targetIsUnchanged(in windows: [ControlWindowSnapshot]) -> Bool {
+        windows.filter { $0.id == target.id } == [target]
+    }
+
     /// Reject moved, resized, closed or replaced targets and points where
     /// Accessibility hit-testing resolves to another window.
     func permits(point: CGPoint, hitProcessID: Int32, hitBounds: CGRect,
                  windows: [ControlWindowSnapshot]) -> Bool {
         guard point.x.isFinite, point.y.isFinite, target.bounds.contains(point),
               hitProcessID == target.processID, hitBounds == target.bounds,
-              windows.first(where: { $0.id == target.id }) == target else { return false }
+              targetIsUnchanged(in: windows) else { return false }
         return windows.filter { $0.processID == target.processID && $0.bounds == target.bounds }.count == 1
     }
 
@@ -49,7 +53,7 @@ struct WindowControlSafety {
     func permitsKeyboard(focusedProcessID: Int32, focusedBounds: CGRect,
                          windows: [ControlWindowSnapshot]) -> Bool {
         guard focusedProcessID == target.processID, focusedBounds == target.bounds,
-              windows.first(where: { $0.id == target.id }) == target else { return false }
+              targetIsUnchanged(in: windows) else { return false }
         return windows.filter { $0.processID == target.processID && $0.bounds == target.bounds }.count == 1
     }
 }
