@@ -15,7 +15,6 @@ Android端末からMacのデスクトップや個別のウインドウを操作�
 - [開発ガイド](docs/development.md)：開発の進め方と今後整備する手順
 - [テスト計画](docs/testing.md)：自動テスト、実機・ネットワーク検証
 - [互換性](docs/compatibility.md)：対応候補と検証状況
-- [技術検証](experiments/README.md)：画面取得とWebRTC相互接続の検証手順
 - [技術選定の記録](docs/decisions/README.md)：ADRの運用
 - [プロトコル資産](protocol/README.md)：スキーマと共通テストデータの管理方針
 - [AGENTS.md](AGENTS.md)：開発エージェント向けの方針

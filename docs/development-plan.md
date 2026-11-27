@@ -938,12 +938,6 @@ komado/
 │   ├── compatibility.md
 │   └── decisions/
 │
-├── .github/
-│   └── workflows/
-│       ├── macos-ci.yml
-│       ├── android-ci.yml
-│       └── release.yml
-│
 ├── AGENTS.md
 ├── README.md
 ├── LICENSE
@@ -1065,7 +1059,6 @@ Androidの画面サイズに適した状態でMacの特定のアプリケーシ�
 - [ ] セキュリティレビュー
 - [ ] UI・UX改善
 - [ ] エラー処理の改善
-- [ ] CI/CD構築
 - [ ] macOS向けUniversal Binary DMG作成
 - [ ] Android向けAPK作成
 - [ ] ドキュメント整備
@@ -1173,9 +1166,9 @@ macOS版とAndroid版の双方を再現可能な手順でビルド・配布で�
 
 対応できないOS状態については、制約として明示し、安全に接続を終了する。
 
-## 14. CI/CD・配布
+## 14. 配布
 
-GitHub Actionsを利用する。
+現段階では自動CIを設けず、ビルドとテストを開発環境で実行する。以下は配布前の確認事項であり、自動化の方法は必要に応じて検討する。
 
 ### 14.1. macOS
 
