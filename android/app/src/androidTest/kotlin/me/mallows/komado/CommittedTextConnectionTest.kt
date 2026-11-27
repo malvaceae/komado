@@ -82,6 +82,28 @@ class CommittedTextConnectionTest {
         }
     }
 
+    @Test fun commitsLongCompositionAsOrderedFragments() {
+        val instrument = InstrumentationRegistry.getInstrumentation()
+        instrument.runOnMainSync {
+            val sequence = ControlSequence()
+            val mapper = CommittedTextMapper(sequence)
+            val sent = mutableListOf<String>()
+            val connection = CommittedTextConnection(View(instrument.targetContext)) { text ->
+                val messages = mapper.messages(text, 1) ?: return@CommittedTextConnection false
+                sent.addAll(messages.map { it.text })
+                true
+            }
+            val value = "日本語😀".repeat(100)
+            assertTrue(connection.setComposingText(value, 1))
+            assertTrue(sent.isEmpty())
+            assertTrue(connection.commitText(value, 1))
+            assertEquals(value, sent.joinToString(""))
+            assertTrue(sent.size > 1)
+            assertEquals(0, connection.editable.length)
+            connection.closeConnection()
+        }
+    }
+
     @Test fun doesNotCommitAfterCloseOrWhenDeliveryFails() {
         val instrument = InstrumentationRegistry.getInstrumentation()
         instrument.runOnMainSync {

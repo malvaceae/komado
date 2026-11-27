@@ -218,8 +218,9 @@ class VideoActivity : Activity() {
                 val sequence = if (active && canSendKey(key) && firstFrameShown && revision != null) controlSequence.next() else null
                 if (sequence != null && revision != null) media?.sendKey(KeyboardKey(sequence, revision, key, modifiers)) == true else false
             }, sendText = { text ->
-                val message = if (active && "keyboard.text" in supportedFeatures && firstFrameShown) textMapper.message(text, captureRevision) else null
-                message != null && media?.sendText(message) == true
+                if (!active || "keyboard.text" !in supportedFeatures || !firstFrameShown) false else
+                    textMapper.send(text, captureRevision, { media?.sendText(it) == true },
+                        { if (active) stopSession(failed = true) })
             })
             controls.addView(keyboard, LinearLayout.LayoutParams(1, 1))
             keyboardButton = Button(this).apply {

@@ -11,6 +11,7 @@ import java.nio.charset.CodingErrorAction
 data class KeyboardText(val sequence: Long, val captureRevision: Long, val text: String)
 
 object KeyboardTextCodec {
+    const val MAX_TEXT_BYTES = 512
     class MessageException : Exception("Invalid keyboard message")
     fun decode(data: ByteArray): KeyboardText {
         if (data.size !in 1..2048) throw MessageException()
@@ -49,7 +50,7 @@ object KeyboardTextCodec {
 
     private fun validText(value: String): Boolean {
         val bytes = value.toByteArray(Charsets.UTF_8)
-        return bytes.size in 1..512 && String(bytes, Charsets.UTF_8) == value &&
+        return bytes.size in 1..MAX_TEXT_BYTES && String(bytes, Charsets.UTF_8) == value &&
             value.none { it.isISOControl() && it != '\t' && it != '\n' }
     }
 
