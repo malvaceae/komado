@@ -7,6 +7,7 @@ import android.view.ScaleGestureDetector
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import me.mallows.komado.input.VideoZoom
+import me.mallows.komado.protocol.PointerClick
 import org.webrtc.SurfaceViewRenderer
 import kotlin.math.abs
 
@@ -21,6 +22,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
     private var lastX = 0f
     private var lastY = 0f
     private var moved = false
+    var onVideoTap: ((Float, Float) -> Unit)? = null
     private val detector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             zoom.zoom(detector.scaleFactor.toDouble(), detector.focusX.toDouble(), detector.focusY.toDouble())
@@ -52,6 +54,10 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
         zoom.reset()
         applyTransform()
     }
+
+    fun mapTap(x: Float, y: Float, revision: Long?, mapper: TapClickMapper): PointerClick? =
+        mapper.click(x.toDouble(), y.toDouble(), width, height, frameWidth, frameHeight,
+            frameRotation, revision, zoom.scale, zoom.panX, zoom.panY)
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
@@ -109,7 +115,11 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
                 moved = true
             }
             MotionEvent.ACTION_UP -> {
-                if (!moved) performClick()
+                if (!moved && pointerId != MotionEvent.INVALID_POINTER_ID &&
+                    abs(event.x - lastX) <= touchSlop && abs(event.y - lastY) <= touchSlop) {
+                    performClick()
+                    onVideoTap?.invoke(event.x, event.y)
+                }
                 pointerId = MotionEvent.INVALID_POINTER_ID
             }
             MotionEvent.ACTION_CANCEL -> pointerId = MotionEvent.INVALID_POINTER_ID

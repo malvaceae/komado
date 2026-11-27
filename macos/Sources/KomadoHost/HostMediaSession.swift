@@ -200,6 +200,7 @@ final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChanne
     }
 
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
+        guard route.isAllowed else { fail(); return }
         guard let input = control.accept(buffer.data, binary: buffer.isBinary) else { fail(); return }
         let callback = lock.withLock { closed ? nil : onControl }
         guard let callback else { fail(); return }

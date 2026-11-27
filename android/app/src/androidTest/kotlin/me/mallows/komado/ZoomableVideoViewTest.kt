@@ -6,7 +6,9 @@ import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import me.mallows.komado.protocol.PointerClick
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,6 +34,34 @@ class ZoomableVideoViewTest {
                     assertTrue(view.clipChildren)
                     assertEquals(800, video.width)
                     assertTrue(view.setFrameSize(400, 400, 0))
+                    val clicks = mutableListOf<PointerClick>()
+                    val mapper = TapClickMapper()
+                    view.onVideoTap = { x, y -> view.mapTap(x, y, 1, mapper)?.let(clicks::add) }
+                    val tapTime = SystemClock.uptimeMillis()
+                    val tapDown = MotionEvent.obtain(tapTime, tapTime, MotionEvent.ACTION_DOWN, 400f, 400f, 0)
+                    val tapUp = MotionEvent.obtain(tapTime, tapTime + 20, MotionEvent.ACTION_UP, 400f, 400f, 0)
+                    try { view.dispatchTouchEvent(tapDown); view.dispatchTouchEvent(tapUp) }
+                    finally { tapDown.recycle(); tapUp.recycle() }
+                    assertEquals(1, clicks.size)
+                    assertEquals(500_000, clicks.single().x)
+                    assertEquals(500_000, clicks.single().y)
+                    assertNull(view.mapTap(400f, 400f, null, mapper))
+                    val cancelTime = SystemClock.uptimeMillis()
+                    val cancelDown = MotionEvent.obtain(cancelTime, cancelTime, MotionEvent.ACTION_DOWN, 400f, 400f, 0)
+                    val cancel = MotionEvent.obtain(cancelTime, cancelTime + 20, MotionEvent.ACTION_CANCEL, 400f, 400f, 0)
+                    val cancelledUp = MotionEvent.obtain(cancelTime, cancelTime + 30, MotionEvent.ACTION_UP, 400f, 400f, 0)
+                    try { listOf(cancelDown, cancel, cancelledUp).forEach { view.dispatchTouchEvent(it) } }
+                    finally { listOf(cancelDown, cancel, cancelledUp).forEach { it.recycle() } }
+                    assertEquals("Cancelled touch must not produce a click", 1, clicks.size)
+                    val jumpTime = SystemClock.uptimeMillis()
+                    val jumpDown = MotionEvent.obtain(jumpTime, jumpTime, MotionEvent.ACTION_DOWN, 300f, 400f, 0)
+                    val jumpUp = MotionEvent.obtain(jumpTime, jumpTime + 20, MotionEvent.ACTION_UP, 400f, 400f, 0)
+                    try { view.dispatchTouchEvent(jumpDown); view.dispatchTouchEvent(jumpUp) }
+                    finally { jumpDown.recycle(); jumpUp.recycle() }
+                    assertEquals("A moved touch must not produce a click", 1, clicks.size)
+                    assertTrue(view.setFrameSize(400, 400, 90))
+                    assertNull(view.mapTap(400f, 400f, 1, mapper))
+                    assertTrue(view.setFrameSize(400, 400, 0))
                     view.zoomBy(2.0)
                     assertEquals(2f, video.scaleX, 0.001f)
                     val now = SystemClock.uptimeMillis()
@@ -47,6 +77,15 @@ class ZoomableVideoViewTest {
                     }
                     assertTrue(video.translationX > 0f)
                     assertTrue(video.translationX <= 400f)
+                    assertEquals("Panning must not produce a click", 1, clicks.size)
+                    val zoomTapTime = SystemClock.uptimeMillis()
+                    val zoomTapDown = MotionEvent.obtain(zoomTapTime, zoomTapTime, MotionEvent.ACTION_DOWN, 400f, 400f, 0)
+                    val zoomTapUp = MotionEvent.obtain(zoomTapTime, zoomTapTime + 20, MotionEvent.ACTION_UP, 400f, 400f, 0)
+                    try { view.dispatchTouchEvent(zoomTapDown); view.dispatchTouchEvent(zoomTapUp) }
+                    finally { zoomTapDown.recycle(); zoomTapUp.recycle() }
+                    assertEquals(2, clicks.size)
+                    assertEquals(450_000, clicks.last().x)
+                    assertEquals(500_000, clicks.last().y)
                     view.resetZoom()
                     assertEquals(1f, video.scaleX, 0.001f)
                     assertEquals(0f, video.translationX, 0.001f)
@@ -64,6 +103,7 @@ class ZoomableVideoViewTest {
                         listOf(first, second, expand1, expand2, expand3, lift, last).forEach { it.recycle() }
                     }
                     assertTrue("Pinch did not enlarge the video", video.scaleX > 1f)
+                    assertEquals("Pinching must not produce a click", 2, clicks.size)
                     renderer!!.close()
                     renderer = null
                 }

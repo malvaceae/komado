@@ -28,6 +28,9 @@ final class MediaRouteGate: @unchecked Sendable {
 
     func close() { lock.withLock { state = .closed } }
 
+    /// Callers dispatching work asynchronously must check again at execution time.
+    var isAllowed: Bool { lock.withLock { state == .allowed } }
+
     func withAllowedFrame(_ action: () -> Void) {
         lock.withLock {
             guard state == .allowed else { return }

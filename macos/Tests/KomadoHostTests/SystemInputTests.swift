@@ -5,15 +5,6 @@ import KomadoCore
 import XCTest
 @testable import KomadoHost
 
-@MainActor
-private final class InputTestView: NSView {
-    var receivedText = ""
-    override var acceptsFirstResponder: Bool { true }
-    override func keyDown(with event: NSEvent) {
-        receivedText += event.characters ?? ""
-    }
-}
-
 final class SystemInputTests: XCTestCase {
     @MainActor
     func testTextDispatcherDeliversUnicodeToOwnWindow() async throws {
@@ -24,7 +15,7 @@ final class SystemInputTests: XCTestCase {
                                                    width: 240, height: 160),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let view = InputTestView(frame: CGRect(x: 0, y: 0, width: 240, height: 160))
+        let view = NSTextView(frame: CGRect(x: 0, y: 0, width: 240, height: 160))
         window.contentView = view
         window.makeKeyAndOrderFront(nil)
         XCTAssertTrue(window.makeFirstResponder(view))
@@ -32,17 +23,20 @@ final class SystemInputTests: XCTestCase {
 
         let sendToSelf: (CGEvent) -> Void = { $0.postToPid(getpid()) }
         let keyboard = KeyboardTextDispatcher(post: sendToSelf)
-        let expected = "入力テスト😀"
-        XCTAssertTrue(keyboard.send(KeyboardText(sequence: 1, captureRevision: 1, text: expected),
-                                    captureRevision: 1, sessionAllowed: true))
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-        while view.receivedText != expected, ContinuousClock.now < deadline {
-            if let event = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.05),
-                                           inMode: .default, dequeue: true) {
-                NSApp.sendEvent(event)
+        let samples = ["入力テスト😀", String(repeating: "あ", count: 170)]
+        for (index, expected) in samples.enumerated() {
+            view.string = ""
+            XCTAssertTrue(keyboard.send(KeyboardText(sequence: UInt64(index + 1), captureRevision: 1, text: expected),
+                                        captureRevision: 1, sessionAllowed: true))
+            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+            while view.string != expected, ContinuousClock.now < deadline {
+                if let event = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.05),
+                                               inMode: .default, dequeue: true) {
+                    NSApp.sendEvent(event)
+                }
+                await Task.yield()
             }
-            await Task.yield()
+            XCTAssertEqual(view.string, expected)
         }
-        XCTAssertEqual(view.receivedText, expected)
     }
 }
