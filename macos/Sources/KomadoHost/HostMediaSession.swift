@@ -88,6 +88,12 @@ final class HostMediaSession {
         return dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
     }
 
+    func sendTextPosted(sequence: UInt64) -> Bool {
+        guard state == .answerApplied, announced, dataChannel.readyState == .open,
+              let data = try? KeyboardTextPosted(sequence: sequence).encode() else { return false }
+        return dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
+    }
+
     func makeOffer() async throws -> String {
         guard state == .idle else { throw SessionError.unexpectedState }
         state = .makingOffer

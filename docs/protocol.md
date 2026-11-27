@@ -58,7 +58,9 @@ Androidは長押し後に指を動かすとドラッグを開始し、移動せ�
 
 IMEの確定文字列は`["1","keyboard.text",連番,キャプチャリビジョン,文字列]`とします。連番はクリックと共通で、リビジョンの条件も同じです。文字列は空でない512 UTF-8バイト以下とし、タブと改行以外の制御文字、不正なUnicode、2,048バイトを超えるメッセージを拒否します。未確定の変換中テキストは送らず、特殊キーやショートカットは後述のキー操作として送ります。[スキーマ](../protocol/schemas/keyboard-text-v1.schema.json)と[共通テストデータ](../protocol/fixtures/keyboard-text.json)で、日本語や絵文字を含む例を両OSで確認しています。日本語IMEの1種類をエミュレーターで操作し、Macのテストプロセスの文字欄へ確定文字列が入力されることを確認しています。この確認ではフォーカス判定を差し替え、イベントを自プロセスに配送しました。通常のグローバル配送、他のMacアプリとAndroid実機は未検証です。
 
-Androidは一度に確定された最大8,192 UTF-8バイトの文字列を、文字境界を使って512バイト以下の複数メッセージに分割できます。全体を検証し、全メッセージの連番を確保してから順に送ります。単一の文字境界の単位が512バイトを超える場合や、連番を確保できない場合は送信しません。途中の送信失敗時は接続を終了しますが、すでに送った部分の取り消しはできません。Macによる入力の受理やアプリへの反映を知らせる応答はなく、フォーカス変更などで一部が拒否される場合もあります。文字境界の判定はAndroidのOSバージョンに依存します。
+Androidは一度に確定された最大8,192 UTF-8バイトの文字列を、文字境界を使って512バイト以下の複数メッセージに分割できます。全体を検証し、全メッセージの連番を確保してから順に送ります。単一の文字境界の単位が512バイトを超える場合や、連番を確保できない場合は送信しません。途中の送信失敗時は接続を終了しますが、すでに送った部分の取り消しはできません。文字境界の判定はAndroidのOSバージョンに依存します。
+
+Macが`keyboard.text-ack`を通知する場合、Androidは同じフィールドの種類を`keyboard.text.checked`にして送信します。Macは対象・フォーカス・権限などを確認してイベントを発行できたとき、`["1","keyboard.text.posted",連番]`を返します。Androidは未確認の連番を最大64件まで保持し、先頭から順に照合します。確認を待つ間に切断した場合、不正な確認を受け取った場合、または確認が10秒間進まない場合は接続を終了し、部分的に反映された可能性を表示します。Macが確認対象の入力を拒否した場合も接続を終了します。確認はイベントの発行までで、対象アプリへの配送や処理を保証しません。旧Macには従来の`keyboard.text`を送り、旧Androidには確認を返しません。[スキーマ](../protocol/schemas/keyboard-text-posted-v1.schema.json)、[共通テストデータ](../protocol/fixtures/keyboard-text-posted.json)と[ADR 0015](decisions/0015-text-posting-confirmation.md)を参照してください。
 
 ## 手動クリップボード（初期形式）
 
@@ -104,7 +106,7 @@ OfferとAnswerは認証済みTLS接続で交換します。SDPのDTLSフィン�
 
 `["1","control.start"]`は認証後のメイン画面の操作要求です。Macで操作許可とAccessibility権限が必要で、従来の`start`は表示のみです。操作開始時はMacで許可を表示し、操作セッション終了時に許可を解除します。
 
-認証済みのアイドル状態で`["1","features.list"]`を1回送ると、Macは`["1","features.listed",機能名...]`を返します。機能名は重複なしの英小文字・数字・`.`・`-`からなる48文字以下の名前で、最大32件です。現在は`pointer.click`、`pointer.double`、`pointer.drag`、`pointer.scroll`、`pointer.move`、`keyboard.text`、`keyboard.key`、`keyboard.navigation`、`keyboard.punctuation`、`keyboard.shortcut-keys`、`window.control`、`display.control`、`clipboard.manual`、`clipboard.auto`を通知します。Androidは操作開始前に一覧を取得し、`pointer.click`がなければ開始せず、一覧にない操作は送信しません。未知の機能名は無視します。新Androidから一覧非対応の旧Macへの操作接続は失敗し、従来の画面表示は利用できます。機能一覧は認証やMacの操作許可の代わりにはなりません。詳細は[ADR 0008](decisions/0008-feature-negotiation.md)を参照してください。
+認証済みのアイドル状態で`["1","features.list"]`を1回送ると、Macは`["1","features.listed",機能名...]`を返します。機能名は重複なしの英小文字・数字・`.`・`-`からなる48文字以下の名前で、最大32件です。現在は`pointer.click`、`pointer.double`、`pointer.drag`、`pointer.scroll`、`pointer.move`、`keyboard.text`、`keyboard.text-ack`、`keyboard.key`、`keyboard.navigation`、`keyboard.punctuation`、`keyboard.shortcut-keys`、`window.control`、`display.control`、`clipboard.manual`、`clipboard.auto`を通知します。Androidは操作開始前に一覧を取得し、`pointer.click`がなければ開始せず、一覧にない操作は送信しません。未知の機能名は無視します。新Androidから一覧非対応の旧Macへの操作接続は失敗し、従来の画面表示は利用できます。機能一覧は認証やMacの操作許可の代わりにはなりません。詳細は[ADR 0008](decisions/0008-feature-negotiation.md)を参照してください。
 
 ローカルで生成したSDPについて、シグナリング接続のローカルIPアドレスに一致するhost候補だけを残し、`c=`の接続アドレスも同じ値に揃えてから送信します。候補が残らない場合や不正な候補・行形式は送信を拒否します。製品のメディアセッションに接続し、実際に生成されたSDPを両OSの処理で絞って相互接続を確認しました。これは通知する候補の制限であり、WebRTC内部のソケットや実際の経路を固定するものではありません。
 

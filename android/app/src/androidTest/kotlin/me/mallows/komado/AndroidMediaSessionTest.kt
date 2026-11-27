@@ -7,6 +7,7 @@ import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerClickCodec
 import me.mallows.komado.protocol.KeyboardText
 import me.mallows.komado.protocol.KeyboardTextCodec
+import me.mallows.komado.protocol.KeyboardTextPostedCodec
 import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.protocol.KeyboardKeyCodec
 import me.mallows.komado.protocol.SpecialKey
@@ -84,6 +85,15 @@ class AndroidMediaSessionTest {
     }
 
     @Test fun exchangesDescriptionsAndReceivesGeneratedVideo() {
+        exchangeDescriptionsAndGeneratedVideo(confirmText = false)
+        exchangeDescriptionsAndGeneratedVideo(confirmText = true)
+    }
+
+    @Test fun unconfirmedTextTimesOut() {
+        exchangeDescriptionsAndGeneratedVideo(confirmText = true, sendWrongConfirmation = false)
+    }
+
+    private fun exchangeDescriptionsAndGeneratedVideo(confirmText: Boolean, sendWrongConfirmation: Boolean = true) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val address = DatagramSocket().use {
             it.connect(InetAddress.getByName("192.0.2.1"), 9)
@@ -98,6 +108,7 @@ class AndroidMediaSessionTest {
         val channel = sender.createDataChannel("control", DataChannel.Init())!!
         val clickReceived = CompletableFuture<PointerClick>()
         val textReceived = CompletableFuture<KeyboardText>()
+        val laterTextReceived = CompletableFuture<KeyboardText>()
         val keyReceived = CompletableFuture<KeyboardKey>()
         val navigationReceived = CompletableFuture<KeyboardKey>()
         val punctuationReceived = CompletableFuture<KeyboardKey>()
@@ -128,7 +139,9 @@ class AndroidMediaSessionTest {
                 if (click != null) clickReceived.complete(click)
                 else {
                     val text = runCatching { KeyboardTextCodec.decode(bytes) }.getOrNull()
-                    if (text != null) textReceived.complete(text)
+                    if (text != null) {
+                        if (text.sequence == 21L) laterTextReceived.complete(text) else textReceived.complete(text)
+                    }
                     else {
                         val key = runCatching { KeyboardKeyCodec.decode(bytes) }.getOrNull()
                         if (key != null) {
@@ -167,6 +180,7 @@ class AndroidMediaSessionTest {
         val frames = CountDownLatch(1)
         val captureReady = CountDownLatch(1)
         val failed = CountDownLatch(1)
+        val textUnconfirmed = CountDownLatch(1)
         val sink = VideoSink { frames.countDown() }
         var attached: VideoTrack? = null
         var receiver: AndroidMediaSession? = null
@@ -202,7 +216,8 @@ class AndroidMediaSessionTest {
                         answer.completeExceptionally(IllegalStateException("Media session failed"))
                         remoteVideo.completeExceptionally(IllegalStateException("Media session failed"))
                     }
-                })
+                    override fun onTextDeliveryUnconfirmed() { textUnconfirmed.countDown() }
+                }, confirmText = confirmText)
                 assertTrue(!receiver.sendClick(PointerClick(1, 1, 500_000, 500_000, PointerClick.Button.LEFT)))
                 receiver.acceptOffer(restrictedOffer)
             }
@@ -243,7 +258,18 @@ class AndroidMediaSessionTest {
                 assertTrue(!current.sendMove(move))
             }
             assertTrue(clickReceived.get(5, TimeUnit.SECONDS) == click)
-            assertTrue(textReceived.get(5, TimeUnit.SECONDS) == text)
+            assertEquals(text.copy(confirm = confirmText), textReceived.get(5, TimeUnit.SECONDS))
+            if (confirmText) {
+                instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).hasUnconfirmedText()) }
+                assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(KeyboardTextPostedCodec.encode(text.sequence)), false)))
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                var acknowledged = false
+                while (!acknowledged && System.nanoTime() < deadline) {
+                    instrumentation.runOnMainSync { acknowledged = !requireNotNull(receiver).hasUnconfirmedText() }
+                    if (!acknowledged) Thread.sleep(25)
+                }
+                assertTrue("Text posting confirmation was not accepted", acknowledged)
+            }
             assertTrue(keyReceived.get(5, TimeUnit.SECONDS) == key)
             assertTrue(scrollReceived.get(5, TimeUnit.SECONDS) == scroll)
             assertTrue(dragCount.await(5, TimeUnit.SECONDS))
@@ -318,8 +344,19 @@ class AndroidMediaSessionTest {
             assertEquals(320, snapshot.width)
             assertEquals(240, snapshot.height)
             source.capturerObserver.onCapturerStopped()
-            assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap("[\"1\",\"capture.ready\",\"1\"]".toByteArray()), false)))
-            assertTrue("Duplicate capture notification was not rejected", failed.await(5, TimeUnit.SECONDS))
+            if (confirmText) {
+                val laterText = KeyboardText(21, 1, "sample")
+                instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendText(laterText)) }
+                assertEquals(laterText.copy(confirm = true), laterTextReceived.get(5, TimeUnit.SECONDS))
+                if (sendWrongConfirmation) {
+                    assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap(KeyboardTextPostedCodec.encode(22)), false)))
+                }
+                assertTrue("Unconfirmed text did not close the session", failed.await(if (sendWrongConfirmation) 5 else 15, TimeUnit.SECONDS))
+                assertTrue("Unconfirmed text was not reported", textUnconfirmed.await(5, TimeUnit.SECONDS))
+            } else {
+                assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap("[\"1\",\"capture.ready\",\"1\"]".toByteArray()), false)))
+                assertTrue("Duplicate capture notification was not rejected", failed.await(5, TimeUnit.SECONDS))
+            }
         } finally {
             instrumentation.runOnMainSync { receiver?.close() }
             channel.unregisterObserver()

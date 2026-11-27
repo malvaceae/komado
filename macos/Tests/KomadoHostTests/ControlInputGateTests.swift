@@ -36,8 +36,10 @@ final class ControlInputGateTests: XCTestCase {
         let clipboard = ClipboardRequest(sequence: 8, captureRevision: 4, operation: .get)
         XCTAssertEqual(gate.accept(try clipboard.encode(), binary: false), .clipboard(clipboard))
         XCTAssertNil(gate.accept(try clipboard.encode(), binary: false))
+        let confirmedText = KeyboardText(sequence: 9, captureRevision: 4, text: "日本語", confirm: true)
+        XCTAssertEqual(gate.accept(try confirmedText.encode(), binary: false), .text(confirmedText))
         gate.close()
-        let afterClose = PointerClick(sequence: 9, captureRevision: 4, x: 1, y: 2, button: .left)
+        let afterClose = PointerClick(sequence: 10, captureRevision: 4, x: 1, y: 2, button: .left)
         XCTAssertNil(gate.accept(try afterClose.encode(), binary: false))
         XCTAssertFalse(gate.enable(revision: 4))
     }

@@ -24,8 +24,26 @@ class KeyboardTextTest {
         for (i in 0 until invalid.length()) assertThrows(KeyboardTextCodec.MessageException::class.java) {
             KeyboardTextCodec.decode(invalid.getString(i).toByteArray(Charsets.UTF_8))
         }
+        assertTrue(KeyboardTextCodec.decode("[\"1\",\"keyboard.text.checked\",\"2\",\"1\",\"a\"]".toByteArray()).confirm)
         KeyboardTextCodec.encode(KeyboardText(1, 1, "あ".repeat(170)))
         assertThrows(KeyboardTextCodec.MessageException::class.java) { KeyboardTextCodec.encode(KeyboardText(1, 1, "あ".repeat(171))) }
         assertThrows(KeyboardTextCodec.MessageException::class.java) { KeyboardTextCodec.decode(ByteArray(2049)) }
+    }
+
+    @Test fun sharedPostingConfirmations() {
+        val assets = InstrumentationRegistry.getInstrumentation().context.assets
+        val fixture = JSONObject(assets.open("keyboard-text-posted.json").bufferedReader().use { it.readText() })
+        val valid = fixture.getJSONArray("valid")
+        val invalid = fixture.getJSONArray("invalid")
+        assertTrue(valid.length() > 0 && invalid.length() > 0)
+        for (i in 0 until valid.length()) {
+            val sequence = KeyboardTextPostedCodec.decode(valid.getString(i).toByteArray(Charsets.UTF_8))
+            assertEquals(sequence, KeyboardTextPostedCodec.decode(KeyboardTextPostedCodec.encode(sequence)))
+        }
+        for (i in 0 until invalid.length()) assertThrows(KeyboardTextPostedCodec.MessageException::class.java) {
+            KeyboardTextPostedCodec.decode(invalid.getString(i).toByteArray(Charsets.UTF_8))
+        }
+        assertThrows(KeyboardTextPostedCodec.MessageException::class.java) { KeyboardTextPostedCodec.encode(0) }
+        assertThrows(KeyboardTextPostedCodec.MessageException::class.java) { KeyboardTextPostedCodec.decode(ByteArray(257)) }
     }
 }

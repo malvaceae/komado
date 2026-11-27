@@ -566,12 +566,14 @@ final class HostModel: ObservableObject {
     }
 
     private func receiveControl(_ input: ControlInput, id: UUID) {
+        let confirmedText: KeyboardText?
+        if case let .text(value) = input, value.confirm { confirmedText = value } else { confirmedText = nil }
         guard mediaID == id, mediaTarget?.isControl == true, allowRemoteControl,
               sharingScreen, NSApplication.shared.isProtectedDataAvailable,
               consoleStatus(),
               let mapping = capture?.frameMapping, let route = mediaRoute,
               input.sequence > lastExecutedControlSequence else {
-            if mediaID == id, dragDispatcher?.isDragging == true { mediaFailed(id: id) }
+            if mediaID == id, confirmedText != nil || dragDispatcher?.isDragging == true { mediaFailed(id: id) }
             return
         }
         if case let .clipboard(request) = input {
@@ -593,7 +595,7 @@ final class HostModel: ObservableObject {
         if let window = controlWindow {
             guard let candidate = CaptureGeometry(revision: 1, bounds: window.target.bounds),
                   let windows = ControlWindowSnapshot.onScreen() else {
-                if dragDispatcher?.isDragging == true { mediaFailed(id: id) }
+                if confirmedText != nil || dragDispatcher?.isDragging == true { mediaFailed(id: id) }
                 return
             }
             guard window.targetIsUnchanged(in: windows) else {
@@ -622,36 +624,45 @@ final class HostModel: ObservableObject {
             case .clipboard: allowed = false
             }
             guard allowed else {
-                if dragDispatcher?.isDragging == true { mediaFailed(id: id) }
+                if confirmedText != nil || dragDispatcher?.isDragging == true { mediaFailed(id: id) }
                 return
             }
         } else {
             guard let displayID = controlDisplayID, CGDisplayIsActive(displayID) != 0,
                   let bounds = controlBounds, CGDisplayBounds(displayID) == bounds,
                   let candidate = CaptureGeometry(revision: 1, bounds: bounds) else {
-                if dragDispatcher?.isDragging == true { mediaFailed(id: id) }
+                if confirmedText != nil || dragDispatcher?.isDragging == true { mediaFailed(id: id) }
                 return
             }
             geometry = candidate
             switch input {
-            case .text, .key: guard FocusedWindow.isOnDisplay(bounds) else { return }
+            case .text, .key:
+                guard FocusedWindow.isOnDisplay(bounds) else {
+                    if confirmedText != nil { mediaFailed(id: id) }
+                    return
+                }
             case .click, .scroll, .drag, .move, .clipboard: break
             }
         }
         var invalidDrag = false
         var executed = false
+        var textPosted = false
         route.withAllowedFrame {
             executed = true
             lastExecutedControlSequence = input.sequence
             switch input {
             case let .click(click): _ = pointerDispatcher?.click(click, geometry: geometry, mapping: mapping, sessionAllowed: true)
-            case let .text(text): _ = textDispatcher?.send(text, captureRevision: geometry.revision, sessionAllowed: true)
+            case let .text(text): textPosted = textDispatcher?.send(text, captureRevision: geometry.revision, sessionAllowed: true) == true
             case let .key(key): _ = keyDispatcher?.send(key, captureRevision: geometry.revision, sessionAllowed: true)
             case let .scroll(scroll): _ = scrollDispatcher?.send(scroll, geometry: geometry, mapping: mapping, sessionAllowed: true)
             case let .drag(drag): invalidDrag = dragDispatcher?.send(drag, geometry: geometry, mapping: mapping, sessionAllowed: true) != true
             case let .move(move): _ = moveDispatcher?.send(move, geometry: geometry, mapping: mapping, sessionAllowed: true)
             case .clipboard: break
             }
+        }
+        if let confirmedText, (!executed || !textPosted || mediaSession?.sendTextPosted(sequence: confirmedText.sequence) != true) {
+            mediaFailed(id: id)
+            return
         }
         if invalidDrag || (!executed && dragDispatcher?.isDragging == true) { mediaFailed(id: id) }
     }

@@ -1,0 +1,16 @@
+{
+  "valid": [
+    "[\"1\",\"keyboard.text.posted\",\"1\"]",
+    "[\"1\",\"keyboard.text.posted\",\"9007199254740991\"]"
+  ],
+  "invalid": [
+    "[\"1\",\"keyboard.text.posted\",\"0\"]",
+    "[\"1\",\"keyboard.text.posted\",\"01\"]",
+    "[\"1\",\"keyboard.text.posted\",\"9007199254740992\"]",
+    "[\"1\",\"keyboard.text.posted\",1]",
+    "[\"1\",\"keyboard.text.posted\",\"1\",]",
+    "[\"1\",\"keyboard.text.posted\",\"1\",\"extra\"]",
+    "[\"1\",\"keyboard.text.posted\",\"1\"] []",
+    "[\"1\",\"keyboard.text.checked\",\"1\"]"
+  ]
+}

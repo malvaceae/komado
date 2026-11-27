@@ -67,6 +67,7 @@ final class HostMediaSessionTests: XCTestCase {
         let session = try HostMediaSession(route: route, onFailure: {})
         XCTAssertThrowsError(try session.announceCapture(revision: 1))
         XCTAssertFalse(session.sendClipboardResponse(ClipboardResponse(sequence: 1, result: .unavailable)))
+        XCTAssertFalse(session.sendTextPosted(sequence: 1))
         let offer = try await session.makeOffer()
         XCTAssertTrue(offer.hasPrefix("v=0\r\n"))
         XCTAssertTrue(offer.contains("m=video "))
@@ -76,6 +77,7 @@ final class HostMediaSessionTests: XCTestCase {
             XCTFail("A second offer must be rejected")
         } catch { }
         session.close()
+        XCTAssertFalse(session.sendTextPosted(sequence: 1))
         session.close()
         do {
             try await session.applyAnswer("v=0\r\n")

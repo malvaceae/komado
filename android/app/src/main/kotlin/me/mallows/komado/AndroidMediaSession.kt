@@ -9,6 +9,7 @@ import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerClickCodec
 import me.mallows.komado.protocol.KeyboardText
 import me.mallows.komado.protocol.KeyboardTextCodec
+import me.mallows.komado.protocol.KeyboardTextPostedCodec
 import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.protocol.KeyboardKeyCodec
 import me.mallows.komado.protocol.ClipboardCodec
@@ -32,12 +33,14 @@ import org.webrtc.SessionDescription
 import org.webrtc.VideoTrack
 import java.net.InetAddress
 import java.nio.ByteBuffer
+import java.util.ArrayDeque
 
 /** One receiving peer; callbacks and lifetime management use the main thread. */
 internal class AndroidMediaSession(
     context: Context,
     private val signalingAddress: InetAddress,
     private val listener: Listener,
+    private val confirmText: Boolean = false,
 ) : PeerConnection.Observer, AutoCloseable {
     interface Listener {
         fun onAnswer(sdp: String)
@@ -45,6 +48,7 @@ internal class AndroidMediaSession(
         /** Detach synchronously when the track is null, before the peer is disposed. */
         fun onVideo(track: VideoTrack?)
         fun onFailure()
+        fun onTextDeliveryUnconfirmed() = Unit
         fun onClipboardResponse(response: ClipboardResponse) = Unit
     }
 
@@ -72,6 +76,8 @@ internal class AndroidMediaSession(
         pendingClipboard = null
         if (pending != null) listener.onClipboardResponse(ClipboardResponse(pending.sequence, ClipboardResult.Unavailable))
     }
+    private val pendingText = ArrayDeque<Long>()
+    private val textTimeout = Runnable { fail() }
 
     init {
         checkMainThread()
@@ -170,7 +176,29 @@ internal class AndroidMediaSession(
     }
 
     fun sendText(text: KeyboardText): Boolean {
-        return sendInput(text.sequence, text.captureRevision) { KeyboardTextCodec.encode(text) }
+        checkMainThread()
+        if (confirmText && pendingText.size >= 64) return false
+        val outgoing = text.copy(confirm = confirmText)
+        if (!sendInput(outgoing.sequence, outgoing.captureRevision) { KeyboardTextCodec.encode(outgoing) }) return false
+        if (confirmText) {
+            pendingText.addLast(outgoing.sequence)
+            if (pendingText.size == 1) handler.postDelayed(textTimeout, 10_000)
+        }
+        return true
+    }
+
+    fun hasUnconfirmedText(): Boolean {
+        checkMainThread()
+        return pendingText.isNotEmpty()
+    }
+
+    private fun receiveTextPosted(data: ByteArray): Boolean {
+        val sequence = try { KeyboardTextPostedCodec.decode(data) } catch (_: Exception) { return false }
+        if (!confirmText || pendingText.peekFirst() != sequence) { fail(); return true }
+        pendingText.removeFirst()
+        handler.removeCallbacks(textTimeout)
+        if (pendingText.isNotEmpty()) handler.postDelayed(textTimeout, 10_000)
+        return true
     }
 
     fun sendKey(key: KeyboardKey): Boolean {
@@ -261,8 +289,10 @@ internal class AndroidMediaSession(
 
     private fun fail() {
         if (state == State.CLOSED) return
+        val textUnconfirmed = pendingText.isNotEmpty()
         close()
         listener.onFailure()
+        if (textUnconfirmed) listener.onTextDeliveryUnconfirmed()
     }
 
     override fun close() {
@@ -272,8 +302,10 @@ internal class AndroidMediaSession(
         handler.removeCallbacks(timeout)
         handler.removeCallbacks(retryMove)
         handler.removeCallbacks(clipboardTimeout)
+        handler.removeCallbacks(textTimeout)
         pendingMove = null
         pendingClipboard = null
+        pendingText.clear()
         try {
             if (trackShown) listener.onVideo(null)
         } finally {
@@ -344,7 +376,7 @@ internal class AndroidMediaSession(
                                 captureRevision = revision
                                 handler.removeCallbacks(timeout)
                                 listener.onCaptureReady(revision)
-                            } else receiveClipboard(data)
+                            } else if (!receiveTextPosted(data)) receiveClipboard(data)
                         }
                     }
                 })

@@ -8,7 +8,7 @@ import java.io.StringWriter
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 
-data class KeyboardText(val sequence: Long, val captureRevision: Long, val text: String)
+data class KeyboardText(val sequence: Long, val captureRevision: Long, val text: String, val confirm: Boolean = false)
 
 object KeyboardTextCodec {
     const val MAX_TEXT_BYTES = 512
@@ -25,14 +25,16 @@ object KeyboardTextCodec {
                     if (reader.peek() != JsonToken.STRING) throw MessageException()
                     return reader.nextString()
                 }
-                if (string() != "1" || string() != "keyboard.text") throw MessageException()
+                if (string() != "1") throw MessageException()
+                val type = string()
+                if (type != "keyboard.text" && type != "keyboard.text.checked") throw MessageException()
                 val sequence = positiveInteger(string())
                 val revision = positiveInteger(string())
                 val value = string()
                 if (!validText(value) || reader.hasNext()) throw MessageException()
                 reader.endArray()
                 if (reader.peek() != JsonToken.END_DOCUMENT) throw MessageException()
-                return KeyboardText(sequence, revision, value)
+                return KeyboardText(sequence, revision, value, confirm = type == "keyboard.text.checked")
             }
         } catch (_: Exception) { throw MessageException() }
     }
@@ -42,7 +44,7 @@ object KeyboardTextCodec {
             !validText(message.text)) throw MessageException()
         val output = StringWriter()
         JsonWriter(output).use { writer ->
-            writer.beginArray().value("1").value("keyboard.text").value(message.sequence.toString())
+            writer.beginArray().value("1").value(if (message.confirm) "keyboard.text.checked" else "keyboard.text").value(message.sequence.toString())
                 .value(message.captureRevision.toString()).value(message.text).endArray()
         }
         return output.toString().toByteArray(Charsets.UTF_8).also { if (it.size > 2048) throw MessageException() }

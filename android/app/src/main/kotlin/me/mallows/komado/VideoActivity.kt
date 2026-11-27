@@ -77,6 +77,7 @@ class VideoActivity : Activity() {
     private val automaticTick = Runnable { automaticStep() }
     private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
+    private var textDeliveryUnconfirmed = false
     private var lastVideoTapSent = false
     private lateinit var status: TextView
     private val firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
@@ -220,7 +221,7 @@ class VideoActivity : Activity() {
             }, sendText = { text ->
                 if (!active || "keyboard.text" !in supportedFeatures || !firstFrameShown) false else
                     textMapper.send(text, captureRevision, { media?.sendText(it) == true },
-                        { if (active) stopSession(failed = true) })
+                        { if (active) { textDeliveryUnconfirmed = true; stopSession(failed = true) } })
             })
             controls.addView(keyboard, LinearLayout.LayoutParams(1, 1))
             keyboardButton = Button(this).apply {
@@ -334,8 +335,12 @@ class VideoActivity : Activity() {
                         }
                         override fun onVideo(track: VideoTrack?) { renderer?.show(track) }
                         override fun onFailure() { stopSession(failed = true) }
+                        override fun onTextDeliveryUnconfirmed() {
+                            textDeliveryUnconfirmed = true
+                            status.setText(R.string.text_delivery_unconfirmed)
+                        }
                         override fun onClipboardResponse(response: ClipboardResponse) { handleClipboardResponse(response) }
-                    })
+                    }, confirmText = controlMode && "keyboard.text-ack" in supportedFeatures)
                     media = session
                     session.acceptOffer(offer)
                 } catch (_: Exception) { stopSession(failed = true) }
@@ -673,6 +678,7 @@ class VideoActivity : Activity() {
     }
 
     private fun stopSession(failed: Boolean) {
+        textDeliveryUnconfirmed = textDeliveryUnconfirmed || media?.hasUnconfirmedText() == true
         firstFrameDeadline.finish()
         val current = synchronized(lock) {
             active = false
@@ -713,7 +719,8 @@ class VideoActivity : Activity() {
         runCatching { renderer?.close() }
         renderer = null
         if (::status.isInitialized) status.setText(
-            if (!failed) R.string.screen_closed else if (firstFrameShown) R.string.screen_disconnected else R.string.screen_failed
+            if (textDeliveryUnconfirmed) R.string.text_delivery_unconfirmed else if (!failed) R.string.screen_closed
+            else if (firstFrameShown) R.string.screen_disconnected else R.string.screen_failed
         )
     }
 
