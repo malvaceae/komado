@@ -10,6 +10,7 @@ private final class ServerTestBox: @unchecked Sendable {
     private var interface: NWInterface?
     private var pathObserved = false
     private var port: UInt16?
+    private var endpoints: [SignalingServer.Endpoint] = []
     private var authenticationCount = 0
     private var lastAuthenticated: UUID?
     private var answer: String?
@@ -29,6 +30,8 @@ private final class ServerTestBox: @unchecked Sendable {
     func getInterface() -> NWInterface? { lock.withLock { interface } }
     func setPort(_ value: UInt16) { lock.withLock { port = value } }
     func getPort() -> UInt16? { lock.withLock { port } }
+    func setEndpoints(_ value: [SignalingServer.Endpoint]) { lock.withLock { endpoints = value } }
+    func getEndpoints() -> [SignalingServer.Endpoint] { lock.withLock { endpoints } }
     func nextAuthentication() -> Int { lock.withLock { authenticationCount += 1; return authenticationCount } }
     func setLastAuthenticated(_ value: UUID) { lock.withLock { lastAuthenticated = value } }
     func getLastAuthenticated() -> UUID? { lock.withLock { lastAuthenticated } }
@@ -146,36 +149,45 @@ final class SignalingServerTests: XCTestCase {
         }
         let identity = try HostTLSIdentityStore(service: service).create()
         let registry = PairedDeviceRegistry(service: "\(service).devices")
-        let ready = expectation(description: "both listeners")
-        ready.expectedFulfillmentCount = 2
-        let removed = expectation(description: "one listener removed")
-        let failed = expectation(description: "remaining listener stays active")
-        failed.isInverted = true
+        let first = ListenerBinding(scope: .localLink, interface: interface, address: ipv4)
+        let second = ListenerBinding(scope: .localLink, interface: interface, address: ipv6)
         let server = try SignalingServer.create(identity: identity.identity,
-            bindings: [ListenerBinding(scope: .localLink, interface: interface, address: ipv4),
-                       ListenerBinding(scope: .localLink, interface: interface, address: ipv6)], port: .any,
+            bindings: [first, second], port: .any,
             pairing: PairingCoordinator(registry: registry, now: { .zero }),
             authentication: DeviceAuthenticationCoordinator(registry: registry, now: { .zero })) { event in
-                switch event {
-                case let .listening(_, address, port):
-                    if address == "\(ipv4)" { box.setPort(port) }
-                    ready.fulfill()
-                case .listenerUnavailable: removed.fulfill()
-                case .failed: failed.fulfill()
-                default: break
-                }
+                if case let .listenersChanged(_, endpoints, _) = event { box.setEndpoints(endpoints) }
             }
         try await server.start()
-        await fulfillment(of: [ready], timeout: 10)
-        await server.retainListeners(keys: ["\(interface.index)|\(ipv4)"])
-        await fulfillment(of: [removed, failed], timeout: 1)
-        let peer = ServerTestPeer(host: ipv4, port: try XCTUnwrap(box.getPort()).asPort(), fingerprint: identity.fingerprintSHA256)
+        try await waitForEndpoints(box, count: 2)
+        let firstPort = try XCTUnwrap(box.getEndpoints().first { $0.address == "\(ipv4)" }?.port)
+        let peer = ServerTestPeer(host: ipv4, port: try firstPort.asPort(), fingerprint: identity.fingerprintSHA256)
         try await peer.start()
+        await server.updateListeners([first])
+        try await waitForEndpoints(box, count: 1)
         try await peer.send(.startMedia)
         let response = try await peer.receive()
         XCTAssertEqual(response, .rejected)
         peer.connection.cancel()
+        await server.updateListeners([])
+        try await waitForEndpoints(box, count: 0)
+        await server.updateListeners([first, second])
+        try await waitForEndpoints(box, count: 2)
+        let restoredPort = try XCTUnwrap(box.getEndpoints().first { $0.address == "\(ipv4)" }?.port)
+        let restored = ServerTestPeer(host: ipv4, port: try restoredPort.asPort(), fingerprint: identity.fingerprintSHA256)
+        try await restored.start()
+        try await restored.send(.startMedia)
+        let restoredResponse = try await restored.receive()
+        XCTAssertEqual(restoredResponse, .rejected)
+        restored.connection.cancel()
         await server.stop()
+    }
+
+    private func waitForEndpoints(_ box: ServerTestBox, count: Int) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while box.getEndpoints().count != count && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(box.getEndpoints().count, count)
     }
 
     func testLocalServerPairsAndAuthenticatesAgain() async throws {
@@ -224,7 +236,8 @@ final class SignalingServerTests: XCTestCase {
             bindings: [ListenerBinding(scope: .localLink, interface: interface, address: address)],
             port: .any, pairing: pairing, authentication: auth) { event in
                 switch event {
-                case let .listening(_, _, port): box.setPort(port); listening.fulfill()
+                case let .listenersChanged(_, endpoints, _):
+                    if let port = endpoints.first?.port, box.getPort() == nil { box.setPort(port); listening.fulfill() }
                 case let .authenticated(id, _):
                     box.setLastAuthenticated(id)
                     let count = box.nextAuthentication()

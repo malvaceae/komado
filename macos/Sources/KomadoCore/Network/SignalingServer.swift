@@ -2,7 +2,7 @@ import Foundation
 import Network
 import Security
 
-public struct ListenerBinding {
+public struct ListenerBinding: Sendable {
     public let scope: ListenerAccess.Scope
     public let interface: NWInterface
     public let address: NWEndpoint.Host
@@ -21,17 +21,22 @@ public struct ListenerBinding {
 /// A single authenticated SDP offer/answer exchange is supported; unexpected
 /// messages close the connection. Unavailable listeners are retired separately.
 public actor SignalingServer {
+    // SecIdentity is an immutable Security framework reference shared by listeners.
+    private struct Identity: @unchecked Sendable { let value: SecIdentity }
     public enum ServerError: Error, Equatable { case invalidBindings, alreadyStarted, removalBusy, noConnection }
+    public struct Endpoint: Sendable {
+        public let interfaceName: String
+        public let address: String
+        public let port: UInt16
+    }
     public enum Event: Sendable {
-        case listening(interfaceName: String, address: String, port: UInt16)
-        case listenerUnavailable(interfaceName: String, address: String, port: UInt16)
+        case listenersChanged(revision: UInt64, endpoints: [Endpoint], failed: Bool)
         case authenticated(UUID, PairedDevice)
         case mediaRequested(UUID, PairedDevice, MediaTarget, resuming: Bool)
         case mediaStopRequested(UUID, PairedDevice)
         case answer(UUID, PairedDevice, String)
         case disconnected(UUID)
         case throttled
-        case failed
         case stopped
     }
 
@@ -41,10 +46,13 @@ public actor SignalingServer {
         let address: String
         let port: UInt16
         let listener: NWListener
-        var unavailable = false
+        var ready = false
     }
 
-    private var listeners: [Slot]
+    private var listeners: [UUID: Slot]
+    private let identity: Identity
+    private let port: NWEndpoint.Port
+    private var listenerRevision: UInt64 = 0
     private let pairing: PairingCoordinator
     private let authentication: DeviceAuthenticationCoordinator
     private let onEvent: @Sendable (Event) -> Void
@@ -67,25 +75,29 @@ public actor SignalingServer {
               Set(bindings.map { "\($0.interface.index)|\($0.address)" }).count == bindings.count else {
             throw ServerError.invalidBindings
         }
-        let listeners = try bindings.map { binding in
-            let parameters = try ListenerAccess.parameters(identity: identity, scope: binding.scope,
-                                                            interface: binding.interface, address: binding.address, port: binding.port ?? port)
-            let listener = try NWListener(using: parameters)
-            listener.newConnectionLimit = 1
-            let displayedAddress: String
-            if case let .ipv6(address) = binding.address, let unscoped = IPv6Address(address.rawValue) {
-                displayedAddress = "\(unscoped)"
-            } else { displayedAddress = "\(binding.address)" }
-            return Slot(key: "\(binding.interface.index)|\(binding.address)", interfaceName: binding.interface.name, address: displayedAddress,
-                        port: (binding.port ?? port).rawValue, listener: listener)
-        }
-        return SignalingServer(listeners: listeners, pairing: pairing, authentication: authentication,
+        let listeners = try Dictionary(uniqueKeysWithValues: bindings.map { (UUID(), try makeSlot(identity: identity, binding: $0, port: port)) })
+        return SignalingServer(identity: Identity(value: identity), port: port, listeners: listeners, pairing: pairing, authentication: authentication,
                                resumeDeviceID: resumeDeviceID, onEvent: onEvent)
     }
 
-    private init(listeners: [Slot], pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator,
+    private nonisolated static func makeSlot(identity: SecIdentity, binding: ListenerBinding, port: NWEndpoint.Port) throws -> Slot {
+        let parameters = try ListenerAccess.parameters(identity: identity, scope: binding.scope,
+                                                        interface: binding.interface, address: binding.address, port: binding.port ?? port)
+        let listener = try NWListener(using: parameters)
+        listener.newConnectionLimit = 1
+        let displayedAddress: String
+        if case let .ipv6(address) = binding.address, let unscoped = IPv6Address(address.rawValue) {
+            displayedAddress = "\(unscoped)"
+        } else { displayedAddress = "\(binding.address)" }
+        return Slot(key: "\(binding.interface.index)|\(binding.address)", interfaceName: binding.interface.name, address: displayedAddress,
+                    port: (binding.port ?? port).rawValue, listener: listener)
+    }
+
+    private init(identity: Identity, port: NWEndpoint.Port, listeners: [UUID: Slot], pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator,
                  resumeDeviceID: UUID?,
                  onEvent: @escaping @Sendable (Event) -> Void) {
+        self.identity = identity
+        self.port = port
         self.listeners = listeners
         self.pairing = pairing
         self.authentication = authentication
@@ -97,15 +109,7 @@ public actor SignalingServer {
     public func start() throws {
         guard !started && !stopped else { throw ServerError.alreadyStarted }
         started = true
-        for (index, slot) in listeners.enumerated() {
-            slot.listener.stateUpdateHandler = { [weak self] state in
-                Task { await self?.listenerState(index: index, state: state) }
-            }
-            slot.listener.newConnectionHandler = { [weak self] connection in
-                Task { await self?.accept(connection) }
-            }
-            slot.listener.start(queue: queue)
-        }
+        for (id, slot) in listeners { startListener(id: id, slot: slot) }
     }
 
     public func stop() async {
@@ -113,7 +117,8 @@ public actor SignalingServer {
         stopped = true
         retry?.cancel()
         retry = nil
-        for slot in listeners { slot.listener.cancel() }
+        for slot in listeners.values { slot.listener.cancel() }
+        listeners.removeAll()
         let current = active
         active = nil
         if let current { await current.session.close() }
@@ -131,11 +136,24 @@ public actor SignalingServer {
 
     public func setResumeDeviceID(_ id: UUID?) { resumeDeviceID = id }
 
-    /// Retire only listeners whose assigned addresses are no longer available.
-    public func retainListeners(keys: Set<String>) async {
-        for index in listeners.indices where !keys.contains(listeners[index].key) {
-            await listenerUnavailable(index: index)
+    /// Keep active listeners and replace only addresses that changed.
+    public func updateListeners(_ bindings: [ListenerBinding]) {
+        guard started && !stopped else { return }
+        let keys = Set(bindings.map { "\($0.interface.index)|\($0.address)" })
+        for (id, slot) in listeners where !keys.contains(slot.key) {
+            slot.listener.cancel()
+            listeners.removeValue(forKey: id)
         }
+        let existing = Set(listeners.values.map(\.key))
+        var failed = false
+        for binding in bindings where !existing.contains("\(binding.interface.index)|\(binding.address)") {
+            guard let slot = try? Self.makeSlot(identity: identity.value, binding: binding, port: port) else { failed = true; continue }
+            let id = UUID()
+            slot.listener.newConnectionLimit = active == nil && retry == nil && !removing ? 1 : 0
+            listeners[id] = slot
+            startListener(id: id, slot: slot)
+        }
+        publishListeners(failed: failed && listeners.isEmpty)
     }
 
     /// Sends one SDP offer only after the active device has authenticated.
@@ -155,46 +173,57 @@ public actor SignalingServer {
     public func removeDevice(id: UUID) async throws -> Bool {
         guard !removing else { throw ServerError.removalBusy }
         removing = true
-        for slot in listeners { slot.listener.newConnectionLimit = 0 }
+        for slot in listeners.values { slot.listener.newConnectionLimit = 0 }
         defer {
             removing = false
             if started && !stopped && active == nil && retry == nil {
-                for slot in listeners { slot.listener.newConnectionLimit = 1 }
+                for slot in listeners.values { slot.listener.newConnectionLimit = 1 }
             }
         }
         if let current = active { await current.session.close() }
         return try await authentication.removeDevice(id: id)
     }
 
-    private func listenerState(index: Int, state: NWListener.State) async {
-        guard !stopped, !listeners[index].unavailable else { return }
-        switch state {
+    private func startListener(id: UUID, slot: Slot) {
+        slot.listener.stateUpdateHandler = { [weak self] _ in
+            Task { await self?.listenerState(id: id) }
+        }
+        slot.listener.newConnectionHandler = { [weak self] connection in
+            Task { await self?.accept(connection, listenerID: id) }
+        }
+        slot.listener.start(queue: queue)
+    }
+
+    private func listenerState(id: UUID) {
+        guard !stopped, let slot = listeners[id] else { return }
+        switch slot.listener.state {
         case .ready:
-            if let port = listeners[index].listener.port {
-                onEvent(.listening(interfaceName: listeners[index].interfaceName, address: listeners[index].address, port: port.rawValue))
-            }
+            listeners[id]?.ready = true
+            publishListeners()
         case .failed:
-            await listenerUnavailable(index: index)
+            slot.listener.cancel()
+            listeners.removeValue(forKey: id)
+            publishListeners(failed: listeners.isEmpty)
+        case .waiting:
+            if slot.ready {
+                listeners[id]?.ready = false
+                publishListeners()
+            }
         default: break
         }
     }
 
-    private func listenerUnavailable(index: Int) async {
-        guard !stopped, !listeners[index].unavailable else { return }
-        listeners[index].unavailable = true
-        let slot = listeners[index]
-        slot.listener.cancel()
-        onEvent(.listenerUnavailable(interfaceName: slot.interfaceName, address: slot.address,
-                                     port: slot.listener.port?.rawValue ?? slot.port))
-        if listeners.allSatisfy(\.unavailable) {
-            onEvent(.failed)
-            await stop()
-        }
+    private func publishListeners(failed: Bool = false) {
+        listenerRevision += 1
+        let endpoints = listeners.values.filter(\.ready).map {
+            Endpoint(interfaceName: $0.interfaceName, address: $0.address, port: $0.listener.port?.rawValue ?? $0.port)
+        }.sorted { ($0.interfaceName, $0.address, $0.port) < ($1.interfaceName, $1.address, $1.port) }
+        onEvent(.listenersChanged(revision: listenerRevision, endpoints: endpoints, failed: failed))
     }
 
-    private func accept(_ connection: NWConnection) async {
-        guard started && !stopped && !removing && active == nil && retry == nil else { connection.cancel(); return }
-        for slot in listeners { slot.listener.newConnectionLimit = 0 }
+    private func accept(_ connection: NWConnection, listenerID: UUID) async {
+        guard started && !stopped && listeners[listenerID] != nil && !removing && active == nil && retry == nil else { connection.cancel(); return }
+        for slot in listeners.values { slot.listener.newConnectionLimit = 0 }
         let now = startedAt.duration(to: clock.now)
         if let delay = limiter.admit(at: now) {
             connection.cancel()
@@ -248,13 +277,13 @@ public actor SignalingServer {
         guard !stopped else { return }
         onEvent(.disconnected(id))
         if !removing && retry == nil {
-            for slot in listeners { slot.listener.newConnectionLimit = 1 }
+            for slot in listeners.values { slot.listener.newConnectionLimit = 1 }
         }
     }
 
     private func resumeAccepting() {
         retry = nil
         guard !stopped && !removing && active == nil else { return }
-        for slot in listeners { slot.listener.newConnectionLimit = 1 }
+        for slot in listeners.values { slot.listener.newConnectionLimit = 1 }
     }
 }

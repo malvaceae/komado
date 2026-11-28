@@ -8,7 +8,7 @@ import Security
 /// interface. The owner of the tunnel is responsible for securing that tunnel.
 /// These restrictions do not replace peer authentication or connection limits.
 public enum ListenerAccess {
-    public enum Scope { case localLink, vpnTunnel }
+    public enum Scope: Sendable { case localLink, vpnTunnel }
     public enum AccessError: Error, Equatable {
         case interfaceUnavailable
         case addressNotAssigned

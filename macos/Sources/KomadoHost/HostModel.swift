@@ -80,13 +80,12 @@ final class HostModel: ObservableObject {
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "me.mallows.komado.path")
     private var interfaces: [NWInterface] = []
-    private var bindings: [ListenerBinding] = []
     private var server: SignalingServer?
     private var generation = UUID()
     private var invitationGeneration = UUID()
     private var invitationExpiry: Task<Void, Never>?
     private var invitationCleanup: Task<Void, Never>?
-    private var listening = Set<String>()
+    private var listenerRevision: UInt64 = 0
     private var mediaID = UUID()
     private var connectedSession: UUID?
     private var mediaConnection: UUID?
@@ -225,8 +224,7 @@ final class HostModel: ObservableObject {
                 Task { @MainActor [weak self] in self?.handle(event, generation: run) }
             }
             generation = run
-            bindings = selected
-            listening.removeAll()
+            listenerRevision = 0
             addresses = []
             pairingEndpoints = []
             connectedDevice = nil
@@ -244,19 +242,13 @@ final class HostModel: ObservableObject {
     }
 
     func stop() async {
-        await stop(preserveResume: false)
-    }
-
-    private func stop(preserveResume: Bool) async {
-        if !preserveResume {
-            resumeDeviceID = nil
-            settings.removeObject(forKey: Self.resumeDeviceKey)
-        }
+        resumeDeviceID = nil
+        settings.removeObject(forKey: Self.resumeDeviceKey)
         let cleanup = stopMedia()
         switchingControl = false
         allowRemoteControl = false
         let current = server
-        if !preserveResume { await current?.setResumeDeviceID(nil) }
+        await current?.setResumeDeviceID(nil)
         generation = UUID()
         server = nil
         running = false
@@ -339,17 +331,9 @@ final class HostModel: ObservableObject {
     private func networkChanged(_ current: [NWInterface]) async {
         interfaces = current
         networkReady = true
-        guard running else { return }
-        let available = bindings.filter { binding in
-            guard let interface = current.first(where: { $0.index == binding.interface.index }) else { return false }
-            return (try? ListenerAccess.addresses(on: interface).contains(binding.address)) == true
-        }
-        if available.isEmpty {
-            await stop(preserveResume: true)
-            error = "ネットワークが変わったため待ち受けを停止しました。もう一度開始してください。"
-        } else if available.count != bindings.count {
-            await server?.retainListeners(keys: Set(available.map { "\($0.interface.index)|\($0.address)" }))
-        }
+        guard running, let server else { return }
+        guard let available = try? selectBindings() else { return }
+        await server.updateListeners(available)
     }
 
     private func selectBindings() throws -> [ListenerBinding] {
@@ -357,7 +341,10 @@ final class HostModel: ObservableObject {
         var seen = Set<String>()
         for interface in interfaces where interface.type != .loopback {
             let isTunnel = interface.type == .other && interface.name.hasPrefix("utun")
-            for address in try ListenerAccess.addresses(on: interface) {
+            let available: [NWEndpoint.Host]
+            do { available = try ListenerAccess.addresses(on: interface) }
+            catch ListenerAccess.AccessError.interfaceUnavailable { continue }
+            for address in available {
                 // Tunnel link-local addresses are not useful as remote endpoints.
                 if isTunnel, case let .ipv6(ip) = address, ip.rawValue.count == 16,
                    ip.rawValue[0] == 0xfe, ip.rawValue[1] & 0xc0 == 0x80 { continue }
@@ -380,20 +367,15 @@ final class HostModel: ObservableObject {
     private func handle(_ event: SignalingServer.Event, generation eventGeneration: UUID) {
         guard generation == eventGeneration else { return }
         switch event {
-        case let .listening(interfaceName, address, port):
-            let endpoint = PairingEndpoint(interfaceName: interfaceName, address: address, port: port)
-            let item = endpoint.displayName
-            if listening.insert(item).inserted { addresses.append(item); pairingEndpoints.append(endpoint) }
-            ready = listening.count == bindings.count
-        case let .listenerUnavailable(interfaceName, address, port):
-            let endpoint = PairingEndpoint(interfaceName: interfaceName, address: address, port: port)
-            listening.remove(endpoint.displayName)
-            addresses.removeAll { $0 == endpoint.displayName }
-            pairingEndpoints.removeAll { $0 == endpoint }
-            bindings.removeAll {
-                $0.interface.name == interfaceName && "\($0.address)".split(separator: "%").first.map(String.init) == address
-            }
-            ready = !listening.isEmpty && listening.count == bindings.count
+        case let .listenersChanged(revision, endpoints, failed):
+            guard revision > listenerRevision else { return }
+            listenerRevision = revision
+            pairingEndpoints = endpoints.map { PairingEndpoint(interfaceName: $0.interfaceName, address: $0.address, port: $0.port) }
+            addresses = pairingEndpoints.map(\.displayName)
+            ready = !pairingEndpoints.isEmpty
+            let listenerError = "待ち受けに失敗しました。ネットワークとポートを確認してください。"
+            if failed { error = listenerError }
+            else if ready && error == listenerError { error = nil }
         case let .authenticated(id, device):
             connectedSession = id
             connectedDevice = device.name
@@ -418,9 +400,6 @@ final class HostModel: ObservableObject {
                 connectedDevice = nil
             }
         case .throttled: error = "接続試行が多いため、一時的に新しい接続を待機しています。"
-        case .failed:
-            error = "待ち受けに失敗しました。ネットワークとポートを確認してください。"
-            Task { await stop(preserveResume: true) }
         case .stopped:
             running = false
             ready = false
