@@ -617,6 +617,7 @@ final class HostModel: ObservableObject {
                 }
                 guard self.mediaID == id, !Task.isCancelled else { try? await captured.stop(); return }
                 self.capture = captured
+                self.error = nil
                 self.sleepActivity = IdleSleepActivity()
                 try session.announceCapture(revision: 1)
             } catch { self?.mediaFailed(id: id) }
@@ -674,6 +675,11 @@ final class HostModel: ObservableObject {
                   let candidate = CaptureGeometry(revision: 1, bounds: current.bounds) else {
                 mediaFailed(id: id)
                 error = "操作対象のウインドウを確認できなくなったため、接続を終了しました。"
+                return
+            }
+            guard current.bounds.size == window.target.bounds.size else {
+                mediaFailed(id: id)
+                error = "操作中のウインドウのサイズが変わったため、接続を終了しました。"
                 return
             }
             geometry = candidate
