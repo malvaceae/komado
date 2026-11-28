@@ -108,7 +108,7 @@ class AuthenticatedHostConnectionTest {
     @Test fun listsMoreThan512WindowsAndSelectsTheLast() {
         withServer { server, fingerprint ->
             val executor = Executors.newSingleThreadExecutor()
-            val windows = (1..513).map { WindowInfo(it.toLong(), 300, 200, "App", "Window $it", it % 2 == 0) }
+            val windows = (1..513).map { WindowInfo(it.toLong(), 300, 200, "App", "Window $it", it % 2 == 0, 123) }
             val task = executor.submit {
                 (server.accept() as SSLSocket).use { socket ->
                     socket.soTimeout = 10_000
@@ -142,8 +142,8 @@ class AuthenticatedHostConnectionTest {
     @Test fun watchesWindowChangesAndStopsDuringARefresh() {
         withServer { server, fingerprint ->
             val executor = Executors.newSingleThreadExecutor()
-            val first = listOf(WindowInfo(1, 300, 200, "App", "First", true))
-            val updated = listOf(WindowInfo(1, 640, 480, "App", "Updated", true))
+            val first = listOf(WindowInfo(1, 300, 200, "App", "First", true, 123))
+            val updated = listOf(WindowInfo(1, 640, 480, "App", "Updated", true, 123))
             val allowChange = CountDownLatch(1)
             val secondRequest = CountDownLatch(1)
             val allowSecondResponse = CountDownLatch(1)
@@ -209,7 +209,7 @@ class AuthenticatedHostConnectionTest {
             val requestStarted = CountDownLatch(1)
             val allowResponse = CountDownLatch(1)
             val watchFailed = java.util.concurrent.atomic.AtomicBoolean(false)
-            val windows = listOf(WindowInfo(1, 300, 200, "App", "Window", true))
+            val windows = listOf(WindowInfo(1, 300, 200, "App", "Window", true, 123))
             val task = serverExecutor.submit {
                 (server.accept() as SSLSocket).use { socket ->
                     socket.soTimeout = 10_000
@@ -254,7 +254,7 @@ class AuthenticatedHostConnectionTest {
     @Test fun refreshesWindowsAfterAnAction() {
         withServer { server, fingerprint ->
             val executor = Executors.newSingleThreadExecutor()
-            val windows = listOf(WindowInfo(1, 300, 200, "App", "First", true), WindowInfo(2, 300, 200, "App", "Second", false))
+            val windows = listOf(WindowInfo(1, 300, 200, "App", "First", true, 123), WindowInfo(2, 300, 200, "App", "Second", false, 123))
             val task = executor.submit {
                 (server.accept() as SSLSocket).use { socket ->
                     socket.soTimeout = 10_000

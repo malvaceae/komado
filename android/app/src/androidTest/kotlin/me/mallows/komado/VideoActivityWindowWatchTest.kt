@@ -35,8 +35,8 @@ class VideoActivityWindowWatchTest {
         try {
             deviceKey.getOrCreatePublicKeyDER()
             val listener = server.listener
-            val original = WindowInfo(1, 300, 200, "Editor", "Notes", true)
-            val updated = WindowInfo(1, 640, 480, "Editor", "Project", true)
+            val original = WindowInfo(1, 300, 200, "Editor", "Notes", true, 123)
+            val updated = WindowInfo(1, 640, 480, "Editor", "Project", true, 123)
             val task = executor.submit {
                 (listener.accept() as SSLSocket).use { socket ->
                     socket.soTimeout = 10_000

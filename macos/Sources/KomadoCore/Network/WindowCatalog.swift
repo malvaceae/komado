@@ -4,7 +4,7 @@ import Foundation
 
 struct WindowSelection: Equatable, Sendable {
     let info: WindowInfo
-    let processID: Int32
+    var processID: Int32 { Int32(info.applicationID) }
 }
 
 /// Window titles are sent only to an authenticated peer and are never logged.
@@ -48,8 +48,9 @@ public enum WindowCatalog {
         let info = WindowInfo(id: window.windowID, width: UInt32(window.frame.width.rounded(.up)),
                               height: UInt32(window.frame.height.rounded(.up)),
                               application: catalogLabel(owner.applicationName, fallback: "アプリ"),
-                              title: catalogLabel(window.title ?? "", fallback: "タイトルなし"), onScreen: window.isOnScreen)
-        return WindowSelection(info: info, processID: owner.processID)
+                              title: catalogLabel(window.title ?? "", fallback: "タイトルなし"), onScreen: window.isOnScreen,
+                              applicationID: UInt32(owner.processID))
+        return WindowSelection(info: info)
     }
 
 }

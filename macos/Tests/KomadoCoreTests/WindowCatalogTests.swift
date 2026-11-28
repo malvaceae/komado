@@ -25,6 +25,7 @@ final class WindowCatalogTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(100))
         }
         let selected = try XCTUnwrap(initial)
+        XCTAssertEqual(selected.info.applicationID, UInt32(ProcessInfo.processInfo.processIdentifier))
         window.title = "komado catalog changed"
         var renamed: SCWindow?
         for _ in 0..<30 {
@@ -51,7 +52,8 @@ final class WindowCatalogTests: XCTestCase {
         XCTAssertTrue(WindowCatalog.matches(window: current, info: selected.info, processID: selected.processID))
         XCTAssertFalse(WindowCatalog.matches(window: current, info: selected.info, processID: selected.processID + 1))
         let other = WindowInfo(id: 0, width: selected.info.width, height: selected.info.height,
-                               application: selected.info.application, title: selected.info.title, onScreen: selected.info.onScreen)
+                               application: selected.info.application, title: selected.info.title, onScreen: selected.info.onScreen,
+                               applicationID: selected.info.applicationID)
         XCTAssertFalse(WindowCatalog.matches(window: current, info: other, processID: selected.processID))
         let stillMatches = try await WindowCatalog.matches(selected)
         XCTAssertTrue(stillMatches)

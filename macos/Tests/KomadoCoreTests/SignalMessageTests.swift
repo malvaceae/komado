@@ -43,7 +43,7 @@ final class SignalMessageTests: XCTestCase {
 
     func testWindowPageBoundariesAndLabels() throws {
         let windows = (1...32).map { WindowInfo(id: UInt32($0), width: 800, height: 600,
-                                                  application: String(repeating: "ア", count: 32), title: "ウインドウ", onScreen: $0.isMultiple(of: 2)) }
+                                                  application: String(repeating: "ア", count: 32), title: "ウインドウ", onScreen: $0.isMultiple(of: 2), applicationID: 123) }
         let page = SignalMessage.windows(next: 32, values: windows)
         XCTAssertEqual(try SignalMessage.decode(page.encode()), page)
         XCTAssertEqual(try SignalMessage.decode(SignalMessage.windows(next: 0, values: []).encode()), .windows(next: 0, values: []))
@@ -51,7 +51,7 @@ final class SignalMessageTests: XCTestCase {
         XCTAssertThrowsError(try SignalMessage.windows(next: 0, values: windows + [windows[0]]).encode())
         XCTAssertThrowsError(try SignalMessage.windows(next: 0, values: [windows[0], windows[0]]).encode())
         XCTAssertThrowsError(try SignalMessage.windows(next: 0, values: [WindowInfo(id: 1, width: 1, height: 1,
-                                                                                    application: "a", title: String(repeating: "あ", count: 33), onScreen: true)]).encode())
+                                                                                    application: "a", title: String(repeating: "あ", count: 33), onScreen: true, applicationID: 123)]).encode())
         XCTAssertEqual(try SignalMessage.decode(SignalMessage.listWindows(65_535).encode()), .listWindows(65_535))
     }
 }

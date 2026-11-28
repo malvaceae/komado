@@ -391,7 +391,8 @@ class VideoActivity : ComponentActivity() {
     }
 
     private fun prepareTarget(established: AuthenticatedHostConnection, target: Target,
-                              reload: Long? = null, size: WindowSize? = null, expectedApplication: String? = null) {
+                              reload: Long? = null, size: WindowSize? = null, expectedApplication: String? = null,
+                              expectedApplicationId: Long? = null) {
         when (target) {
             Target.MAIN -> {
                 selected = Selection.Main
@@ -426,7 +427,8 @@ class VideoActivity : ComponentActivity() {
                 }
                 if (reload != null) {
                     val window = windows.firstOrNull {
-                        it.id == reload && (expectedApplication == null || it.application == expectedApplication)
+                        it.id == reload && (expectedApplication == null || it.application == expectedApplication) &&
+                            (expectedApplicationId == null || it.applicationId == expectedApplicationId)
                     } ?: run { showFailure(); return }
                     selected = Selection.Window(window)
                     startMedia(established, null, reload, size)
@@ -508,7 +510,8 @@ class VideoActivity : ComponentActivity() {
         zoomButtons.forEach { it.isEnabled = false }
         if (automaticWanted && hasWindowFocus()) beginAutomaticClipboard()
         val size = if (reload != null) desiredWindowSize() else null
-        executor.execute { prepareTarget(established, target, reload, size) }
+        val window = if (reload != null) (selected as? Selection.Window)?.info else null
+        executor.execute { prepareTarget(established, target, reload, size, window?.application, window?.applicationId) }
     }
 
     private fun chooseDisplay(established: AuthenticatedHostConnection, displays: List<DisplayInfo>) {
@@ -523,19 +526,20 @@ class VideoActivity : ComponentActivity() {
             .setOnCancelListener { finish() }.show()
     }
 
-    private fun chooseWindow(established: AuthenticatedHostConnection, windows: List<WindowInfo>) {
+    private fun chooseWindow(established: AuthenticatedHostConnection, windows: List<WindowInfo>, application: ApplicationInfo? = null) {
+        fun visible(values: List<WindowInfo>) = if (application == null) values else values.filter { it.applicationId == application.id }
         lateinit var picker: WindowPickerDialog
-        picker = WindowPickerDialog.show(this, windows, onChoose = { window ->
+        picker = WindowPickerDialog.show(this, visible(windows), onChoose = { window ->
             stopWindowWatch()
             targetDialog = null
-            selected = Selection.Window(window)
-            currentWindowId = window.id
-            val size = desiredWindowSize()
-            if (active) executor.execute { prepareTarget(established, Target.WINDOW, window.id, size, window.application) }
-        }, onCancel = { finish() }, onActions = if (!controlMode) null else { window ->
+            openWindow(established, window)
+        }, onCancel = {
+            stopWindowWatch()
+            if (application == null) finish() else if (active) executor.execute { prepareTarget(established, Target.APPLICATION) }
+        }, onActions = if (!controlMode) null else { window ->
             windowActionDialog = AlertDialog.Builder(this).setTitle(R.string.window_action_title)
                 .setItems(arrayOf(getString(R.string.window_minimize), getString(R.string.window_restore), getString(R.string.window_close))) { _, index ->
-                    performWindowAction(established, window, WindowAction.entries[index])
+                    performWindowAction(established, window, WindowAction.entries[index], application)
                 }.setNegativeButton(R.string.cancel, null).create().also { dialog ->
                     dialog.setOnDismissListener { if (windowActionDialog === dialog) windowActionDialog = null }
                     dialog.show()
@@ -549,8 +553,8 @@ class VideoActivity : ComponentActivity() {
                     if (active && targetDialog === picker.dialog) {
                         picker.setLoading(false)
                         result.onSuccess {
-                            picker.update(it)
-                            watchWindowChanges(established, picker)
+                            picker.update(visible(it))
+                            watchWindowChanges(established, picker, application)
                         }.onFailure {
                             stopSession(failed = true)
                             status.setText(R.string.window_selection_failed)
@@ -560,14 +564,28 @@ class VideoActivity : ComponentActivity() {
             }
         })
         targetDialog = picker.dialog
-        watchWindowChanges(established, picker)
+        watchWindowChanges(established, picker, application)
     }
 
-    private fun watchWindowChanges(established: AuthenticatedHostConnection, picker: WindowPickerDialog) {
+    private fun openWindow(established: AuthenticatedHostConnection, window: WindowInfo) {
+        showingWindowNote = controlMode
+        showingApplicationNote = false
+        windowNote?.visibility = if (showingWindowNote) View.VISIBLE else View.GONE
+        applicationNote?.visibility = View.GONE
+        windowResizeSwitch?.visibility = if (showingWindowNote) View.VISIBLE else View.GONE
+        selected = Selection.Window(window)
+        currentWindowId = window.id
+        val size = desiredWindowSize()
+        if (active) executor.execute { prepareTarget(established, Target.WINDOW, window.id, size, window.application, window.applicationId) }
+    }
+
+    private fun watchWindowChanges(established: AuthenticatedHostConnection, picker: WindowPickerDialog, application: ApplicationInfo? = null) {
         lateinit var watch: AuthenticatedHostConnection.WindowWatch
         watch = established.watchWindows(onWindows = { windows ->
             runOnUiThread {
-                if (active && targetDialog === picker.dialog && windowWatch === watch) picker.update(windows)
+                if (active && targetDialog === picker.dialog && windowWatch === watch) {
+                    picker.update(if (application == null) windows else windows.filter { it.applicationId == application.id })
+                }
             }
         }, onFailure = {
             runOnUiThread {
@@ -586,13 +604,14 @@ class VideoActivity : ComponentActivity() {
         watch.stop()
     }
 
-    private fun performWindowAction(established: AuthenticatedHostConnection, window: WindowInfo, action: WindowAction) {
+    private fun performWindowAction(established: AuthenticatedHostConnection, window: WindowInfo, action: WindowAction,
+                                    application: ApplicationInfo? = null) {
         stopWindowWatch()
         val dialog = targetDialog
         dialog?.listView?.isEnabled = false
         executor.execute {
             val result = runCatching {
-                if (established.listWindows().any { it.id == window.id && it.application == window.application }) {
+                if (established.listWindows().any { it.id == window.id && it.applicationId == window.applicationId }) {
                     established.performWindowAction(window.id, action)
                 } else false
             }
@@ -606,7 +625,13 @@ class VideoActivity : ComponentActivity() {
                         Toast.makeText(this, if (result.getOrDefault(false)) R.string.window_action_sent else R.string.window_action_failed, Toast.LENGTH_SHORT).show()
                         targetDialog = null
                         dialog?.dismiss()
-                        executor.execute { prepareTarget(established, Target.WINDOW) }
+                        executor.execute {
+                            if (application == null) prepareTarget(established, Target.WINDOW)
+                            else {
+                                val windows = try { established.listWindows() } catch (_: Exception) { showFailure(); return@execute }
+                                runOnUiThread { if (active) chooseWindow(established, windows, application) }
+                            }
+                        }
                     }
                 }
             }
@@ -633,8 +658,20 @@ class VideoActivity : ComponentActivity() {
                 runOnUiThread { if (active) Toast.makeText(this, if (success) R.string.launch_succeeded else R.string.launch_failed, Toast.LENGTH_LONG).show() }
                 if (success) prepareTarget(established, Target.APPLICATION) else prepareLaunchableApplications(established)
             } else if (active) {
-                selected = Selection.Application(application)
-                executor.execute { startMedia(established, null, applicationId = application.id) }
+                executor.execute {
+                    val windows = try { established.listWindows() } catch (_: Exception) { showFailure(); return@execute }
+                    val matching = windows.filter { it.applicationId == application.id }
+                    runOnUiThread {
+                        if (active) when (matching.size) {
+                            0 -> {
+                                selected = Selection.Application(application)
+                                executor.execute { startMedia(established, null, applicationId = application.id) }
+                            }
+                            1 -> openWindow(established, matching.single())
+                            else -> chooseWindow(established, windows, application)
+                        }
+                    }
+                }
             }
         }, onCancel = {
             cancelled.set(true)
@@ -803,7 +840,9 @@ class VideoActivity : ComponentActivity() {
                     Selection.Main -> true
                     is Selection.Display -> established.listDisplays().any { it.id == target.info.id }
                     is Selection.Application -> established.listApplications().any { it.id == target.info.id && it.name == target.info.name }
-                    is Selection.Window -> established.listWindows().any { it.id == target.info.id && it.application == target.info.application }
+                    is Selection.Window -> established.listWindows().any {
+                        it.id == target.info.id && it.applicationId == target.info.applicationId && it.application == target.info.application
+                    }
                 }
                 if (!available) {
                     runOnUiThread { if (isCurrent(established)) { stopSession(failed = true); status.setText(R.string.reconnect_target_unavailable) } }

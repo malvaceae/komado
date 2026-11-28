@@ -62,7 +62,7 @@ class SignalMessageTest {
     }
 
     @Test fun windowPageBoundariesAndLabels() {
-        val windows = (1..32).map { WindowInfo(it.toLong(), 800, 600, "ア".repeat(32), "ウインドウ", it % 2 == 0) }
+        val windows = (1..32).map { WindowInfo(it.toLong(), 800, 600, "ア".repeat(32), "ウインドウ", it % 2 == 0, 123) }
         val page = SignalMessage.Windows(32, windows)
         assertEquals(page, SignalMessageCodec.decode(SignalMessageCodec.encode(page)))
         assertEquals(SignalMessage.Windows(0, emptyList()), SignalMessageCodec.decode(SignalMessageCodec.encode(SignalMessage.Windows(0, emptyList()))))
@@ -70,7 +70,7 @@ class SignalMessageTest {
         assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.encode(SignalMessage.Windows(0, windows + windows[0])) }
         assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.encode(SignalMessage.Windows(0, listOf(windows[0], windows[0]))) }
         assertThrows(SignalMessageCodec.MessageException::class.java) {
-            SignalMessageCodec.encode(SignalMessage.Windows(0, listOf(WindowInfo(1, 1, 1, "a", "あ".repeat(33), true))))
+            SignalMessageCodec.encode(SignalMessage.Windows(0, listOf(WindowInfo(1, 1, 1, "a", "あ".repeat(33), true, 123))))
         }
         assertEquals(SignalMessage.ListWindows(65_535), SignalMessageCodec.decode(SignalMessageCodec.encode(SignalMessage.ListWindows(65_535))))
         assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.encode(SignalMessage.ListWindows(65_536)) }

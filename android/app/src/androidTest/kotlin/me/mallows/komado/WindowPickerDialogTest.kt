@@ -26,7 +26,7 @@ class WindowPickerDialogTest {
             lateinit var search: EditText
             var selected: Long? = null
             scenario.onActivity { activity ->
-                val windows = (1L..513L).map { WindowInfo(it, 300, 200, "App", "Window $it", true) }
+                val windows = (1L..513L).map { WindowInfo(it, 300, 200, "App", "Window $it", true, 123) }
                 dialog = WindowPickerDialog.show(activity, windows, { selected = it.id }, {}, null, {}).dialog
             }
             InstrumentationRegistry.getInstrumentation().waitForIdleSync()
@@ -65,9 +65,9 @@ class WindowPickerDialogTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val windows = listOf(
-                    WindowInfo(1, 300, 200, "Editor", "Notes", true),
-                    WindowInfo(2, 300, 200, "Browser", "Project", false),
-                    WindowInfo(3, 640, 480, "Editor", "Project", true)
+                    WindowInfo(1, 300, 200, "Editor", "Notes", true, 123),
+                    WindowInfo(2, 300, 200, "Browser", "Project", false, 123),
+                    WindowInfo(3, 640, 480, "Editor", "Project", true, 123)
                 )
                 var selected: Long? = null
                 val dialog = WindowPickerDialog.show(activity, windows, { selected = it.id }, {}, null, {}).dialog
@@ -98,7 +98,7 @@ class WindowPickerDialogTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 var requested: Long? = null
-                val windows = listOf(WindowInfo(1, 300, 200, "Editor", "Notes", true), WindowInfo(2, 640, 480, "Editor", "Project", false))
+                val windows = listOf(WindowInfo(1, 300, 200, "Editor", "Notes", true, 123), WindowInfo(2, 640, 480, "Editor", "Project", false, 123))
                 val dialog = WindowPickerDialog.show(activity, windows, {}, {}, { requested = it.id }, {}).dialog
                 find(dialog.window!!.decorView, EditText::class.java)!!.setText("Project")
                 val list = dialog.listView
@@ -129,7 +129,7 @@ class WindowPickerDialogTest {
             scenario.onActivity { activity ->
                 var refreshed = false
                 val picker = WindowPickerDialog.show(activity,
-                    listOf(WindowInfo(1, 300, 200, "Editor", "Notes", true)), {}, {}, null, { refreshed = true })
+                    listOf(WindowInfo(1, 300, 200, "Editor", "Notes", true, 123)), {}, {}, null, { refreshed = true })
                 val dialog = picker.dialog
                 val search = find(dialog.window!!.decorView, EditText::class.java)!!
                 search.setText("project")
@@ -140,8 +140,8 @@ class WindowPickerDialogTest {
                 picker.setLoading(true)
                 assertTrue(!dialog.listView.isEnabled)
                 assertTrue(!dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isEnabled)
-                picker.update(listOf(WindowInfo(2, 640, 480, "Editor", "Project", true),
-                    WindowInfo(3, 300, 200, "Editor", "Notes", true)))
+                picker.update(listOf(WindowInfo(2, 640, 480, "Editor", "Project", true, 123),
+                    WindowInfo(3, 300, 200, "Editor", "Notes", true, 123)))
                 picker.setLoading(false)
                 assertEquals("project", search.text.toString())
                 assertEquals(1, dialog.listView.count)
