@@ -521,7 +521,8 @@ class VideoActivity : ComponentActivity() {
     }
 
     private fun chooseWindow(established: AuthenticatedHostConnection, windows: List<WindowInfo>) {
-        targetDialog = WindowPickerDialog.show(this, windows, onChoose = { window ->
+        lateinit var picker: WindowPickerDialog
+        picker = WindowPickerDialog.show(this, windows, onChoose = { window ->
             targetDialog = null
             selected = Selection.Window(window)
             currentWindowId = window.id
@@ -536,9 +537,21 @@ class VideoActivity : ComponentActivity() {
                     dialog.show()
                 }
         }, onRefresh = {
-            targetDialog = null
-            if (active) executor.execute { prepareTarget(established, Target.WINDOW) }
+            picker.setLoading(true)
+            executor.execute {
+                val result = runCatching { established.listWindows() }
+                runOnUiThread {
+                    if (active && targetDialog === picker.dialog) {
+                        picker.setLoading(false)
+                        result.onSuccess { picker.update(it) }.onFailure {
+                            stopSession(failed = true)
+                            status.setText(R.string.window_selection_failed)
+                        }
+                    }
+                }
+            }
         })
+        targetDialog = picker.dialog
     }
 
     private fun performWindowAction(established: AuthenticatedHostConnection, window: WindowInfo, action: WindowAction) {

@@ -27,7 +27,7 @@ class WindowPickerDialogTest {
             var selected: Long? = null
             scenario.onActivity { activity ->
                 val windows = (1L..513L).map { WindowInfo(it, 300, 200, "App", "Window $it", true) }
-                dialog = WindowPickerDialog.show(activity, windows, { selected = it.id }, {}, null, {})
+                dialog = WindowPickerDialog.show(activity, windows, { selected = it.id }, {}, null, {}).dialog
             }
             InstrumentationRegistry.getInstrumentation().waitForIdleSync()
             scenario.onActivity {
@@ -70,7 +70,7 @@ class WindowPickerDialogTest {
                     WindowInfo(3, 640, 480, "Editor", "Project", true)
                 )
                 var selected: Long? = null
-                val dialog = WindowPickerDialog.show(activity, windows, { selected = it.id }, {}, null, {})
+                val dialog = WindowPickerDialog.show(activity, windows, { selected = it.id }, {}, null, {}).dialog
                 val root = dialog.window!!.decorView
                 val search = find(root, EditText::class.java)!!
                 assertEquals(3, dialog.listView.count)
@@ -99,7 +99,7 @@ class WindowPickerDialogTest {
             scenario.onActivity { activity ->
                 var requested: Long? = null
                 val windows = listOf(WindowInfo(1, 300, 200, "Editor", "Notes", true), WindowInfo(2, 640, 480, "Editor", "Project", false))
-                val dialog = WindowPickerDialog.show(activity, windows, {}, {}, { requested = it.id }, {})
+                val dialog = WindowPickerDialog.show(activity, windows, {}, {}, { requested = it.id }, {}).dialog
                 find(dialog.window!!.decorView, EditText::class.java)!!.setText("Project")
                 val list = dialog.listView
                 assertTrue(list.onItemLongClickListener.onItemLongClick(list, list.adapter.getView(0, null, list), 0, list.adapter.getItemId(0)))
@@ -113,7 +113,7 @@ class WindowPickerDialogTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             var refreshed = false
             scenario.onActivity { activity ->
-                val dialog = WindowPickerDialog.show(activity, emptyList(), {}, {}, null, { refreshed = true })
+                val dialog = WindowPickerDialog.show(activity, emptyList(), {}, {}, null, { refreshed = true }).dialog
                 assertEquals(0, dialog.listView.count)
                 val empty = find(dialog.window!!.decorView, TextView::class.java) { it.text == activity.getString(R.string.window_search_empty) }
                 assertEquals(View.VISIBLE, empty?.visibility)
@@ -121,6 +121,33 @@ class WindowPickerDialogTest {
             }
             InstrumentationRegistry.getInstrumentation().waitForIdleSync()
             assertTrue(refreshed)
+        }
+    }
+
+    @Test fun refreshPreservesSearchAndUpdatesTheVisibleList() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                var refreshed = false
+                val picker = WindowPickerDialog.show(activity,
+                    listOf(WindowInfo(1, 300, 200, "Editor", "Notes", true)), {}, {}, null, { refreshed = true })
+                val dialog = picker.dialog
+                val search = find(dialog.window!!.decorView, EditText::class.java)!!
+                search.setText("project")
+                assertEquals(0, dialog.listView.count)
+                assertTrue(dialog.getButton(AlertDialog.BUTTON_NEUTRAL).performClick())
+                assertTrue(refreshed)
+                assertTrue(dialog.isShowing)
+                picker.setLoading(true)
+                assertTrue(!dialog.listView.isEnabled)
+                assertTrue(!dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isEnabled)
+                picker.update(listOf(WindowInfo(2, 640, 480, "Editor", "Project", true),
+                    WindowInfo(3, 300, 200, "Editor", "Notes", true)))
+                picker.setLoading(false)
+                assertEquals("project", search.text.toString())
+                assertEquals(1, dialog.listView.count)
+                assertEquals("Editor — Project（640 × 480 pt）", dialog.listView.adapter.getItem(0))
+                dialog.dismiss()
+            }
         }
     }
 
