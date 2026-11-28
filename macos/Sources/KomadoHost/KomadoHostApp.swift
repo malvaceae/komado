@@ -138,7 +138,7 @@ private struct HostView: View {
                         Text("許可されています。Androidから画面またはウインドウを選んで共有します。")
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("画面転送には画面収録の許可が必要です。")
+                        Text("画面転送には画面収録の許可が必要です。システム設定の「プライバシーとセキュリティ」から「画面収録とシステムオーディオ録音」（または「画面収録」）を開いて許可できます。")
                             .foregroundStyle(.secondary)
                         Button("画面収録を許可") { model.requestScreenPermission() }
                     }
@@ -149,9 +149,15 @@ private struct HostView: View {
                         Text("操作に必要な権限が許可されています。")
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("AndroidからMacを操作するには、システム設定でアクセシビリティの許可が必要です。")
+                        Text("AndroidからMacを操作するには、システム設定の「プライバシーとセキュリティ」から「アクセシビリティ」を開いて許可してください。")
                             .foregroundStyle(.secondary)
                         Button("アクセシビリティの許可を確認") { model.requestAccessibilityPermission() }
+                    }
+                }
+                if (!model.screenPermission || !model.accessibilityPermission),
+                   let settingsURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.systempreferences") {
+                    Button("システム設定を開く") {
+                        NSWorkspace.shared.openApplication(at: settingsURL, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
                     }
                 }
                 Divider()
