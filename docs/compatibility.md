@@ -6,7 +6,7 @@
 |---|---|
 | macOS | macOS 13以降。最低OSを13としたビルドは成功したが、macOS 13での実行は未検証 |
 | Mac CPU | Apple Silicon・Intel。両方を含む開発用アプリとWebRTCフレームワークをビルド済み。Intel実機は未検証 |
-| Android | Android 8 / API 26以降。API 26・36・37のarm64エミュレーターでテスト済み。実機は未検証 |
+| Android | Android 8 / API 26以降。API 26・36・37のarm64エミュレーターでテスト済み。API 37.2・16 KBページでもアプリと認証・通信のテストを実施。実機は未検証 |
 | Android ABI | APKにarm64-v8a・armeabi-v7a・x86・x86_64のWebRTCライブラリを同梱。arm64とx86_64のエミュレーター以外は未検証 |
 | 接続 | 到達可能なLAN・VPNなど。別端末間のLAN接続、VPN、モバイル回線と接続先の公開範囲は未検証 |
 | 配布 | ローカル確認用Macアプリと未署名Android APKをビルド済み。配布用署名・公証・実機への配布は未検証 |

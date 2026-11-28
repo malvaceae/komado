@@ -7,11 +7,25 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ClipboardContentTest {
+    @Test fun honorsRemoteClipboardExclusionWhenAvailable() {
+        val setter = try {
+            ClipDescription::class.java.getMethod("setExcludedFromRemoteClipboard", Boolean::class.javaPrimitiveType)
+        } catch (_: NoSuchMethodException) { null }
+        assumeNotNull(setter)
+        val description = ClipData.newPlainText("test", "plain").description
+        assertTrue(ClipboardContent.automaticAllowed(description))
+        setter!!.invoke(description, true)
+        assertTrue(!ClipboardContent.automaticAllowed(description))
+        setter.invoke(description, false)
+        assertTrue(ClipboardContent.automaticAllowed(description))
+    }
+
     @Test fun acceptsOnlyBoundedPlainTextAndMarksRemoteContent() {
         val clip = ClipData.newPlainText("test", "日本語😀\r\n")
         assertEquals("日本語😀\r\n", ClipboardContent.text(clip))
