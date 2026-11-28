@@ -105,7 +105,7 @@ class AuthenticatedHostConnectionTest {
     @Test fun listsMoreThan512WindowsAndSelectsTheLast() {
         withServer { server, fingerprint ->
             val executor = Executors.newSingleThreadExecutor()
-            val windows = (1..513).map { WindowInfo(it.toLong(), 300, 200, "App", "Window $it") }
+            val windows = (1..513).map { WindowInfo(it.toLong(), 300, 200, "App", "Window $it", it % 2 == 0) }
             val task = executor.submit {
                 (server.accept() as SSLSocket).use { socket ->
                     socket.soTimeout = 10_000
@@ -139,7 +139,7 @@ class AuthenticatedHostConnectionTest {
     @Test fun refreshesWindowsAfterAnAction() {
         withServer { server, fingerprint ->
             val executor = Executors.newSingleThreadExecutor()
-            val windows = listOf(WindowInfo(1, 300, 200, "App", "First"), WindowInfo(2, 300, 200, "App", "Second"))
+            val windows = listOf(WindowInfo(1, 300, 200, "App", "First", true), WindowInfo(2, 300, 200, "App", "Second", false))
             val task = executor.submit {
                 (server.accept() as SSLSocket).use { socket ->
                     socket.soTimeout = 10_000

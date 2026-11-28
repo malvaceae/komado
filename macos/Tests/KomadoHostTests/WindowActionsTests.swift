@@ -4,6 +4,7 @@ import CoreGraphics
 import ScreenCaptureKit
 import WebRTC
 import XCTest
+@testable import KomadoCore
 @testable import KomadoHost
 
 final class WindowActionsTests: XCTestCase {
@@ -78,6 +79,10 @@ final class WindowActionsTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(ControlWindowSnapshot.onScreen()).contains { $0.id == id })
         content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         window = try XCTUnwrap(content.windows.first { $0.windowID == id && $0.owningApplication?.processID == helper.processIdentifier })
+        XCTAssertFalse(window.isOnScreen)
+        let minimizedWindows = try await WindowCatalog.all()
+        let minimized = try XCTUnwrap(minimizedWindows.first { $0.info.id == id })
+        XCTAssertFalse(minimized.info.onScreen)
         XCTAssertTrue(WindowActions.perform(.restore, window: window, windows: content.windows))
         for _ in 0..<50 {
             if ControlWindowSnapshot.onScreen()?.contains(where: { $0.id == id }) == true { break }
@@ -87,6 +92,10 @@ final class WindowActionsTests: XCTestCase {
         try await Task.sleep(for: .seconds(1))
         content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         window = try XCTUnwrap(content.windows.first { $0.windowID == id && $0.owningApplication?.processID == helper.processIdentifier })
+        XCTAssertTrue(window.isOnScreen)
+        let restoredWindows = try await WindowCatalog.all()
+        let restored = try XCTUnwrap(restoredWindows.first { $0.info.id == id })
+        XCTAssertTrue(restored.info.onScreen)
         let factory = MediaFactory.create(), route = MediaSessionGate()
         route.connected()
         let capture = try await DisplayCapture.start(window: window, source: factory.videoSource(forScreenCast: true), route: route) {}

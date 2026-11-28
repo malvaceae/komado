@@ -48,7 +48,7 @@ public enum WindowCatalog {
         let info = WindowInfo(id: window.windowID, width: UInt32(window.frame.width.rounded(.up)),
                               height: UInt32(window.frame.height.rounded(.up)),
                               application: catalogLabel(owner.applicationName, fallback: "アプリ"),
-                              title: catalogLabel(window.title ?? "", fallback: "タイトルなし"))
+                              title: catalogLabel(window.title ?? "", fallback: "タイトルなし"), onScreen: window.isOnScreen)
         return WindowSelection(info: info, processID: owner.processID)
     }
 

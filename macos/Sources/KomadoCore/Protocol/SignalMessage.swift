@@ -25,12 +25,14 @@ public struct WindowInfo: Equatable, Sendable {
     public let height: UInt32
     public let application: String
     public let title: String
-    public init(id: UInt32, width: UInt32, height: UInt32, application: String, title: String) {
+    public let onScreen: Bool
+    public init(id: UInt32, width: UInt32, height: UInt32, application: String, title: String, onScreen: Bool) {
         self.id = id
         self.width = width
         self.height = height
         self.application = application
         self.title = title
+        self.onScreen = onScreen
     }
 }
 
@@ -142,18 +144,19 @@ public enum SignalMessage: Equatable, Sendable {
             guard fields.count == 3, let offset = nonnegativeInteger(fields[2], max: 65_535) else { throw MessageError.invalid }
             return .listWindows(UInt16(offset))
         case "window.listed":
-            guard fields.count >= 3, fields.count <= 163, (fields.count - 3).isMultiple(of: 5),
+            guard fields.count >= 3, fields.count <= 195, (fields.count - 3).isMultiple(of: 6),
                   let next = nonnegativeInteger(fields[2], max: 65_535) else { throw MessageError.invalid }
             var windows: [WindowInfo] = []
             var ids = Set<UInt32>()
-            for i in stride(from: 3, to: fields.count, by: 5) {
+            for i in stride(from: 3, to: fields.count, by: 6) {
                 guard let id = positiveInteger(fields[i], max: UInt64(UInt32.max)),
                       let width = positiveInteger(fields[i + 1], max: 65_535),
                       let height = positiveInteger(fields[i + 2], max: 65_535),
                       validCatalogLabel(fields[i + 3]), validCatalogLabel(fields[i + 4]),
+                      fields[i + 5] == "0" || fields[i + 5] == "1",
                       ids.insert(UInt32(id)).inserted else { throw MessageError.invalid }
                 windows.append(WindowInfo(id: UInt32(id), width: UInt32(width), height: UInt32(height),
-                                          application: fields[i + 3], title: fields[i + 4]))
+                                          application: fields[i + 3], title: fields[i + 4], onScreen: fields[i + 5] == "1"))
             }
             guard !windows.isEmpty || next == 0 else { throw MessageError.invalid }
             return .windows(next: UInt16(next), values: windows)
@@ -264,7 +267,7 @@ public enum SignalMessage: Equatable, Sendable {
         case let .windows(next, values):
             guard values.count <= 32 else { throw MessageError.invalid }
             fields = ["1", "window.listed", String(next)] + values.flatMap {
-                [String($0.id), String($0.width), String($0.height), $0.application, $0.title]
+                [String($0.id), String($0.width), String($0.height), $0.application, $0.title, $0.onScreen ? "1" : "0"]
             }
         case let .listApplications(offset):
             fields = ["1", "application.list", String(offset)]

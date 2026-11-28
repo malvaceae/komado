@@ -98,6 +98,7 @@
     <string name="control_window">ウインドウを操作</string>
     <string name="window_control_note">Mac上で見えている部分を操作できます。文字入力にはウインドウのフォーカスが必要です。</string>
     <string name="window_option">%1$s — %2$s（%3$d × %4$d pt）</string>
+    <string name="window_offscreen">（画面に表示されていません）</string>
     <string name="window_search">アプリ名・タイトル</string>
     <string name="refresh">更新</string>
     <string name="window_action_hint">ウインドウを長押しすると最小化・復元・終了できます。</string>

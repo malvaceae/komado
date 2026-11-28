@@ -12,7 +12,7 @@ import java.util.UUID
 
 data class DisplayInfo(val id: Long, val width: Int, val height: Int, val name: String)
 data class ApplicationInfo(val id: Long, val name: String)
-data class WindowInfo(val id: Long, val width: Int, val height: Int, val application: String, val title: String)
+data class WindowInfo(val id: Long, val width: Int, val height: Int, val application: String, val title: String, val onScreen: Boolean)
 data class WindowSize(val width: Int, val height: Int)
 enum class WindowAction { MINIMIZE, RESTORE, CLOSE }
 
@@ -135,13 +135,13 @@ object SignalMessageCodec {
                     SignalMessage.ListWindows(nonnegativeInteger(fields[2], 65_535).toInt())
                 }
                 "window.listed" -> {
-                    if (fields.size !in 3..163 || (fields.size - 3) % 5 != 0) throw MessageException()
+                    if (fields.size !in 3..195 || (fields.size - 3) % 6 != 0) throw MessageException()
                     val next = nonnegativeInteger(fields[2], 65_535).toInt()
-                    val values = (3 until fields.size step 5).map { i ->
-                        if (!validCatalogLabel(fields[i + 3]) || !validCatalogLabel(fields[i + 4])) throw MessageException()
+                    val values = (3 until fields.size step 6).map { i ->
+                        if (!validCatalogLabel(fields[i + 3]) || !validCatalogLabel(fields[i + 4]) || fields[i + 5] !in listOf("0", "1")) throw MessageException()
                         WindowInfo(positiveInteger(fields[i], 4_294_967_295L),
                             positiveInteger(fields[i + 1], 65_535).toInt(), positiveInteger(fields[i + 2], 65_535).toInt(),
-                            fields[i + 3], fields[i + 4])
+                            fields[i + 3], fields[i + 4], fields[i + 5] == "1")
                     }
                     if ((values.isEmpty() && next != 0) || values.map { it.id }.toSet().size != values.size) throw MessageException()
                     SignalMessage.Windows(next, values)
@@ -273,7 +273,7 @@ object SignalMessageCodec {
             is SignalMessage.Windows -> {
                 if (message.values.size > 32 || message.values.any { !validCatalogLabel(it.application) || !validCatalogLabel(it.title) }) throw MessageException()
                 listOf("1", "window.listed", message.next.toString()) + message.values.flatMap {
-                    listOf(it.id.toString(), it.width.toString(), it.height.toString(), it.application, it.title)
+                    listOf(it.id.toString(), it.width.toString(), it.height.toString(), it.application, it.title, if (it.onScreen) "1" else "0")
                 }
             }
             is SignalMessage.ListApplications -> listOf("1", "application.list", message.offset.toString())

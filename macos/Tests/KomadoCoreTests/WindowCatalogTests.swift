@@ -51,7 +51,7 @@ final class WindowCatalogTests: XCTestCase {
         XCTAssertTrue(WindowCatalog.matches(window: current, info: selected.info, processID: selected.processID))
         XCTAssertFalse(WindowCatalog.matches(window: current, info: selected.info, processID: selected.processID + 1))
         let other = WindowInfo(id: 0, width: selected.info.width, height: selected.info.height,
-                               application: selected.info.application, title: selected.info.title)
+                               application: selected.info.application, title: selected.info.title, onScreen: selected.info.onScreen)
         XCTAssertFalse(WindowCatalog.matches(window: current, info: other, processID: selected.processID))
         let stillMatches = try await WindowCatalog.matches(selected)
         XCTAssertTrue(stillMatches)
