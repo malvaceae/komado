@@ -7,6 +7,7 @@ import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.ApplicationInfo
 import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.protocol.WindowSize
+import me.mallows.komado.protocol.WindowAction
 import me.mallows.komado.security.DeviceSigningKey
 import me.mallows.komado.security.HostCertificateTrustManager
 import java.io.Closeable
@@ -152,13 +153,14 @@ class AuthenticatedHostConnection private constructor(
     }
 
     /** Requests a state change for a window from this connection's list. */
-    fun setWindowMinimized(id: Long, minimized: Boolean): Boolean = synchronized(mediaLock) {
+    fun performWindowAction(id: Long, action: WindowAction): Boolean = synchronized(mediaLock) {
         if (closed || mediaState != MediaState.IDLE || !windowsRequested) throw IOException("Unexpected signaling state")
         val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         try {
-            send(socket, SignalMessage.SetWindowMinimized(id, minimized))
-            val response = receive(socket) as? SignalMessage.WindowMinimizedResult ?: throw IOException("Expected window action result")
+            send(socket, SignalMessage.WindowActionRequest(id, action))
+            val response = receive(socket) as? SignalMessage.WindowActionResult ?: throw IOException("Expected window action result")
             if (response.id != id) throw IOException("Unexpected window action result")
+            windowsRequested = false
             response.success
         } catch (error: Exception) {
             runCatching { close() }

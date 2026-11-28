@@ -480,13 +480,13 @@ final class SignalingServerTests: XCTestCase {
         try await unknownWindow.send(.listWindows(0))
         guard case let .windows(_, firstPage) = try await unknownWindow.receive() else { return XCTFail("Expected window page") }
         let absentWindow = try XCTUnwrap((UInt32(1)...33).first { candidate in !firstPage.contains { $0.id == candidate } })
-        try await unknownWindow.send(.startWindowControl(absentWindow))
+        try await unknownWindow.send(.windowAction(absentWindow, .close))
         let windowCloseDeadline = Date().addingTimeInterval(5)
         while await server.isActive(sessionID: unknownWindowID) && Date() < windowCloseDeadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         let unknownWindowStillActive = await server.isActive(sessionID: unknownWindowID)
-        XCTAssertFalse(unknownWindowStillActive, "A window not delivered to the peer must be rejected")
+        XCTAssertFalse(unknownWindowStillActive, "An action for a window not delivered to the peer must be rejected")
         unknownWindow.connection.cancel()
         await server.disconnect(sessionID: unknownWindowID)
         let control = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)

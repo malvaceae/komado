@@ -30,6 +30,7 @@ import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.ApplicationInfo
 import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.protocol.WindowSize
+import me.mallows.komado.protocol.WindowAction
 import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.protocol.SpecialKey
 import me.mallows.komado.protocol.PointerClick
@@ -528,8 +529,8 @@ class VideoActivity : ComponentActivity() {
             if (active) executor.execute { startMedia(established, null, window.id, size) }
         }, onCancel = { finish() }, onActions = if (!controlMode) null else { window ->
             windowActionDialog = AlertDialog.Builder(this).setTitle(R.string.window_action_title)
-                .setItems(arrayOf(getString(R.string.window_minimize), getString(R.string.window_restore))) { _, action ->
-                    setWindowMinimized(established, window, action == 0)
+                .setItems(arrayOf(getString(R.string.window_minimize), getString(R.string.window_restore), getString(R.string.window_close))) { _, index ->
+                    performWindowAction(established, window, WindowAction.entries[index])
                 }.setNegativeButton(R.string.cancel, null).create().also { dialog ->
                     dialog.setOnDismissListener { if (windowActionDialog === dialog) windowActionDialog = null }
                     dialog.show()
@@ -537,11 +538,11 @@ class VideoActivity : ComponentActivity() {
         })
     }
 
-    private fun setWindowMinimized(established: AuthenticatedHostConnection, window: WindowInfo, minimized: Boolean) {
+    private fun performWindowAction(established: AuthenticatedHostConnection, window: WindowInfo, action: WindowAction) {
         val dialog = targetDialog
         dialog?.listView?.isEnabled = false
         executor.execute {
-            val result = runCatching { established.setWindowMinimized(window.id, minimized) }
+            val result = runCatching { established.performWindowAction(window.id, action) }
             runOnUiThread {
                 if (active && targetDialog === dialog) {
                     dialog?.listView?.isEnabled = true
@@ -550,6 +551,9 @@ class VideoActivity : ComponentActivity() {
                         status.setText(R.string.window_selection_failed)
                     } else {
                         Toast.makeText(this, if (result.getOrDefault(false)) R.string.window_action_sent else R.string.window_action_failed, Toast.LENGTH_SHORT).show()
+                        targetDialog = null
+                        dialog?.dismiss()
+                        executor.execute { prepareTarget(established, Target.WINDOW) }
                     }
                 }
             }

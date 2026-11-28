@@ -12,7 +12,7 @@ actor SignalingSession {
     private let onMediaRequested: @Sendable (PairedDevice, MediaTarget, Bool) async -> Void
     private let canResume: @Sendable (PairedDevice) async -> Bool
     private let onMediaStopRequested: @Sendable (PairedDevice) async -> Void
-    private let onWindowMinimize: @Sendable (PairedDevice, WindowInfo, Int32, Bool) async -> Void
+    private let onWindowAction: @Sendable (PairedDevice, WindowInfo, Int32, WindowAction) async -> Void
     private let onAnswer: @Sendable (PairedDevice, String) async -> Void
     private let onClosed: @Sendable () async -> Void
     private var decoder = SignalFrame.Decoder()
@@ -37,7 +37,7 @@ actor SignalingSession {
          onMediaRequested: @escaping @Sendable (PairedDevice, MediaTarget, Bool) async -> Void,
          canResume: @escaping @Sendable (PairedDevice) async -> Bool,
          onMediaStopRequested: @escaping @Sendable (PairedDevice) async -> Void,
-         onWindowMinimize: @escaping @Sendable (PairedDevice, WindowInfo, Int32, Bool) async -> Void,
+         onWindowAction: @escaping @Sendable (PairedDevice, WindowInfo, Int32, WindowAction) async -> Void,
          onAnswer: @escaping @Sendable (PairedDevice, String) async -> Void,
          onClosed: @escaping @Sendable () async -> Void) {
         self.connection = connection
@@ -47,7 +47,7 @@ actor SignalingSession {
         self.onMediaRequested = onMediaRequested
         self.canResume = canResume
         self.onMediaStopRequested = onMediaStopRequested
-        self.onWindowMinimize = onWindowMinimize
+        self.onWindowAction = onWindowAction
         self.onAnswer = onAnswer
         self.onClosed = onClosed
     }
@@ -107,11 +107,14 @@ actor SignalingSession {
         })
     }
 
-    func sendWindowMinimized(id: UInt32, success: Bool) throws {
+    func sendWindowActionResult(id: UInt32, success: Bool) throws {
         guard !closed, device != nil, mediaState == .windowAction, windowActionID == id else { throw SessionError.unexpectedState }
-        let encoded = try SignalFrame.encode(SignalMessage.windowMinimizedResult(id, success).encode())
+        let encoded = try SignalFrame.encode(SignalMessage.windowActionResult(id, success).encode())
         mediaState = .idle
         windowActionID = nil
+        windowSnapshot = nil
+        nextWindowOffset = 0
+        sentWindowCount = 0
         timeout?.cancel()
         timeout = nil
         connection.send(content: encoded, completion: .contentProcessed { [weak self] error in
@@ -237,7 +240,7 @@ actor SignalingSession {
                         })
                         return
                     }
-                    if case let .setWindowMinimized(id, minimized) = message, mediaState == .idle {
+                    if case let .windowAction(id, action) = message, mediaState == .idle {
                         guard let snapshot = windowSnapshot,
                               let selected = snapshot.prefix(sentWindowCount).first(where: { $0.info.id == id }),
                               try await WindowCatalog.matches(selected), !closed, mediaState == .idle else { await close(); return }
@@ -247,7 +250,7 @@ actor SignalingSession {
                             do { try await Task.sleep(for: .seconds(20)) } catch { return }
                             await self?.close()
                         }
-                        await onWindowMinimize(device, selected.info, selected.processID, minimized)
+                        await onWindowAction(device, selected.info, selected.processID, action)
                         if !closed { receive() }
                         return
                     }

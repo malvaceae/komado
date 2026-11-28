@@ -14,6 +14,7 @@ data class DisplayInfo(val id: Long, val width: Int, val height: Int, val name: 
 data class ApplicationInfo(val id: Long, val name: String)
 data class WindowInfo(val id: Long, val width: Int, val height: Int, val application: String, val title: String)
 data class WindowSize(val width: Int, val height: Int)
+enum class WindowAction { MINIMIZE, RESTORE, CLOSE }
 
 /** Decoding validates message structure, not the sender or session state. */
 sealed interface SignalMessage {
@@ -39,8 +40,8 @@ sealed interface SignalMessage {
     data class StartApplicationControl(val id: Long) : SignalMessage
     data class StartWindow(val id: Long) : SignalMessage
     data class StartWindowControl(val id: Long, val size: WindowSize? = null) : SignalMessage
-    data class SetWindowMinimized(val id: Long, val minimized: Boolean) : SignalMessage
-    data class WindowMinimizedResult(val id: Long, val success: Boolean) : SignalMessage
+    data class WindowActionRequest(val id: Long, val action: WindowAction) : SignalMessage
+    data class WindowActionResult(val id: Long, val success: Boolean) : SignalMessage
     data object StopMedia : SignalMessage
     data object MediaStopped : SignalMessage
     data object ResumeCheck : SignalMessage
@@ -176,11 +177,15 @@ object SignalMessageCodec {
                     if (fields.size != 3) throw MessageException()
                     SignalMessage.StartWindow(positiveInteger(fields[2], 4_294_967_295L))
                 }
-                "window.minimize", "window.minimized" -> {
-                    if (fields.size != 4 || fields[3] !in listOf("0", "1")) throw MessageException()
+                "window.action" -> {
+                    if (fields.size != 4) throw MessageException()
                     val id = positiveInteger(fields[2], 4_294_967_295L)
-                    if (fields[1] == "window.minimize") SignalMessage.SetWindowMinimized(id, fields[3] == "1")
-                    else SignalMessage.WindowMinimizedResult(id, fields[3] == "1")
+                    val action = WindowAction.entries.firstOrNull { it.name.lowercase() == fields[3] } ?: throw MessageException()
+                    SignalMessage.WindowActionRequest(id, action)
+                }
+                "window.action.result" -> {
+                    if (fields.size != 4 || fields[3] !in listOf("0", "1")) throw MessageException()
+                    SignalMessage.WindowActionResult(positiveInteger(fields[2], 4_294_967_295L), fields[3] == "1")
                 }
                 "media.stop" -> {
                     if (fields.size != 2) throw MessageException()
@@ -263,8 +268,8 @@ object SignalMessageCodec {
             is SignalMessage.StartWindow -> listOf("1", "window.start", message.id.toString())
             is SignalMessage.StartWindowControl -> listOf("1", "window.control", message.id.toString()) +
                 (message.size?.let { listOf(it.width.toString(), it.height.toString()) } ?: emptyList())
-            is SignalMessage.SetWindowMinimized -> listOf("1", "window.minimize", message.id.toString(), if (message.minimized) "1" else "0")
-            is SignalMessage.WindowMinimizedResult -> listOf("1", "window.minimized", message.id.toString(), if (message.success) "1" else "0")
+            is SignalMessage.WindowActionRequest -> listOf("1", "window.action", message.id.toString(), message.action.name.lowercase())
+            is SignalMessage.WindowActionResult -> listOf("1", "window.action.result", message.id.toString(), if (message.success) "1" else "0")
             SignalMessage.StopMedia -> listOf("1", "media.stop")
             SignalMessage.MediaStopped -> listOf("1", "media.stopped")
             SignalMessage.ResumeCheck -> listOf("1", "resume.check")

@@ -288,7 +288,16 @@
     {
       "type": "array",
       "prefixItems": [
-        { "const": "1" }, { "enum": ["window.minimize", "window.minimized"] },
+        { "const": "1" }, { "const": "window.action" },
+        { "type": "string", "pattern": "^[1-9][0-9]{0,9}$", "not": { "pattern": "[^0-9]" } },
+        { "enum": ["minimize", "restore", "close"] }
+      ],
+      "minItems": 4, "maxItems": 4, "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [
+        { "const": "1" }, { "const": "window.action.result" },
         { "type": "string", "pattern": "^[1-9][0-9]{0,9}$", "not": { "pattern": "[^0-9]" } },
         { "enum": ["0", "1"] }
       ],

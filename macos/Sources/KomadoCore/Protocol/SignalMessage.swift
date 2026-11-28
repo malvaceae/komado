@@ -40,6 +40,10 @@ public struct WindowSize: Equatable, Sendable {
     public init(width: UInt16, height: UInt16) { self.width = width; self.height = height }
 }
 
+public enum WindowAction: String, Sendable {
+    case minimize, restore, close
+}
+
 /// Version 1 signaling messages. A successfully decoded message is still
 /// untrusted until it has been accepted by the authenticated session state.
 public enum SignalMessage: Equatable, Sendable {
@@ -65,8 +69,8 @@ public enum SignalMessage: Equatable, Sendable {
     case startApplicationControl(UInt32)
     case startWindow(UInt32)
     case startWindowControl(UInt32, size: WindowSize? = nil)
-    case setWindowMinimized(UInt32, Bool)
-    case windowMinimizedResult(UInt32, Bool)
+    case windowAction(UInt32, WindowAction)
+    case windowActionResult(UInt32, Bool)
     case stopMedia
     case mediaStopped
     case resumeCheck
@@ -181,10 +185,14 @@ public enum SignalMessage: Equatable, Sendable {
         case "window.start":
             guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
             return .startWindow(UInt32(id))
-        case "window.minimize", "window.minimized":
+        case "window.action":
+            guard fields.count == 4, let id = positiveInteger(fields[2], max: UInt64(UInt32.max)),
+                  let action = WindowAction(rawValue: fields[3]) else { throw MessageError.invalid }
+            return .windowAction(UInt32(id), action)
+        case "window.action.result":
             guard fields.count == 4, let id = positiveInteger(fields[2], max: UInt64(UInt32.max)),
                   fields[3] == "0" || fields[3] == "1" else { throw MessageError.invalid }
-            return fields[1] == "window.minimize" ? .setWindowMinimized(UInt32(id), fields[3] == "1") : .windowMinimizedResult(UInt32(id), fields[3] == "1")
+            return .windowActionResult(UInt32(id), fields[3] == "1")
         case "media.stop":
             guard fields.count == 2 else { throw MessageError.invalid }
             return .stopMedia
@@ -262,10 +270,10 @@ public enum SignalMessage: Equatable, Sendable {
         case let .startWindow(id):
             guard id > 0 else { throw MessageError.invalid }
             fields = ["1", "window.start", String(id)]
-        case let .setWindowMinimized(id, minimized):
-            fields = ["1", "window.minimize", String(id), minimized ? "1" : "0"]
-        case let .windowMinimizedResult(id, success):
-            fields = ["1", "window.minimized", String(id), success ? "1" : "0"]
+        case let .windowAction(id, action):
+            fields = ["1", "window.action", String(id), action.rawValue]
+        case let .windowActionResult(id, success):
+            fields = ["1", "window.action.result", String(id), success ? "1" : "0"]
         case .stopMedia: fields = ["1", "media.stop"]
         case .mediaStopped: fields = ["1", "media.stopped"]
         case .resumeCheck: fields = ["1", "resume.check"]

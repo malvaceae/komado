@@ -8,6 +8,8 @@ import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.protocol.SignalMessageCodec
 import me.mallows.komado.protocol.ApplicationInfo
 import me.mallows.komado.protocol.WindowSize
+import me.mallows.komado.protocol.WindowInfo
+import me.mallows.komado.protocol.WindowAction
 import me.mallows.komado.security.DeviceSigningKey
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -50,6 +52,48 @@ class AuthenticatedHostConnectionTest {
     @After fun cleanup() {
         key.delete()
         store.deleteEntry(serverAlias)
+    }
+
+    @Test fun refreshesWindowsAfterAnAction() {
+        withServer { server, fingerprint ->
+            val executor = Executors.newSingleThreadExecutor()
+            val windows = listOf(WindowInfo(1, 300, 200, "App", "First"), WindowInfo(2, 300, 200, "App", "Second"))
+            val task = executor.submit {
+                (server.accept() as SSLSocket).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.startHandshake()
+                    receive(socket) as SignalMessage.Pair
+                    send(socket, SignalMessage.Challenge(ByteArray(32)))
+                    receive(socket) as SignalMessage.Proof
+                    send(socket, SignalMessage.Accepted(UUID.randomUUID()))
+                    assertEquals(SignalMessage.ListWindows(0), receive(socket))
+                    send(socket, SignalMessage.Windows(0, windows))
+                    assertEquals(SignalMessage.WindowActionRequest(1, WindowAction.CLOSE), receive(socket))
+                    send(socket, SignalMessage.WindowActionResult(1, true))
+                    assertEquals(SignalMessage.ListWindows(0), receive(socket))
+                    send(socket, SignalMessage.Windows(0, windows.drop(1)))
+                    assertEquals(SignalMessage.WindowActionRequest(2, WindowAction.MINIMIZE), receive(socket))
+                    send(socket, SignalMessage.WindowActionResult(2, false))
+                    assertEquals(SignalMessage.ListWindows(0), receive(socket))
+                    send(socket, SignalMessage.Windows(0, windows.drop(1)))
+                }
+            }
+            try {
+                AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint, "Android test", ByteArray(32), key).use { connection ->
+                    assertThrows(IOException::class.java) { connection.performWindowAction(1, WindowAction.CLOSE) }
+                    assertEquals(windows, connection.listWindows())
+                    assertTrue(connection.performWindowAction(1, WindowAction.CLOSE))
+                    assertEquals(windows.drop(1), connection.listWindows())
+                    assertFalse(connection.performWindowAction(2, WindowAction.MINIMIZE))
+                    assertEquals(windows.drop(1), connection.listWindows())
+                }
+                task.get(20, TimeUnit.SECONDS)
+            } finally {
+                server.close()
+                executor.shutdownNow()
+                executor.awaitTermination(10, TimeUnit.SECONDS)
+            }
+        }
     }
 
     @Test fun pairAndReconnectOverTls() {
