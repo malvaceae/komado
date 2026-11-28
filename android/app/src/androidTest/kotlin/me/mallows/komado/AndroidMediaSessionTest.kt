@@ -452,11 +452,23 @@ class AndroidMediaSessionTest {
             }
             assertTrue("No frame received", frames.await(5, TimeUnit.SECONDS))
             if (!closeControlChannel && !closeLocally) {
-                val statistics = CompletableFuture<VideoStatistics>()
-                instrumentation.runOnMainSync {
-                    assertTrue(requireNotNull(receiver).requestVideoStatistics { statistics.complete(it) })
+                fun awaitStatistics(ready: (VideoStatistics) -> Boolean): VideoStatistics {
+                    val deadline = SystemClock.elapsedRealtime() + 10_000
+                    do {
+                        val statistics = CompletableFuture<VideoStatistics>()
+                        instrumentation.runOnMainSync {
+                            assertTrue(requireNotNull(receiver).requestVideoStatistics { statistics.complete(it) })
+                        }
+                        val snapshot = statistics.get(10, TimeUnit.SECONDS)
+                        if (ready(snapshot)) return snapshot
+                        Thread.sleep(100)
+                    } while (SystemClock.elapsedRealtime() < deadline)
+                    throw AssertionError("Video statistics did not update")
                 }
-                val snapshot = statistics.get(10, TimeUnit.SECONDS)
+                val snapshot = awaitStatistics {
+                    it.width != null && it.height != null && it.codec != null &&
+                        it.packetLossPercent != null && it.framesDropped != null
+                }
                 assertEquals(320, snapshot.width)
                 assertEquals(240, snapshot.height)
                 assertTrue("Video codec should be reported", snapshot.codec != null)
@@ -472,11 +484,8 @@ class AndroidMediaSessionTest {
                         if (moreFrames.await(100, TimeUnit.MILLISECONDS)) break
                     }
                     assertTrue("More frames should arrive", moreFrames.await(5, TimeUnit.SECONDS))
-                    val laterStatistics = CompletableFuture<VideoStatistics>()
-                    instrumentation.runOnMainSync {
-                        assertTrue(requireNotNull(receiver).requestVideoStatistics { laterStatistics.complete(it) })
-                    }
-                    val bitrate = laterStatistics.get(10, TimeUnit.SECONDS).receiveBitsPerSecond(snapshot)
+                    val laterStatistics = awaitStatistics { (it.receiveBitsPerSecond(snapshot) ?: 0.0) > 0 }
+                    val bitrate = laterStatistics.receiveBitsPerSecond(snapshot)
                     assertTrue("Video bitrate should be positive", bitrate != null && bitrate > 0)
                 } finally {
                     instrumentation.runOnMainSync { attached?.removeSink(additionalSink) }
