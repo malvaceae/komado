@@ -53,8 +53,11 @@ internal class CommittedTextConnection(view: View, private val sendKey: (Special
             else -> false
         }
     }
-    override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean =
-        deleteSurroundingText(beforeLength, afterLength)
+    override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean {
+        if (closed || beforeLength < 0 || afterLength < 0) return false
+        if (getComposingSpanStart(content) >= 0) return super.deleteSurroundingTextInCodePoints(beforeLength, afterLength)
+        return deleteSurroundingText(beforeLength, afterLength)
+    }
 
     override fun sendKeyEvent(event: KeyEvent): Boolean {
         if (closed) return false

@@ -49,12 +49,35 @@ class CommittedTextConnectionTest {
             assertTrue(connection.commitText("日", 1))
             assertEquals(listOf("日"), texts)
             assertTrue(connection.deleteSurroundingText(1, 0))
+            assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0))
             assertTrue(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)))
             assertTrue(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)))
             assertFalse(connection.deleteSurroundingText(2, 0))
-            assertEquals(listOf(SpecialKey.BACKSPACE, SpecialKey.ENTER), keys)
+            assertEquals(listOf(SpecialKey.BACKSPACE, SpecialKey.BACKSPACE, SpecialKey.ENTER), keys)
             connection.closeConnection()
             assertFalse(connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)))
+        }
+    }
+
+    @Test fun deletesWholeCodePointNextToComposition() {
+        val instrument = InstrumentationRegistry.getInstrumentation()
+        instrument.runOnMainSync {
+            val sent = mutableListOf<String>()
+            val connection = CommittedTextConnection(View(instrument.targetContext)) { sent.add(it); true }
+            assertTrue(connection.setComposingText("😀あ", 1))
+            assertTrue(connection.setComposingRegion(2, 3))
+            assertTrue(connection.setSelection(2, 2))
+            assertTrue(connection.deleteSurroundingTextInCodePoints(1, 0))
+            assertEquals("あ", connection.editable.toString())
+            assertTrue(connection.setComposingText("あ😀", 1))
+            assertTrue(connection.setComposingRegion(0, 1))
+            assertTrue(connection.setSelection(1, 1))
+            assertTrue(connection.deleteSurroundingTextInCodePoints(0, 1))
+            assertEquals("あ", connection.editable.toString())
+            assertTrue(sent.isEmpty())
+            assertTrue(connection.finishComposingText())
+            assertEquals(listOf("あ"), sent)
+            connection.closeConnection()
         }
     }
     @Test fun sendsCommittedTextOnlyOnce() {
