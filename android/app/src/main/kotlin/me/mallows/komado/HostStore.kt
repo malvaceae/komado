@@ -58,7 +58,7 @@ internal class HostStore(context: Context, preferenceName: String = "hosts") {
             val id = item.getString("id")
             val name = item.getString("name")
             val address = item.getString("address")
-            val port = if (item.has("port")) item.getInt("port") else 48365
+            val port = item.getInt("port")
             require(canonicalUUID(id) && ids.add(id) && validName(name) && validAddress(address) && port in 1..65535)
             val pairing = if (item.has("pairing")) {
                 val saved = item.getJSONObject("pairing")

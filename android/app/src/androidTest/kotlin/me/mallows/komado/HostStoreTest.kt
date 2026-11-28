@@ -41,7 +41,15 @@ class HostStoreTest {
         val host = Host(UUID.randomUUID().toString(), "Mac", "mac.local")
         assertTrue(store.save(null, host))
         val preferences = context.getSharedPreferences(preferenceName, android.content.Context.MODE_PRIVATE)
-        val broken = """[{"id":"${host.id}","name":"Mac","address":"mac.local","pairing":{"deviceID":"bad","fingerprint":"AB","keyAlias":"other"}}]"""
+        val broken = """[{"id":"${host.id}","name":"Mac","address":"mac.local","port":48365,"pairing":{"deviceID":"bad","fingerprint":"AB","keyAlias":"other"}}]"""
+        assertTrue(preferences.edit().putString("entries", broken).commit())
+        assertThrows(Exception::class.java) { store.load() }
+        assertEquals(broken, preferences.getString("entries", null))
+    }
+
+    @Test fun rejectsMissingPortWithoutOverwritingData() {
+        val preferences = context.getSharedPreferences(preferenceName, android.content.Context.MODE_PRIVATE)
+        val broken = """[{"id":"${UUID.randomUUID()}","name":"Mac","address":"mac.local"}]"""
         assertTrue(preferences.edit().putString("entries", broken).commit())
         assertThrows(Exception::class.java) { store.load() }
         assertEquals(broken, preferences.getString("entries", null))
@@ -79,12 +87,12 @@ class HostStoreTest {
         val deviceID = UUID.randomUUID()
         val alias = "me.mallows.komado.pair.${UUID.randomUUID()}"
         for (value in listOf("\"yesterday\"", "0", "1.5", "253402300800000")) {
-            val broken = """[{"id":"$id","name":"Mac","address":"mac.local","pairing":{"deviceID":"$deviceID","fingerprint":"${"AB".repeat(32)}","keyAlias":"$alias"},"lastConnectedAt":$value}]"""
+            val broken = """[{"id":"$id","name":"Mac","address":"mac.local","port":48365,"pairing":{"deviceID":"$deviceID","fingerprint":"${"AB".repeat(32)}","keyAlias":"$alias"},"lastConnectedAt":$value}]"""
             assertTrue(preferences.edit().putString("entries", broken).commit())
             assertThrows(Exception::class.java) { store.load() }
             assertEquals(broken, preferences.getString("entries", null))
         }
-        val unpaired = """[{"id":"$id","name":"Mac","address":"mac.local","lastConnectedAt":1}]"""
+        val unpaired = """[{"id":"$id","name":"Mac","address":"mac.local","port":48365,"lastConnectedAt":1}]"""
         assertTrue(preferences.edit().putString("entries", unpaired).commit())
         assertThrows(Exception::class.java) { store.load() }
         assertEquals(unpaired, preferences.getString("entries", null))
