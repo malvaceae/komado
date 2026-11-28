@@ -2,8 +2,9 @@ package me.mallows.komado
 
 import org.webrtc.RTCStats
 
-/** Only numeric display metrics leave this parser; addresses and identifiers do not. */
-internal data class VideoStatistics(val width: Int?, val height: Int?, val framesPerSecond: Double?, val roundTripSeconds: Double?) {
+/** Addresses and connection identifiers do not leave this parser. */
+internal data class VideoStatistics(val width: Int?, val height: Int?, val framesPerSecond: Double?,
+                                    val roundTripSeconds: Double?, val codec: String?, val decoder: String?) {
     companion object {
         fun from(stats: Map<String, RTCStats>): VideoStatistics {
             val inbound = stats.values.filter {
@@ -23,7 +24,12 @@ internal data class VideoStatistics(val width: Int?, val height: Int?, val frame
                 ?.takeIf { it.type == "candidate-pair" }
             val rtt = (pair?.members?.get("currentRoundTripTime") as? Number)?.toDouble()
                 ?.takeIf { it.isFinite() && it in 0.0..3600.0 }
-            return VideoStatistics(width, height, fps, rtt)
+            val codec = (members["codecId"] as? String)?.let(stats::get)?.takeIf { it.type == "codec" }
+                ?.members?.get("mimeType")?.let { it as? String }
+                ?.takeIf { it.startsWith("video/", ignoreCase = true) && it.length > "video/".length }
+                ?.substringAfter('/')
+            val decoder = (members["decoderImplementation"] as? String)?.takeIf { it.isNotBlank() }
+            return VideoStatistics(width, height, fps, rtt, codec, decoder)
         }
     }
 }

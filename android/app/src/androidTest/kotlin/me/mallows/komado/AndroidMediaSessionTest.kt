@@ -456,6 +456,7 @@ class AndroidMediaSessionTest {
                 val snapshot = statistics.get(10, TimeUnit.SECONDS)
                 assertEquals(320, snapshot.width)
                 assertEquals(240, snapshot.height)
+                assertTrue("Video codec should be reported", snapshot.codec != null)
             }
             source.capturerObserver.onCapturerStopped()
             if (closeBeforeText) {
