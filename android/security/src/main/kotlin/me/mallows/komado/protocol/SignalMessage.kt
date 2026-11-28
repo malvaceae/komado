@@ -12,6 +12,7 @@ import java.util.UUID
 
 data class DisplayInfo(val id: Long, val width: Int, val height: Int)
 data class WindowInfo(val id: Long, val width: Int, val height: Int, val application: String, val title: String)
+data class WindowSize(val width: Int, val height: Int)
 
 /** Decoding validates message structure, not the sender or session state. */
 sealed interface SignalMessage {
@@ -30,7 +31,7 @@ sealed interface SignalMessage {
     data class ListWindows(val offset: Int) : SignalMessage
     data class Windows(val next: Int, val values: List<WindowInfo>) : SignalMessage
     data class StartWindow(val id: Long) : SignalMessage
-    data class StartWindowControl(val id: Long) : SignalMessage
+    data class StartWindowControl(val id: Long, val size: WindowSize? = null) : SignalMessage
     data object StopMedia : SignalMessage
     data object MediaStopped : SignalMessage
     data class Offer(val sdp: String) : SignalMessage
@@ -126,8 +127,10 @@ object SignalMessageCodec {
                     SignalMessage.Windows(next, values)
                 }
                 "window.control" -> {
-                    if (fields.size != 3) throw MessageException()
-                    SignalMessage.StartWindowControl(positiveInteger(fields[2], 4_294_967_295L))
+                    if (fields.size != 3 && fields.size != 5) throw MessageException()
+                    val size = if (fields.size == 5) WindowSize(positiveInteger(fields[3], 65_535).toInt(),
+                        positiveInteger(fields[4], 65_535).toInt()) else null
+                    SignalMessage.StartWindowControl(positiveInteger(fields[2], 4_294_967_295L), size)
                 }
                 "window.start" -> {
                     if (fields.size != 3) throw MessageException()
@@ -193,7 +196,8 @@ object SignalMessageCodec {
                 }
             }
             is SignalMessage.StartWindow -> listOf("1", "window.start", message.id.toString())
-            is SignalMessage.StartWindowControl -> listOf("1", "window.control", message.id.toString())
+            is SignalMessage.StartWindowControl -> listOf("1", "window.control", message.id.toString()) +
+                (message.size?.let { listOf(it.width.toString(), it.height.toString()) } ?: emptyList())
             SignalMessage.StopMedia -> listOf("1", "media.stop")
             SignalMessage.MediaStopped -> listOf("1", "media.stopped")
             is SignalMessage.Offer -> {

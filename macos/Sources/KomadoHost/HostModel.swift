@@ -89,11 +89,13 @@ final class HostModel: ObservableObject {
     private var connectedSession: UUID?
     private var mediaConnection: UUID?
     private var mediaTarget: MediaTarget?
+    private var windowResize: WindowResize?
     private var switchingControl = false
     private var mediaSession: HostMediaSession?
     private var mediaGate: MediaSessionGate?
     private var screenMonitor: ScreenEnvironmentMonitor?
     private var mediaTask: Task<Void, Never>?
+    private var mediaCleanup: Task<Bool, Never>?
     private var capture: DisplayCapture?
     private var controlDisplayID: CGDirectDisplayID?
     private var controlBounds: CGRect?
@@ -236,7 +238,7 @@ final class HostModel: ObservableObject {
     }
 
     func stop() async {
-        stopMedia()
+        let cleanup = stopMedia()
         switchingControl = false
         allowRemoteControl = false
         let current = server
@@ -253,6 +255,7 @@ final class HostModel: ObservableObject {
         invitationExpiry?.cancel()
         invitationExpiry = nil
         if let current { await current.stop() }
+        _ = await cleanup?.value
         if let invitationCleanup { await invitationCleanup.value }
         try? await pairing.cancelInvitation()
         refresh()
@@ -260,8 +263,9 @@ final class HostModel: ObservableObject {
 
     func stopSharing() async {
         guard let connection = mediaConnection, let current = server else { return }
-        stopMedia()
+        let cleanup = stopMedia()
         await current.disconnect(sessionID: connection)
+        _ = await cleanup?.value
     }
 
     func issueInvitation() async {
@@ -402,7 +406,17 @@ final class HostModel: ObservableObject {
 
     private func startMedia(connection: UUID, target: MediaTarget) async {
         guard let server, await server.isActive(sessionID: connection), self.server === server, running else { return }
-        if mediaConnection != nil && mediaConnection != connection { stopMedia() }
+        if let cleanup = mediaCleanup {
+            _ = await cleanup.value
+            guard await server.isActive(sessionID: connection), self.server === server, running else { return }
+            mediaCleanup = nil
+        }
+        if mediaConnection != nil && mediaConnection != connection {
+            let cleanup = stopMedia()
+            _ = await cleanup?.value
+            guard await server.isActive(sessionID: connection), self.server === server, running else { return }
+            mediaCleanup = nil
+        }
         guard mediaSession == nil else { return }
         if switchingControl && !target.isControl {
             allowRemoteControl = false
@@ -475,6 +489,10 @@ final class HostModel: ObservableObject {
                 guard let self, self.mediaID == id, !Task.isCancelled else { return }
                 guard let target = self.mediaTarget else { throw HostMediaSession.SessionError.creationFailed }
                 let resolution = self.captureResolution
+                if case let .windowControl(info, processID, size) = target, let size,
+                   let snapshot = ControlWindowSnapshot.onScreen()?.first(where: { $0.id == info.id && $0.processID == processID }) {
+                    self.windowResize = WindowResize.start(target: snapshot, desired: size)
+                }
                 let onScreenOnly: Bool
                 switch target {
                 case .window, .windowControl: onScreenOnly = false
@@ -517,7 +535,7 @@ final class HostModel: ObservableObject {
                         self.controllingScreen = true
                     }
                     captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, resolution: resolution, onStopped: onStopped)
-                case let .window(info, processID), let .windowControl(info, processID):
+                case let .window(info, processID), let .windowControl(info, processID, _):
                     guard let window = content.windows.first(where: {
                         WindowCatalog.matches(window: $0, info: info, processID: processID)
                     }) else { throw HostMediaSession.SessionError.creationFailed }
@@ -710,6 +728,8 @@ final class HostModel: ObservableObject {
         controlDisplayID = nil
         controlBounds = nil
         controlWindow = nil
+        let resize = windowResize
+        windowResize = nil
         let previousTask = mediaTask
         previousTask?.cancel()
         mediaTask = nil
@@ -726,14 +746,20 @@ final class HostModel: ObservableObject {
         sleepActivity = nil
         let current = capture
         capture = nil
-        if previousTask != nil || current != nil {
-            return Task {
+        let priorCleanup = mediaCleanup
+        if previousTask != nil || current != nil || resize != nil {
+            let cleanup = Task {
+                _ = await priorCleanup?.value
                 await previousTask?.value
-                guard let current else { return true }
-                do { try await current.stop(); return true } catch { return false }
+                var stopped = true
+                if let current { do { try await current.stop() } catch { stopped = false } }
+                resize?.restore()
+                return stopped
             }
+            mediaCleanup = cleanup
+            return cleanup
         }
-        return nil
+        return priorCleanup
     }
 
     private static func format(_ data: Data, separator: String) -> String {

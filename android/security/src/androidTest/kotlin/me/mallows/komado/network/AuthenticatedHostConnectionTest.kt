@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import me.mallows.komado.protocol.SignalFrame
 import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.protocol.SignalMessageCodec
+import me.mallows.komado.protocol.WindowSize
 import me.mallows.komado.security.DeviceSigningKey
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -152,13 +153,13 @@ class AuthenticatedHostConnectionTest {
                     send(socket, SignalMessage.Challenge(ByteArray(32)))
                     receive(socket) as SignalMessage.Proof
                     send(socket, SignalMessage.Accepted(id))
-                    assertEquals(SignalMessage.StartWindowControl(123), receive(socket))
+                    assertEquals(SignalMessage.StartWindowControl(123, WindowSize(1080, 1920)), receive(socket))
                 }
             }
             try {
                 val connection = AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint,
                     "Android test", ByteArray(32), key)
-                connection.requestMedia(windowId = 123, control = true)
+                connection.requestMedia(windowId = 123, control = true, windowSize = WindowSize(1080, 1920))
                 connection.close()
                 task.get(20, TimeUnit.SECONDS)
             } finally {

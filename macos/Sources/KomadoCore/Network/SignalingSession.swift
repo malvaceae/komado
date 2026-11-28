@@ -178,12 +178,12 @@ actor SignalingSession {
                         guard let snapshot = displaySnapshot,
                               try DisplayCatalog.containsSelected(id, in: snapshot, current: DisplayCatalog.active()) else { await close(); return }
                         target = .display(id); startsMedia = true
-                    case let .startWindowControl(id):
+                    case let .startWindowControl(id, size):
                         guard let snapshot = windowSnapshot,
                               let selected = snapshot.prefix(sentWindowCount).first(where: { $0.info.id == id }),
                               try await WindowCatalog.matches(selected),
                               !closed else { await close(); return }
-                        target = .windowControl(info: selected.info, processID: selected.processID); startsMedia = true
+                        target = .windowControl(info: selected.info, processID: selected.processID, size: size); startsMedia = true
                     case let .startWindow(id):
                         guard let snapshot = windowSnapshot,
                               let selected = snapshot.prefix(sentWindowCount).first(where: { $0.info.id == id }),

@@ -62,7 +62,7 @@ enum FocusedWindow {
         return (hitPID, bounds)
     }
 
-    private static func bounds(of window: AXUIElement) -> CGRect? {
+    static func bounds(of window: AXUIElement) -> CGRect? {
         var positionValue: CFTypeRef?, sizeValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionValue) == .success,
               AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeValue) == .success,

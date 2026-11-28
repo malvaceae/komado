@@ -26,6 +26,12 @@ public struct WindowInfo: Equatable, Sendable {
     }
 }
 
+public struct WindowSize: Equatable, Sendable {
+    public let width: UInt16
+    public let height: UInt16
+    public init(width: UInt16, height: UInt16) { self.width = width; self.height = height }
+}
+
 /// Version 1 signaling messages. A successfully decoded message is still
 /// untrusted until it has been accepted by the authenticated session state.
 public enum SignalMessage: Equatable, Sendable {
@@ -44,7 +50,7 @@ public enum SignalMessage: Equatable, Sendable {
     case listWindows(UInt16)
     case windows(next: UInt16, values: [WindowInfo])
     case startWindow(UInt32)
-    case startWindowControl(UInt32)
+    case startWindowControl(UInt32, size: WindowSize? = nil)
     case stopMedia
     case mediaStopped
     case offer(String)
@@ -123,8 +129,11 @@ public enum SignalMessage: Equatable, Sendable {
             guard !windows.isEmpty || next == 0 else { throw MessageError.invalid }
             return .windows(next: UInt16(next), values: windows)
         case "window.control":
-            guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
-            return .startWindowControl(UInt32(id))
+            guard (fields.count == 3 || fields.count == 5), let id = positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
+            if fields.count == 3 { return .startWindowControl(UInt32(id)) }
+            guard let width = positiveInteger(fields[3], max: 65_535),
+                  let height = positiveInteger(fields[4], max: 65_535) else { throw MessageError.invalid }
+            return .startWindowControl(UInt32(id), size: WindowSize(width: UInt16(width), height: UInt16(height)))
         case "window.start":
             guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
             return .startWindow(UInt32(id))
@@ -180,9 +189,10 @@ public enum SignalMessage: Equatable, Sendable {
             fields = ["1", "window.listed", String(next)] + values.flatMap {
                 [String($0.id), String($0.width), String($0.height), $0.application, $0.title]
             }
-        case let .startWindowControl(id):
+        case let .startWindowControl(id, size):
             guard id > 0 else { throw MessageError.invalid }
             fields = ["1", "window.control", String(id)]
+                + (size.map { [String($0.width), String($0.height)] } ?? [])
         case let .startWindow(id):
             guard id > 0 else { throw MessageError.invalid }
             fields = ["1", "window.start", String(id)]

@@ -100,6 +100,7 @@
     <string name="fullscreen">全画面表示</string>
     <string name="exit_fullscreen">全画面を終了</string>
     <string name="change_target">表示対象を変更</string>
+    <string name="resize_window_automatically">ウインドウサイズを自動調整</string>
     <string name="switching_target">表示対象を切り替えています…</string>
     <string name="switch_waiting_input">入力または共有の完了後に切り替えてください。</string>
     <string name="video_description">Macの画面。ピンチで拡大・縮小、ドラッグまたは矢印キーで表示位置を移動します。</string>

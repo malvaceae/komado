@@ -3,6 +3,7 @@ package me.mallows.komado
 import android.app.AlertDialog
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -26,6 +27,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.WindowInfo
+import me.mallows.komado.protocol.WindowSize
 import me.mallows.komado.protocol.KeyboardKey
 import me.mallows.komado.protocol.SpecialKey
 import me.mallows.komado.protocol.PointerClick
@@ -81,6 +83,10 @@ class VideoActivity : ComponentActivity() {
     private lateinit var header: View
     private var windowNote: View? = null
     private var showingWindowNote = false
+    private var windowResizeSwitch: CheckBox? = null
+    private var updatingResizeSwitch = false
+    private var currentWindowId: Long? = null
+    private var reloadWindowId: Long? = null
     private lateinit var controlsScroll: VideoControlsScrollView
     private enum class ClipboardAction { GET, PREPARE_SEND, SEND, AUTO_START, AUTO_POLL, AUTO_PREPARE, AUTO_SEND }
     private var clipboardAction: ClipboardAction? = null
@@ -105,6 +111,16 @@ class VideoActivity : ComponentActivity() {
     private var lastVideoTapSent = false
     private lateinit var status: TextView
     private var firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
+    private val resizeForLayout = object : Runnable {
+        override fun run() {
+            if (!active || !showingWindowNote || windowResizeSwitch?.isChecked != true) return
+            if (switching || !firstFrameShown || clipboardAction != null || media?.hasUnconfirmedText() != false) {
+                mainHandler.postDelayed(this, 500)
+                return
+            }
+            currentWindowId?.let { beginTargetSwitch(Target.WINDOW, it) }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -212,6 +228,24 @@ class VideoActivity : ComponentActivity() {
             root.addView(videoFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         } catch (_: Exception) { active = false; status.setText(R.string.screen_failed) }
         val controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        if (controlMode) {
+            windowResizeSwitch = CheckBox(this).apply {
+                setText(R.string.resize_window_automatically)
+                visibility = if (showingWindowNote) View.VISIBLE else View.GONE
+                isEnabled = false
+                setOnCheckedChangeListener { button, checked ->
+                    if (!updatingResizeSwitch && active && firstFrameShown && !switching) {
+                        if (clipboardAction != null || media?.hasUnconfirmedText() != false) {
+                            updatingResizeSwitch = true
+                            button.isChecked = !checked
+                            updatingResizeSwitch = false
+                            Toast.makeText(this@VideoActivity, R.string.switch_waiting_input, Toast.LENGTH_SHORT).show()
+                        } else currentWindowId?.let { beginTargetSwitch(Target.WINDOW, it) }
+                    }
+                }
+            }
+            controls.addView(windowResizeSwitch)
+        }
         val zoomControls = LinearLayout(this)
         listOf(R.string.zoom_out to { viewport?.zoomBy(1.0 / 1.5) },
             R.string.zoom_in to { viewport?.zoomBy(1.5) }, R.string.zoom_reset to { viewport?.resetZoom() }).forEach { (label, action) ->
@@ -321,7 +355,8 @@ class VideoActivity : ComponentActivity() {
         }
     }
 
-    private fun prepareTarget(established: AuthenticatedHostConnection, target: Target) {
+    private fun prepareTarget(established: AuthenticatedHostConnection, target: Target,
+                              reload: Long? = null, size: WindowSize? = null) {
         when (target) {
             Target.MAIN -> startMedia(established, null)
             Target.DISPLAY -> {
@@ -336,6 +371,11 @@ class VideoActivity : ComponentActivity() {
                 showProgress(R.string.window_list_waiting)
                 val windows = try { established.listWindows() } catch (_: Exception) {
                     runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.window_selection_failed) } }
+                    return
+                }
+                if (reload != null) {
+                    if (windows.none { it.id == reload }) { showFailure(); return }
+                    startMedia(established, null, reload, size)
                     return
                 }
                 runOnUiThread {
@@ -353,48 +393,66 @@ class VideoActivity : ComponentActivity() {
         val targets = arrayOf(getString(if (controlMode) R.string.control_screen else R.string.view_screen),
             getString(R.string.select_screen), getString(R.string.select_window))
         val dialog = AlertDialog.Builder(this).setTitle(R.string.change_target).setItems(targets) { _, index ->
-            val current = synchronized(lock) { connection } ?: return@setItems
-            if (clipboardAction != null || media?.hasUnconfirmedText() != false) {
-                Toast.makeText(this, R.string.switch_waiting_input, Toast.LENGTH_SHORT).show()
-                return@setItems
-            }
-            nextTarget = Target.entries[index]
-            switching = true
-            rendererGeneration++
-            firstFrameShown = false
-            captureRevision = null
-            firstFrameDeadline.finish()
-            keyboard?.clearFocus()
-            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken, 0)
-            suspendAutomaticClipboard()
-            updateControlAvailability()
-            status.setText(R.string.switching_target)
-            switchExecutor.execute {
-                try { current.requestMediaStop() } catch (_: Exception) { showFailure() }
-            }
+            beginTargetSwitch(Target.entries[index])
         }.setNegativeButton(R.string.cancel, null).create()
         targetDialog = dialog
         dialog.setOnDismissListener { if (targetDialog === dialog) targetDialog = null }
         dialog.show()
     }
 
+    private fun beginTargetSwitch(target: Target, reload: Long? = null) {
+        if (!active || switching) return
+        val current = synchronized(lock) { connection } ?: return
+        if (clipboardAction != null || media?.hasUnconfirmedText() != false) {
+            if (reload != null) mainHandler.postDelayed(resizeForLayout, 500)
+            else Toast.makeText(this, R.string.switch_waiting_input, Toast.LENGTH_SHORT).show()
+            return
+        }
+        mainHandler.removeCallbacks(resizeForLayout)
+        nextTarget = target
+        reloadWindowId = reload
+        switching = true
+        rendererGeneration++
+        firstFrameShown = false
+        captureRevision = null
+        firstFrameDeadline.finish()
+        keyboard?.clearFocus()
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken, 0)
+        suspendAutomaticClipboard()
+        updateControlAvailability()
+        status.setText(R.string.switching_target)
+        switchExecutor.execute { try { current.requestMediaStop() } catch (_: Exception) { showFailure() } }
+    }
+
+    private fun desiredWindowSize(): WindowSize? {
+        if (windowResizeSwitch?.isChecked != true) return null
+        val view = viewport ?: return null
+        if (view.width !in 1..65_535 || view.height !in 1..65_535) return null
+        return WindowSize(view.width, view.height)
+    }
+
     private fun finishTargetSwitch(established: AuthenticatedHostConnection) {
         if (!active || !switching || synchronized(lock) { connection !== established }) return
         val target = nextTarget ?: run { stopSession(failed = true); return }
         nextTarget = null
+        val reload = reloadWindowId
+        reloadWindowId = null
         media?.close()
         media = null
         try { renderer?.reset() } catch (_: Exception) { stopSession(failed = true); return }
         switching = false
         showingWindowNote = controlMode && target == Target.WINDOW
         windowNote?.visibility = if (showingWindowNote) View.VISIBLE else View.GONE
+        windowResizeSwitch?.visibility = if (showingWindowNote) View.VISIBLE else View.GONE
+        if (reload == null) currentWindowId = null
         firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
         viewport?.setTrackpadMode(false)
         trackpadEnabled = false
         trackpadButton?.setText(R.string.enable_trackpad)
         zoomButtons.forEach { it.isEnabled = false }
         if (automaticWanted && hasWindowFocus()) beginAutomaticClipboard()
-        executor.execute { prepareTarget(established, target) }
+        val size = if (reload != null) desiredWindowSize() else null
+        executor.execute { prepareTarget(established, target, reload, size) }
     }
 
     private fun chooseDisplay(established: AuthenticatedHostConnection, displays: List<DisplayInfo>) {
@@ -411,14 +469,16 @@ class VideoActivity : ComponentActivity() {
     private fun chooseWindow(established: AuthenticatedHostConnection, windows: List<WindowInfo>) {
         targetDialog = WindowPickerDialog.show(this, windows, onChoose = { window ->
             targetDialog = null
-            if (active) executor.execute { startMedia(established, null, window.id) }
+            currentWindowId = window.id
+            val size = desiredWindowSize()
+            if (active) executor.execute { startMedia(established, null, window.id, size) }
         }, onCancel = { finish() })
     }
 
-    private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?, windowId: Long? = null) {
+    private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?, windowId: Long? = null, size: WindowSize? = null) {
         showProgress(R.string.screen_waiting)
         try {
-            established.requestMedia(displayId, windowId, control = controlMode)
+            established.requestMedia(displayId, windowId, control = controlMode, windowSize = size)
             val offer = established.receiveOffer()
             runOnUiThread {
                 if (!active) return@runOnUiThread
@@ -462,6 +522,16 @@ class VideoActivity : ComponentActivity() {
         if (hasFocus) beginAutomaticClipboard() else suspendAutomaticClipboard()
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        scheduleWindowResize()
+    }
+
+    private fun scheduleWindowResize() {
+        mainHandler.removeCallbacks(resizeForLayout)
+        if (showingWindowNote && windowResizeSwitch?.isChecked == true) mainHandler.postDelayed(resizeForLayout, 500)
+    }
+
     override fun onStop() {
         stopSession(failed = false)
         super.onStop()
@@ -491,6 +561,7 @@ class VideoActivity : ComponentActivity() {
         clipboardReceiveButton?.isEnabled = clipboardAvailable
         statisticsButton?.isEnabled = active && firstFrameShown
         switchButton?.isEnabled = available && !switching
+        windowResizeSwitch?.isEnabled = available && showingWindowNote && !switching
         fullscreenButton?.isEnabled = active && firstFrameShown
         automaticSwitch?.isEnabled = available && controlMode
         specialKeys?.setAvailable(available)
@@ -513,6 +584,7 @@ class VideoActivity : ComponentActivity() {
         } else {
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
+        scheduleWindowResize()
     }
 
     private fun sendRemoteKey(key: SpecialKey, modifiers: Int): Boolean {
@@ -824,6 +896,9 @@ class VideoActivity : ComponentActivity() {
         }
         switching = false
         nextTarget = null
+        reloadWindowId = null
+        currentWindowId = null
+        mainHandler.removeCallbacks(resizeForLayout)
         runCatching { current?.close() }
         targetDialog?.dismiss()
         targetDialog = null
@@ -849,6 +924,7 @@ class VideoActivity : ComponentActivity() {
         clipboardReceiveButton?.isEnabled = false
         statisticsButton?.isEnabled = false
         switchButton?.isEnabled = false
+        windowResizeSwitch?.isEnabled = false
         keyboardButton?.isEnabled = false
         specialKeys?.setAvailable(false)
         keyboard?.close()

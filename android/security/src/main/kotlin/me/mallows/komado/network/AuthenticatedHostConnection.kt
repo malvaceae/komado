@@ -5,6 +5,7 @@ import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.protocol.SignalMessageCodec
 import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.WindowInfo
+import me.mallows.komado.protocol.WindowSize
 import me.mallows.komado.security.DeviceSigningKey
 import me.mallows.komado.security.HostCertificateTrustManager
 import java.io.Closeable
@@ -35,14 +36,14 @@ class AuthenticatedHostConnection private constructor(
     @Volatile private var closed = false
 
     /** Request one media session after device authentication. */
-    fun requestMedia(displayId: Long? = null, windowId: Long? = null, control: Boolean = false) = synchronized(mediaLock) {
+    fun requestMedia(displayId: Long? = null, windowId: Long? = null, control: Boolean = false, windowSize: WindowSize? = null) = synchronized(mediaLock) {
         if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
         try {
-            if (displayId != null && windowId != null) {
+            if ((displayId != null && windowId != null) || (windowSize != null && (!control || windowId == null))) {
                 throw IOException("Conflicting capture targets")
             }
             val request = when {
-                control && windowId != null -> SignalMessage.StartWindowControl(windowId)
+                control && windowId != null -> SignalMessage.StartWindowControl(windowId, windowSize)
                 control && displayId != null -> SignalMessage.StartDisplayControl(displayId)
                 control -> SignalMessage.StartControl
                 displayId != null -> SignalMessage.StartDisplay(displayId)
