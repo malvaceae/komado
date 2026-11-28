@@ -149,5 +149,4 @@
     <string name="local_network_denied">ローカルネットワークを許可しない場合、同じLAN内のMacには接続できません。許可は端末の設定から変更できます。VPN経由の接続は試せます。</string>
     <string name="delete_paired_message">%1$sの情報をこの端末から削除します。接続を無効にするには、Mac側でもこの端末の登録を削除してください。</string>
     <string name="key_delete_error">端末の鍵を削除できませんでした。</string>
-    <string name="host_description">%1$s\n%2$s\n%3$s</string>
 </resources>

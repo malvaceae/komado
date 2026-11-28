@@ -4,7 +4,7 @@ komadoはmacOSホストとAndroidクライアントのモノレポです。要�
 
 ## 環境
 
-Xcode、JDK、Android SDK Platform 37、Androidエミュレーターとadbを用意します。Xcodeの選択先は`xcode-select -p`で確認できます。Command Line Toolsが選択されている場合は、以下の例のように`DEVELOPER_DIR`でXcodeを指定できます。
+Xcode、JDK、Android SDK Platform 37.0・37.2、Androidエミュレーターとadbを用意します。Xcodeの選択先は`xcode-select -p`で確認できます。Command Line Toolsが選択されている場合は、以下の例のように`DEVELOPER_DIR`でXcodeを指定できます。
 
 ## ビルドとテスト
 

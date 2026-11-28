@@ -101,7 +101,7 @@ ARM64およびARM32に対応するため、WebRTCライブラリに含まれる�
 ```text
 Android Client
     │
-    ├─ Android Views
+    ├─ Jetpack Compose / Android Views（移行中）
     ├─ libwebrtc
     ├─ MediaCodec
     └─ Touch / Keyboard / IME
@@ -180,7 +180,8 @@ macOS向けのarm64およびx86_64バイナリが提供されている。
 | 項目 | 採用技術 |
 |---|---|
 | 開発言語 | Kotlin |
-| UI | Android Views |
+| UI | Jetpack Compose / Android Views（移行中） |
+| デザインシステム | Material 3（ホーム画面から移行中） |
 | IDE | Android Studio |
 | ビルド | Gradle Kotlin DSL |
 | 非同期処理 | Executor |
@@ -216,7 +217,7 @@ Streamのクラウドサービスは利用せず、ビルド済みWebRTCライ�
 - arm64-v8aおよびarmeabi-v7aへの対応
 - x86およびx86_64への対応
 - H.264ハードウェアデコード
-- Androidの画面・入力処理との統合
+- Androidの画面・入力処理、Jetpack Composeとの統合
 - macOS側ライブラリとの相互接続性
 
 両プラットフォームの依存バージョンは、互換性を確認したうえで固定する。

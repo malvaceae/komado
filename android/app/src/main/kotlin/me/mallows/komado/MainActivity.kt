@@ -2,24 +2,63 @@ package me.mallows.komado
 
 import android.Manifest
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.text.InputType
-import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
+import android.view.inputmethod.InputConnection
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.InterceptPlatformTextInput
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.PlatformTextInputInterceptor
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.PairingInvitation
 import me.mallows.komado.security.DeviceSigningKey
@@ -30,17 +69,21 @@ import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
     private data class ConnectionCheck(val address: String, val port: Int, val pairing: Pairing, val succeeded: Boolean, val checkedAt: Long)
+    private sealed interface HomeDialog {
+        data class Actions(val host: Host) : HomeDialog
+        data class Edit(val host: Host?) : HomeDialog
+        data class Pair(val host: Host) : HomeDialog
+        data class Scanned(val invitation: PairingInvitation) : HomeDialog
+        data class Delete(val host: Host) : HomeDialog
+    }
     private val store by lazy { HostStore(applicationContext) }
     private val executor = Executors.newSingleThreadExecutor()
-    private var hosts = emptyList<Host>()
-    private val connectionChecks = mutableMapOf<String, ConnectionCheck>()
-    private var readable = true
-    private var busy = false
+    private var hosts by mutableStateOf(emptyList<Host>())
+    private val connectionChecks = mutableStateMapOf<String, ConnectionCheck>()
+    private var readable by mutableStateOf(true)
+    private var busy by mutableStateOf(false)
+    private var dialog by mutableStateOf<HomeDialog?>(null)
     private var pendingNetworkAction: (() -> Unit)? = null
-    private lateinit var list: LinearLayout
-    private lateinit var addButton: Button
-    private lateinit var scanButton: Button
-    private lateinit var status: TextView
     private val scanner = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val invitation = ScannedPairing.take()
         if (result.resultCode == Activity.RESULT_OK) {
@@ -57,37 +100,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(32), dp(24), dp(24))
-        }
-        root.addView(TextView(this).apply { setText(R.string.hosts); textSize = 26f })
-        status = TextView(this).apply { setPadding(0, dp(12), 0, dp(12)) }
-        root.addView(status)
-        list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-        ))
-        addButton = Button(this).apply {
-            setText(R.string.add_host)
-            setOnClickListener { editHost(null) }
-        }
-        root.addView(addButton)
-        scanButton = Button(this).apply {
-            setText(R.string.scan_pairing)
-            setOnClickListener {
-                ScannedPairing.clear()
-                scanner.launch(Intent(this@MainActivity, PairingScannerActivity::class.java))
-            }
-        }
-        root.addView(scanButton)
-        setContentView(root)
+        enableEdgeToEdge()
         refresh()
+        setContent {
+            val dark = isSystemInDarkTheme()
+            val colors = when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && dark -> dynamicDarkColorScheme(this)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicLightColorScheme(this)
+                dark -> darkColorScheme()
+                else -> lightColorScheme()
+            }
+            MaterialTheme(colorScheme = colors) { HostHome(); HomeDialogs() }
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        if (::list.isInitialized) refresh()
+        refresh()
     }
 
     override fun onDestroy() {
@@ -105,51 +134,214 @@ class MainActivity : ComponentActivity() {
             readable = false
         }
         connectionChecks.keys.retainAll(hosts.map { it.id }.toSet())
-        status.setText(if (busy) R.string.connecting else R.string.connection_hint)
-        addButton.isEnabled = readable && !busy
-        scanButton.isEnabled = readable && !busy
-        list.removeAllViews()
-        if (!readable || hosts.isEmpty()) {
-            list.addView(TextView(this).apply {
-                setText(if (readable) R.string.empty_hosts else R.string.storage_error)
-                setPadding(0, dp(24), 0, dp(24))
-            })
-            return
-        }
-        hosts.forEach { host ->
-            list.addView(Button(this).apply {
-                val destination = if (host.address.contains(':')) "[${host.address}]:${host.port}" else "${host.address}:${host.port}"
-                val details = getString(R.string.host_description, host.name, destination,
-                    getString(if (host.pairing == null) R.string.not_paired else R.string.paired))
-                val last = host.lastConnectedAt?.let {
-                    getString(R.string.last_connected, DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)))
-                } ?: getString(R.string.never_connected)
-                val check = connectionChecks[host.id]?.takeIf {
-                    it.address == host.address && it.port == host.port && it.pairing == host.pairing
-                }?.let {
-                    val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it.checkedAt))
-                    getString(R.string.checked_connection, time, getString(if (it.succeeded) R.string.check_succeeded else R.string.check_failed))
+    }
+
+    @Composable
+    private fun HostHome() {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 24.dp)) {
+                Text(stringResource(R.string.hosts), style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.padding(top = 24.dp))
+                Text(stringResource(if (busy) R.string.connecting else R.string.connection_hint),
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
+                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (!readable || hosts.isEmpty()) {
+                        item {
+                            Text(stringResource(if (readable) R.string.empty_hosts else R.string.storage_error),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                    items(hosts, key = { it.id }) { host ->
+                        val destination = if (host.address.contains(':')) "[${host.address}]:${host.port}" else "${host.address}:${host.port}"
+                        val last = host.lastConnectedAt?.let {
+                            getString(R.string.last_connected, DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)))
+                        } ?: getString(R.string.never_connected)
+                        val check = connectionChecks[host.id]?.takeIf {
+                            it.address == host.address && it.port == host.port && it.pairing == host.pairing
+                        }?.let {
+                            val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it.checkedAt))
+                            getString(R.string.checked_connection, time, getString(if (it.succeeded) R.string.check_succeeded else R.string.check_failed))
+                        }
+                        Card(onClick = { hostActions(host) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(host.name, style = MaterialTheme.typography.titleMedium)
+                                Text(destination, style = MaterialTheme.typography.bodyMedium)
+                                Text(stringResource(if (host.pairing == null) R.string.not_paired else R.string.paired),
+                                    style = MaterialTheme.typography.labelMedium)
+                                Text(last, style = MaterialTheme.typography.bodySmall)
+                                if (check != null) Text(check, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
                 }
-                text = listOfNotNull(details, last, check).joinToString("\n")
-                gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                isAllCaps = false
-                isEnabled = !busy
-                setOnClickListener { hostActions(host) }
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                Button(onClick = {
+                    ScannedPairing.clear()
+                    scanner.launch(Intent(this@MainActivity, PairingScannerActivity::class.java))
+                }, enabled = readable && !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.scan_pairing))
+                }
+                OutlinedButton(onClick = { editHost(null) }, enabled = readable && !busy,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp)) {
+                    Text(stringResource(R.string.add_host))
+                }
+            }
         }
     }
 
-    private fun hostActions(host: Host) {
+    @Composable
+    private fun HomeDialogs() {
+        when (val current = dialog) {
+            is HomeDialog.Actions -> AlertDialog(
+                onDismissRequest = { dialog = null },
+                title = { Text(current.host.name) },
+                text = {
+                    Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
+                        hostActionLabels(current.host).forEachIndexed { index, label ->
+                            TextButton(onClick = { performHostAction(current.host, index) }, modifier = Modifier.fillMaxWidth()) {
+                                Text(label, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = { dialog = null }) { Text(stringResource(R.string.cancel)) } },
+            )
+            is HomeDialog.Edit -> HostEditor(current.host, null)
+            is HomeDialog.Scanned -> HostEditor(null, current.invitation)
+            is HomeDialog.Pair -> PairEditor(current.host)
+            is HomeDialog.Delete -> AlertDialog(
+                onDismissRequest = { dialog = null },
+                title = { Text(stringResource(R.string.delete_host_title)) },
+                text = { Text(if (current.host.pairing == null) current.host.name else getString(R.string.delete_paired_message, current.host.name)) },
+                confirmButton = { TextButton(onClick = { removeHost(current.host) }) { Text(stringResource(R.string.delete)) } },
+                dismissButton = { TextButton(onClick = { dialog = null }) { Text(stringResource(R.string.cancel)) } },
+            )
+            null -> Unit
+        }
+    }
+
+    @Composable
+    private fun HostEditor(existing: Host?, scanned: PairingInvitation?) {
+        var name by remember { mutableStateOf(existing?.name ?: if (scanned != null) "Mac" else "") }
+        var address by remember { mutableStateOf(existing?.address ?: scanned?.host.orEmpty()) }
+        var port by remember { mutableStateOf((existing?.port ?: scanned?.port ?: 48365).toString()) }
+        var nameError by remember { mutableStateOf(false) }
+        var addressError by remember { mutableStateOf(false) }
+        var portError by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text(stringResource(if (scanned != null) R.string.pair else if (existing == null) R.string.add_host else R.string.edit_host)) },
+            text = {
+                Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (scanned != null) Text(stringResource(R.string.scan_confirm))
+                    OutlinedTextField(value = name, onValueChange = { name = it; nameError = false },
+                        label = { Text(stringResource(R.string.host_name)) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        isError = nameError, supportingText = if (nameError) {{ Text(stringResource(R.string.invalid_name)) }} else null)
+                    OutlinedTextField(value = address, onValueChange = { address = it; addressError = false },
+                        label = { Text(stringResource(R.string.host_address)) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
+                        isError = addressError, supportingText = if (addressError) {{ Text(stringResource(R.string.invalid_address)) }} else null)
+                    OutlinedTextField(value = port, onValueChange = { port = it; portError = false },
+                        label = { Text(stringResource(R.string.port)) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = portError, supportingText = if (portError) {{ Text(stringResource(R.string.invalid_port)) }} else null)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val hostName = name.trim()
+                    val hostAddress = address.trim()
+                    val hostPort = port.toIntOrNull()
+                    nameError = !HostStore.validName(hostName)
+                    addressError = !HostStore.validAddress(hostAddress)
+                    portError = hostPort == null || hostPort !in 1..65535
+                    if (!nameError && !addressError && !portError) saveHost(existing, scanned, hostName, hostAddress, hostPort!!)
+                }) { Text(stringResource(if (scanned != null) R.string.pair else R.string.save)) }
+            },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    @Composable
+    private fun PairEditor(host: Host) {
+        var fingerprint by remember { mutableStateOf("") }
+        var invitation by remember { mutableStateOf("") }
+        var fingerprintError by remember { mutableStateOf(false) }
+        var invitationError by remember { mutableStateOf(false) }
+        val dismiss = { invitation = ""; dialog = null }
+        val privateInput = remember {
+            PlatformTextInputInterceptor { request, next ->
+                val protected = object : PlatformTextInputMethodRequest {
+                    override fun createInputConnection(outAttributes: EditorInfo): InputConnection {
+                        val connection = request.createInputConnection(outAttributes)
+                        outAttributes.imeOptions = outAttributes.imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+                        return connection
+                    }
+                }
+                next.startInputMethod(protected)
+            }
+        }
+        AlertDialog(
+            onDismissRequest = dismiss,
+            title = { Text(stringResource(R.string.pair)) },
+            text = {
+                Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.pair_instructions))
+                    OutlinedTextField(value = fingerprint, onValueChange = { fingerprint = it; fingerprintError = false },
+                        label = { Text(stringResource(R.string.fingerprint)) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false), isError = fingerprintError,
+                        supportingText = if (fingerprintError) {{ Text(stringResource(R.string.invalid_fingerprint)) }} else null)
+                    InterceptPlatformTextInput(interceptor = privateInput) {
+                        val view = LocalView.current.rootView
+                        DisposableEffect(view) {
+                            val previous = view.importantForAutofill
+                            view.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+                            onDispose { view.importantForAutofill = previous }
+                        }
+                        CompositionLocalProvider(LocalSaveableStateRegistry provides null) {
+                            OutlinedTextField(value = invitation, onValueChange = { invitation = it; invitationError = false },
+                                label = { Text(stringResource(R.string.invitation)) }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                                isError = invitationError,
+                                supportingText = if (invitationError) {{ Text(stringResource(R.string.invalid_invitation)) }} else null)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val pin = normalizeHex(fingerprint)
+                    val token = normalizeHex(invitation)
+                    fingerprintError = pin == null
+                    invitationError = token == null
+                    if (pin != null && token != null) { dismiss(); startPairing(host, pin, token) }
+                }) { Text(stringResource(R.string.pair)) }
+            },
+            dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+
+    private fun hostActions(host: Host) { dialog = HomeDialog.Actions(host) }
+
+    private fun hostActionLabels(host: Host): List<String> {
         val actions = if (host.pairing == null) arrayOf(getString(R.string.pair), getString(R.string.edit_host), getString(R.string.delete))
         else arrayOf(getString(R.string.view_screen), getString(R.string.control_screen), getString(R.string.select_screen),
             getString(R.string.control_display), getString(R.string.select_application), getString(R.string.control_application),
             getString(R.string.select_window), getString(R.string.control_window), getString(R.string.check_connection), getString(R.string.edit_host), getString(R.string.delete))
-        AlertDialog.Builder(this).setTitle(host.name).setItems(actions) { _, index ->
-            if (host.pairing == null) when (index) {
+        return actions.toList()
+    }
+
+    private fun performHostAction(host: Host, index: Int) {
+        dialog = null
+        if (host.pairing == null) when (index) {
                 0 -> withLocalNetworkPermission { pairHost(host) }
                 1 -> editHost(host)
                 2 -> deleteHost(host)
-            } else when (index) {
+        } else when (index) {
                 0 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java).putExtra(VideoActivity.HOST_ID, host.id)) }
                 1 -> withLocalNetworkPermission { startActivity(Intent(this, VideoActivity::class.java)
                     .putExtra(VideoActivity.HOST_ID, host.id).putExtra(VideoActivity.CONTROL_MODE, true)) }
@@ -171,8 +363,7 @@ class MainActivity : ComponentActivity() {
                 8 -> withLocalNetworkPermission { checkConnection(host) }
                 9 -> editHost(host)
                 10 -> deleteHost(host)
-            }
-        }.setNegativeButton(R.string.cancel, null).show()
+        }
     }
 
     private fun withLocalNetworkPermission(action: () -> Unit) {
@@ -185,116 +376,31 @@ class MainActivity : ComponentActivity() {
         localNetworkPermission.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
     }
 
-    private fun editHost(existing: Host?) {
-        val fields = fields()
-        val name = field(R.string.host_name, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES, existing?.name)
-        val address = field(R.string.host_address, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI, existing?.address)
-        val port = field(R.string.port, InputType.TYPE_CLASS_NUMBER, (existing?.port ?: 48365).toString())
-        fields.addView(name)
-        fields.addView(address)
-        fields.addView(port)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(if (existing == null) R.string.add_host else R.string.edit_host)
-            .setView(fields).setNegativeButton(R.string.cancel, null).setPositiveButton(R.string.save, null).create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val hostName = name.text.toString().trim()
-                val hostAddress = address.text.toString().trim()
-                val hostPort = port.text.toString().toIntOrNull()
-                when {
-                    !HostStore.validName(hostName) -> name.error = getString(R.string.invalid_name)
-                    !HostStore.validAddress(hostAddress) -> address.error = getString(R.string.invalid_address)
-                    hostPort == null || hostPort !in 1..65535 -> port.error = getString(R.string.invalid_port)
-                    else -> {
-                        val host = Host(existing?.id ?: UUID.randomUUID().toString(), hostName, hostAddress, hostPort,
-                            existing?.pairing, existing?.lastConnectedAt)
-                        val saved = runCatching { store.save(existing, host) }.getOrDefault(false)
-                        if (saved) dialog.dismiss() else toast(R.string.save_error)
-                        refresh()
-                    }
-                }
-            }
-        }
-        dialog.show()
+    private fun editHost(existing: Host?) { dialog = HomeDialog.Edit(existing) }
+    private fun deleteHost(host: Host) { dialog = HomeDialog.Delete(host) }
+    private fun pairHost(host: Host) { dialog = HomeDialog.Pair(host) }
+    private fun confirmScannedPairing(invitation: PairingInvitation) { dialog = HomeDialog.Scanned(invitation) }
+
+    private fun saveHost(existing: Host?, scanned: PairingInvitation?, name: String, address: String, port: Int) {
+        val host = Host(existing?.id ?: UUID.randomUUID().toString(), name, address, port,
+            existing?.pairing, existing?.lastConnectedAt)
+        val saved = runCatching { store.save(existing, host) }.getOrDefault(false)
+        if (saved) {
+            dialog = null
+            if (scanned != null) startPairing(host, scanned.fingerprint, scanned.token)
+        } else toast(R.string.save_error)
+        refresh()
     }
 
-    private fun deleteHost(host: Host) {
-        AlertDialog.Builder(this).setTitle(R.string.delete_host_title)
-            .setMessage(if (host.pairing == null) host.name else getString(R.string.delete_paired_message, host.name))
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.delete) { _, _ ->
-                val removed = runCatching { store.remove(host) }.getOrDefault(false)
-                if (removed) {
-                    host.pairing?.let {
-                        if (runCatching { DeviceSigningKey(it.keyAlias).delete() }.isFailure) toast(R.string.key_delete_error)
-                    }
-                } else toast(R.string.save_error)
-                refresh()
-            }.show()
-    }
-
-    private fun pairHost(host: Host) {
-        val fields = fields()
-        fields.addView(TextView(this).apply { setText(R.string.pair_instructions); setPadding(0, 0, 0, dp(12)) })
-        val fingerprint = field(R.string.fingerprint, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
-        val invitation = field(R.string.invitation, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS).apply {
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
-            isSaveEnabled = false
-            imeOptions = imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-        }
-        fields.addView(fingerprint)
-        fields.addView(invitation)
-        val dialog = AlertDialog.Builder(this).setTitle(R.string.pair).setView(fields)
-            .setNegativeButton(R.string.cancel, null).setPositiveButton(R.string.pair, null).create()
-        dialog.setOnDismissListener { invitation.text.clear() }
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val pinText = normalizeHex(fingerprint.text.toString())
-                val tokenText = normalizeHex(invitation.text.toString())
-                when {
-                    pinText == null -> fingerprint.error = getString(R.string.invalid_fingerprint)
-                    tokenText == null -> invitation.error = getString(R.string.invalid_invitation)
-                    else -> {
-                        dialog.dismiss()
-                        startPairing(host, pinText, tokenText)
-                    }
-                }
+    private fun removeHost(host: Host) {
+        val removed = runCatching { store.remove(host) }.getOrDefault(false)
+        if (removed) {
+            host.pairing?.let {
+                if (runCatching { DeviceSigningKey(it.keyAlias).delete() }.isFailure) toast(R.string.key_delete_error)
             }
-        }
-        dialog.show()
-    }
-
-    private fun confirmScannedPairing(invitation: PairingInvitation) {
-        val fields = fields()
-        fields.addView(TextView(this).apply { setText(R.string.scan_confirm); setPadding(0, 0, 0, dp(12)) })
-        val name = field(R.string.host_name, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES, "Mac")
-        val address = field(R.string.host_address, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI, invitation.host)
-        val port = field(R.string.port, InputType.TYPE_CLASS_NUMBER, invitation.port.toString())
-        fields.addView(name)
-        fields.addView(address)
-        fields.addView(port)
-        val dialog = AlertDialog.Builder(this).setTitle(R.string.pair).setView(fields)
-            .setNegativeButton(R.string.cancel, null).setPositiveButton(R.string.pair, null).create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val hostName = name.text.toString().trim()
-                val hostAddress = address.text.toString().trim()
-                val hostPort = port.text.toString().toIntOrNull()
-                when {
-                    !HostStore.validName(hostName) -> name.error = getString(R.string.invalid_name)
-                    !HostStore.validAddress(hostAddress) -> address.error = getString(R.string.invalid_address)
-                    hostPort == null || hostPort !in 1..65535 -> port.error = getString(R.string.invalid_port)
-                    else -> {
-                        val host = Host(UUID.randomUUID().toString(), hostName, hostAddress, hostPort)
-                        if (runCatching { store.save(null, host) }.getOrDefault(false)) {
-                            dialog.dismiss()
-                            startPairing(host, invitation.fingerprint, invitation.token)
-                        } else toast(R.string.save_error)
-                    }
-                }
-            }
-        }
-        dialog.show()
+        } else toast(R.string.save_error)
+        dialog = null
+        refresh()
     }
 
     private fun startPairing(host: Host, pinText: String, tokenText: String) {
@@ -355,18 +461,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun fields() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(24), 0, dp(24), 0)
-    }
-
-    private fun field(hint: Int, input: Int, value: String? = null) = EditText(this).apply {
-        setHint(hint)
-        setSingleLine()
-        inputType = input
-        setText(value.orEmpty())
-    }
-
     private fun normalizeHex(value: String): String? {
         val normalized = value.filterNot { it == ':' || it.isWhitespace() }.uppercase(java.util.Locale.ROOT)
         return normalized.takeIf { HostStore.validHex(it) }
@@ -374,6 +468,5 @@ class MainActivity : ComponentActivity() {
 
     private fun hexBytes(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     private fun toast(message: Int) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
 }
