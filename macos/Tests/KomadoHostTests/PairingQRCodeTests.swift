@@ -6,7 +6,7 @@ import XCTest
 
 final class PairingQRCodeTests: XCTestCase {
     @MainActor func testGeneratedQRCodeCanBeDecoded() throws {
-        let invitation = PairingInvitation(host: "192.0.2.1", port: 48365,
+        let invitation = PairingInvitation(name: "仕事用 Mac 👩‍💻", host: "192.0.2.1", port: 48365,
             fingerprint: String(repeating: "A", count: 64), token: String(repeating: "B", count: 64))
         let data = try invitation.encode()
         let image = try XCTUnwrap(PairingQRCode.image(for: data))

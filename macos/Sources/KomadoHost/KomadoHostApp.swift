@@ -329,7 +329,10 @@ private struct HostView: View {
     private func pairingImage(invitation: String) -> CGImage? {
         guard let endpoint = model.pairingEndpoints.first(where: { $0.id == selectedEndpoint }) ?? model.pairingEndpoints.first,
               let fingerprint = model.fingerprint else { return nil }
-        let payload = PairingInvitation(host: endpoint.address, port: endpoint.port,
+        let systemName = Host.current().localizedName ?? ""
+        let usableName = !systemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && systemName.utf8.count <= 256 &&
+            systemName.unicodeScalars.allSatisfy { !($0.value <= 0x1F || (0x7F...0x9F).contains($0.value)) }
+        let payload = PairingInvitation(name: usableName ? systemName : "Mac", host: endpoint.address, port: endpoint.port,
             fingerprint: fingerprint.replacingOccurrences(of: ":", with: ""), token: invitation)
         guard let data = try? payload.encode() else { return nil }
         return PairingQRCode.image(for: data)

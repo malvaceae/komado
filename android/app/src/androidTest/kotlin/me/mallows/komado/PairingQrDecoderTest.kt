@@ -14,8 +14,9 @@ import java.nio.ByteBuffer
 @RunWith(AndroidJUnit4::class)
 class PairingQrDecoderTest {
     @Test fun decodesPaddedLuminanceAndRejectsInvalidInput() {
-        val invitation = PairingInvitation("192.0.2.1", 48365, "A".repeat(64), "B".repeat(64))
-        val text = String(PairingInvitationCodec.encode(invitation), Charsets.UTF_8)
+        val invitation = PairingInvitation("テストMac", "192.0.2.1", 48365, "A".repeat(64), "B".repeat(64))
+        // The macOS QR generator encodes the UTF-8 bytes directly without an ECI marker.
+        val text = String(PairingInvitationCodec.encode(invitation), Charsets.ISO_8859_1)
         val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 400, 400)
         val rowStride = 820
         val bytes = ByteArray(rowStride * 400) { 0xff.toByte() }

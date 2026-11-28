@@ -233,7 +233,7 @@ class MainActivity : ComponentActivity() {
 
     private fun deleteHost(host: Host) { dialog = HomeDialog.Delete(host) }
     private fun confirmScannedPairing(invitation: PairingInvitation) {
-        val host = Host(UUID.randomUUID().toString(), "Mac", invitation.host, invitation.port)
+        val host = Host(UUID.randomUUID().toString(), invitation.name, invitation.host, invitation.port)
         startPairing(host, invitation.fingerprint, invitation.token)
     }
 

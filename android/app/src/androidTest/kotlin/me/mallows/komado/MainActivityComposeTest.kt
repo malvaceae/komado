@@ -15,6 +15,7 @@ import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.security.DeviceSigningKey
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -96,7 +97,7 @@ class MainActivityComposeTest {
                 }
             }
             try {
-                val invitation = PairingInvitation("127.0.0.1", server.listener.localPort, server.fingerprint.hex(), token.hex())
+                val invitation = PairingInvitation("Test Mac", "127.0.0.1", server.listener.localPort, server.fingerprint.hex(), token.hex())
                 compose.runOnUiThread {
                     activity.javaClass.getDeclaredMethod("confirmScannedPairing", PairingInvitation::class.java)
                         .apply { isAccessible = true }.invoke(activity, invitation)
@@ -107,6 +108,7 @@ class MainActivityComposeTest {
                 }
                 val saved = HostStore(activity).load().single { it.pairing?.deviceID == deviceID.toString() }
                 createdHosts.add(saved.id)
+                assertEquals("Test Mac", saved.name)
             } finally {
                 executor.shutdownNow()
                 executor.awaitTermination(10, TimeUnit.SECONDS)
@@ -117,7 +119,7 @@ class MainActivityComposeTest {
     @Test fun failedQrPairingDoesNotLeaveUnpairedHost() {
         val activity = compose.activity
         val before = HostStore(activity).load().map { it.id }.toSet()
-        val invitation = PairingInvitation("127.0.0.1", 1, "A".repeat(64), "B".repeat(64))
+        val invitation = PairingInvitation("Test Mac", "127.0.0.1", 1, "A".repeat(64), "B".repeat(64))
         compose.runOnUiThread {
             activity.javaClass.getDeclaredMethod("confirmScannedPairing", PairingInvitation::class.java)
                 .apply { isAccessible = true }.invoke(activity, invitation)
