@@ -80,6 +80,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
 
     init {
         clipChildren = true
+        setBackgroundColor(Color.BLACK)
         addView(video, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         contentDescription = context.getString(R.string.video_description)
         isFocusable = true

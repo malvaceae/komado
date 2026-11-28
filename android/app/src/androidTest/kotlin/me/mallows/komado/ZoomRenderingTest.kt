@@ -69,7 +69,7 @@ class ZoomRenderingTest {
                     val right = screenshot.getPixel(origin[0] + side * 9 / 10, origin[1] + side / 2)
                     val margin = screenshot.getPixel(origin[0] + side / 2, origin[1] + side / 10)
                     screenshot.recycle()
-                    correct = Color.red(left) < 80 && Color.red(right) > 180 && Color.red(margin) > 180 && Color.green(margin) < 50
+                    correct = Color.red(left) < 80 && Color.red(right) > 180 && Color.red(margin) < 50 && Color.green(margin) < 50
                     if (correct) break
                 }
                 assertTrue("The fitted frame or its margins were not displayed", correct)
