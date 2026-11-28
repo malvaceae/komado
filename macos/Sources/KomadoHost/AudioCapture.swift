@@ -11,6 +11,7 @@ final class AudioCapture: NSObject, LKRTCAudioDeviceModuleDelegate, @unchecked S
     private var format: AVAudioFormat?
     private var queuedFrames: AVAudioFrameCount = 0
     private var generation = 0
+    private let converter = AudioBufferConverter()
 
     func setEnabled(_ value: Bool) {
         lock.withLock {
@@ -24,30 +25,16 @@ final class AudioCapture: NSObject, LKRTCAudioDeviceModuleDelegate, @unchecked S
         guard sample.isValid, sample.numSamples > 0, sample.numSamples <= Int(Int32.max),
               let description = sample.formatDescription else { return }
         let sourceFormat = AVAudioFormat(cmAudioFormatDescription: description)
-        guard let destinationFormat = lock.withLock({ enabled ? format : nil }),
-              sourceFormat.sampleRate > 0, destinationFormat.sampleRate > 0,
+        guard let (destinationFormat, current) = lock.withLock({ enabled ? format.map { ($0, generation) } : nil }),
               let input = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: AVAudioFrameCount(sample.numSamples)) else { return }
         input.frameLength = AVAudioFrameCount(sample.numSamples)
-        let capacity = ceil(Double(input.frameLength) * destinationFormat.sampleRate / sourceFormat.sampleRate) + 64
-        guard capacity.isFinite, capacity <= Double(AVAudioFrameCount.max),
-              CMSampleBufferCopyPCMDataIntoAudioBufferList(sample, at: 0, frameCount: Int32(sample.numSamples), into: input.mutableAudioBufferList) == noErr,
-              let output = AVAudioPCMBuffer(pcmFormat: destinationFormat, frameCapacity: AVAudioFrameCount(capacity)),
-              let converter = AVAudioConverter(from: sourceFormat, to: destinationFormat) else { return }
-        var supplied = false
-        var conversionError: NSError?
-        let status = converter.convert(to: output, error: &conversionError) { _, result in
-            guard !supplied else { result.pointee = .noDataNow; return nil }
-            supplied = true
-            result.pointee = .haveData
-            return input
-        }
-        guard status != .error, conversionError == nil else { return }
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(sample, at: 0, frameCount: Int32(sample.numSamples), into: input.mutableAudioBufferList) == noErr,
+              let output = converter.convert(input, to: destinationFormat, generation: current) else { return }
         guard output.frameLength > 0 else { return }
         lock.withLock {
             // Avoid retaining an ever-growing backlog when rendering falls behind capture.
-            guard enabled, format == destinationFormat, let engine = player.engine, engine.isRunning,
+            guard enabled, generation == current, format == destinationFormat, let engine = player.engine, engine.isRunning,
                   queuedFrames + output.frameLength <= AVAudioFrameCount(destinationFormat.sampleRate / 2) else { return }
-            let current = generation
             let frames = output.frameLength
             queuedFrames += frames
             player.scheduleBuffer(output, completionCallbackType: .dataConsumed) { [weak self] _ in
@@ -89,4 +76,33 @@ final class AudioCapture: NSObject, LKRTCAudioDeviceModuleDelegate, @unchecked S
         return 0
     }
     func audioDeviceModule(_ module: LKRTCAudioDeviceModule, engine: AVAudioEngine, configureOutputFromSource source: AVAudioNode, toDestination destination: AVAudioNode?, format: AVAudioFormat, context: [AnyHashable: Any]) -> Int { 0 }
+}
+
+/// Retains conversion state across buffers and resets it when sharing is interrupted.
+final class AudioBufferConverter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var converter: AVAudioConverter?
+    private var generation: Int?
+
+    func convert(_ input: AVAudioPCMBuffer, to outputFormat: AVAudioFormat, generation: Int) -> AVAudioPCMBuffer? {
+        lock.withLock {
+            guard input.format.sampleRate > 0, outputFormat.sampleRate > 0 else { return nil }
+            if self.generation != generation || converter?.inputFormat != input.format || converter?.outputFormat != outputFormat {
+                converter = AVAudioConverter(from: input.format, to: outputFormat)
+                self.generation = generation
+            }
+            let capacity = ceil(Double(input.frameLength) * outputFormat.sampleRate / input.format.sampleRate) + 64
+            guard capacity.isFinite, capacity <= Double(AVAudioFrameCount.max), let converter,
+                  let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: AVAudioFrameCount(capacity)) else { return nil }
+            var supplied = false
+            var conversionError: NSError?
+            let status = converter.convert(to: output, error: &conversionError) { _, result in
+                guard !supplied else { result.pointee = .noDataNow; return nil }
+                supplied = true
+                result.pointee = .haveData
+                return input
+            }
+            return status != .error && conversionError == nil ? output : nil
+        }
+    }
 }
