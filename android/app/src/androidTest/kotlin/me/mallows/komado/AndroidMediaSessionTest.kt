@@ -3,7 +3,10 @@ package me.mallows.komado
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import android.app.AlertDialog
 import android.graphics.Color
+import android.os.SystemClock
+import android.widget.TextView
 import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerClickCodec
 import me.mallows.komado.protocol.KeyboardText
@@ -459,6 +462,56 @@ class AndroidMediaSessionTest {
                 assertTrue("Video codec should be reported", snapshot.codec != null)
                 assertTrue("Video packet loss should be reported", snapshot.packetLossPercent != null)
                 assertTrue("Dropped video frames should be reported", snapshot.framesDropped != null)
+                val moreFrames = CountDownLatch(3)
+                val additionalSink = VideoSink { moreFrames.countDown() }
+                instrumentation.runOnMainSync { requireNotNull(attached).addSink(additionalSink) }
+                try {
+                    for (i in 0 until 50) {
+                        val frame = VideoFrame(JavaI420Buffer.allocate(320, 240), 0, System.nanoTime())
+                        try { source.capturerObserver.onFrameCaptured(frame) } finally { frame.release() }
+                        if (moreFrames.await(100, TimeUnit.MILLISECONDS)) break
+                    }
+                    assertTrue("More frames should arrive", moreFrames.await(5, TimeUnit.SECONDS))
+                    val laterStatistics = CompletableFuture<VideoStatistics>()
+                    instrumentation.runOnMainSync {
+                        assertTrue(requireNotNull(receiver).requestVideoStatistics { laterStatistics.complete(it) })
+                    }
+                    val bitrate = laterStatistics.get(10, TimeUnit.SECONDS).receiveBitsPerSecond(snapshot)
+                    assertTrue("Video bitrate should be positive", bitrate != null && bitrate > 0)
+                } finally {
+                    instrumentation.runOnMainSync { attached?.removeSink(additionalSink) }
+                }
+                if (duplicateCapture) {
+                    ActivityScenario.launch(VideoActivity::class.java).use { scenario ->
+                        val activeField = VideoActivity::class.java.getDeclaredField("active").apply { isAccessible = true }
+                        val mediaField = VideoActivity::class.java.getDeclaredField("media").apply { isAccessible = true }
+                        val dialogField = VideoActivity::class.java.getDeclaredField("statisticsDialog").apply { isAccessible = true }
+                        try {
+                            scenario.onActivity { activity ->
+                                activeField.setBoolean(activity, true)
+                                mediaField.set(activity, receiver)
+                                VideoActivity::class.java.getDeclaredMethod("showVideoStatistics").apply { isAccessible = true }.invoke(activity)
+                            }
+                            var rendered = false
+                            for (i in 0 until 50) {
+                                scenario.onActivity { activity ->
+                                    val dialog = dialogField.get(activity) as? AlertDialog
+                                    val message = dialog?.findViewById<TextView>(android.R.id.message)?.text?.toString().orEmpty()
+                                    rendered = message.lineSequence().any { it.startsWith("映像受信ビットレート:") && it.contains("Mbps") }
+                                }
+                                if (rendered) break
+                                SystemClock.sleep(100)
+                            }
+                            assertTrue("Statistics dialog should update the bitrate", rendered)
+                        } finally {
+                            scenario.onActivity { activity ->
+                                (dialogField.get(activity) as? AlertDialog)?.dismiss()
+                                mediaField.set(activity, null)
+                                activeField.setBoolean(activity, false)
+                            }
+                        }
+                    }
+                }
             }
             source.capturerObserver.onCapturerStopped()
             if (closeBeforeText) {

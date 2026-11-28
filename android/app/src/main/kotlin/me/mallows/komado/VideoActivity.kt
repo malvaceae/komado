@@ -1026,29 +1026,47 @@ class VideoActivity : ComponentActivity() {
         val dialog = AlertDialog.Builder(this).setTitle(R.string.statistics_title)
             .setMessage(R.string.statistics_loading).setPositiveButton(R.string.close_screen, null).create()
         statisticsDialog = dialog
+        val current = media
+        var previous: VideoStatistics? = null
+        var expired = false
+        lateinit var refresh: Runnable
         val timeout = Runnable {
-            if (statisticsDialog === dialog && dialog.isShowing) dialog.setMessage(getString(R.string.statistics_unavailable))
+            if (statisticsDialog === dialog && dialog.isShowing) {
+                expired = true
+                dialog.setMessage(getString(R.string.statistics_unavailable))
+            }
         }
         dialog.setOnDismissListener {
             mainHandler.removeCallbacks(timeout)
+            mainHandler.removeCallbacks(refresh)
             if (statisticsDialog === dialog) statisticsDialog = null
         }
+        refresh = Runnable {
+            if (active && statisticsDialog === dialog && dialog.isShowing && !expired) {
+                val requested = if (current != null && media === current) current.requestVideoStatistics { snapshot ->
+                    if (active && statisticsDialog === dialog && dialog.isShowing && !expired && media === current) {
+                        mainHandler.removeCallbacks(timeout)
+                        val unknown = getString(R.string.statistics_unknown)
+                        val size = if (snapshot.width != null && snapshot.height != null)
+                            getString(R.string.statistics_size_value, snapshot.width, snapshot.height) else unknown
+                        val fps = snapshot.framesPerSecond?.let { getString(R.string.statistics_fps_value, it) } ?: unknown
+                        val rtt = snapshot.roundTripSeconds?.let { getString(R.string.statistics_rtt_value, it * 1000) } ?: unknown
+                        val packetLoss = snapshot.packetLossPercent?.let { getString(R.string.statistics_percent_value, it) } ?: unknown
+                        val dropped = snapshot.framesDropped?.let { getString(R.string.statistics_count_value, it) } ?: unknown
+                        val bitrate = previous?.let { snapshot.receiveBitsPerSecond(it) }
+                            ?.let { getString(R.string.statistics_bitrate_value, it / 1_000_000) } ?: unknown
+                        dialog.setMessage(getString(R.string.statistics_message, size, fps, rtt,
+                            snapshot.codec ?: unknown, snapshot.decoder ?: unknown, packetLoss, dropped, bitrate))
+                        previous = snapshot
+                        mainHandler.postDelayed(refresh, 1_000)
+                    }
+                } else false
+                if (requested) mainHandler.postDelayed(timeout, 5_000)
+                else dialog.setMessage(getString(R.string.statistics_unavailable))
+            }
+        }
         dialog.show()
-        val requested = media?.requestVideoStatistics { snapshot ->
-            if (!active || statisticsDialog !== dialog || !dialog.isShowing) return@requestVideoStatistics
-            mainHandler.removeCallbacks(timeout)
-            val unknown = getString(R.string.statistics_unknown)
-            val size = if (snapshot.width != null && snapshot.height != null)
-                getString(R.string.statistics_size_value, snapshot.width, snapshot.height) else unknown
-            val fps = snapshot.framesPerSecond?.let { getString(R.string.statistics_fps_value, it) } ?: unknown
-            val rtt = snapshot.roundTripSeconds?.let { getString(R.string.statistics_rtt_value, it * 1000) } ?: unknown
-            val packetLoss = snapshot.packetLossPercent?.let { getString(R.string.statistics_percent_value, it) } ?: unknown
-            val dropped = snapshot.framesDropped?.let { getString(R.string.statistics_count_value, it) } ?: unknown
-            dialog.setMessage(getString(R.string.statistics_message, size, fps, rtt,
-                snapshot.codec ?: unknown, snapshot.decoder ?: unknown, packetLoss, dropped))
-        } == true
-        if (requested) mainHandler.postDelayed(timeout, 5_000)
-        else dialog.setMessage(getString(R.string.statistics_unavailable))
+        refresh.run()
     }
 
     private fun showTrackpadSettings() {

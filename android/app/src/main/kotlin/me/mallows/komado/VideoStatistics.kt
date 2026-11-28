@@ -6,6 +6,18 @@ import org.webrtc.RTCStats
 internal data class VideoStatistics(val width: Int?, val height: Int?, val framesPerSecond: Double?,
                                     val roundTripSeconds: Double?, val codec: String?, val decoder: String?,
                                     val packetLossPercent: Double?, val framesDropped: Double?) {
+    private data class ReceiveSample(val stream: String, val timestampUs: Double, val bytes: Double)
+    private var receiveSample: ReceiveSample? = null
+
+    fun receiveBitsPerSecond(previous: VideoStatistics): Double? {
+        val current = receiveSample ?: return null
+        val old = previous.receiveSample ?: return null
+        val elapsed = current.timestampUs - old.timestampUs
+        val bytes = current.bytes - old.bytes
+        if (current.stream != old.stream || elapsed <= 0 || bytes < 0) return null
+        return (bytes * 8_000_000 / elapsed).takeIf { it.isFinite() }
+    }
+
     companion object {
         fun from(stats: Map<String, RTCStats>): VideoStatistics {
             val inbound = stats.values.filter {
@@ -36,7 +48,12 @@ internal data class VideoStatistics(val width: Int?, val height: Int?, val frame
             val lost = count("packetsLost")
             val packetLoss = if (received != null && lost != null && received + lost > 0)
                 lost / (received + lost) * 100 else null
-            return VideoStatistics(width, height, fps, rtt, codec, decoder, packetLoss, count("framesDropped"))
+            return VideoStatistics(width, height, fps, rtt, codec, decoder, packetLoss, count("framesDropped")).also { result ->
+                val bytes = count("bytesReceived")
+                if (inbound != null && bytes != null && inbound.timestampUs.isFinite()) {
+                    result.receiveSample = ReceiveSample(inbound.id, inbound.timestampUs, bytes)
+                }
+            }
         }
     }
 }

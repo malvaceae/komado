@@ -56,4 +56,21 @@ class VideoStatisticsTest {
         assertNull(parse(mapOf("framesDropped" to Double.NaN)).framesDropped)
         assertEquals(0.0, parse(mapOf("packetsReceived" to 20, "packetsLost" to 0)).packetLossPercent)
     }
+
+    @Test fun bitrateUsesTwoSamplesFromTheSameVideoStream() {
+        fun sample(time: Long, stream: String = "video", bytes: Any? = 1_000): VideoStatistics {
+            val members = mutableMapOf<String, Any>("kind" to "video")
+            if (bytes != null) members["bytesReceived"] = bytes
+            val video = RTCStats(time, "inbound-rtp", stream, members)
+            return VideoStatistics.from(mapOf(video.id to video))
+        }
+        val first = sample(1_000_000)
+        assertEquals(2_000_000.0, sample(2_000_000, bytes = 251_000).receiveBitsPerSecond(first))
+        assertEquals(0.0, sample(2_000_000).receiveBitsPerSecond(first))
+        assertNull(sample(2_000_000, stream = "other").receiveBitsPerSecond(first))
+        assertNull(sample(1_000_000).receiveBitsPerSecond(first))
+        assertNull(sample(2_000_000, bytes = 999).receiveBitsPerSecond(first))
+        assertNull(sample(2_000_000, bytes = null).receiveBitsPerSecond(first))
+        assertNull(sample(2_000_000, bytes = Double.NaN).receiveBitsPerSecond(first))
+    }
 }
