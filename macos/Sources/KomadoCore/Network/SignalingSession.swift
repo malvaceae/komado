@@ -144,12 +144,12 @@ actor SignalingSession {
                     case .startMedia: target = .mainDisplay; startsMedia = true
                     case .startControl: target = .mainDisplayControl; startsMedia = true
                     case let .startDisplayControl(id):
-                        guard let snapshot = displaySnapshot, snapshot.contains(where: { $0.id == id }),
-                              try DisplayCatalog.active() == snapshot else { await close(); return }
+                        guard let snapshot = displaySnapshot,
+                              try DisplayCatalog.containsSelected(id, in: snapshot, current: DisplayCatalog.active()) else { await close(); return }
                         target = .displayControl(id); startsMedia = true
                     case let .startDisplay(id):
-                        guard let snapshot = displaySnapshot, snapshot.contains(where: { $0.id == id }),
-                              try DisplayCatalog.active() == snapshot else { await close(); return }
+                        guard let snapshot = displaySnapshot,
+                              try DisplayCatalog.containsSelected(id, in: snapshot, current: DisplayCatalog.active()) else { await close(); return }
                         target = .display(id); startsMedia = true
                     case let .startWindowControl(id):
                         guard let snapshot = windowSnapshot,

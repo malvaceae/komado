@@ -5,6 +5,10 @@ import Foundation
 enum DisplayCatalog {
     enum CatalogError: Error { case unavailable }
 
+    static func containsSelected(_ id: UInt32, in sent: [DisplayInfo], current: [DisplayInfo]) -> Bool {
+        sent.contains { $0.id == id } && current.contains { $0.id == id }
+    }
+
     static func active() throws -> [DisplayInfo] {
         var count: UInt32 = 0
         guard CGGetActiveDisplayList(0, nil, &count) == .success, (1...64).contains(count) else {
