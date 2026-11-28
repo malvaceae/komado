@@ -23,7 +23,7 @@ final class SystemInputTests: XCTestCase {
 
         let sendToSelf: (CGEvent) -> Void = { $0.postToPid(getpid()) }
         let keyboard = KeyboardTextDispatcher(post: sendToSelf)
-        let samples = ["入力テスト😀", String(repeating: "あ", count: 170)]
+        let samples = ["入力テスト😀", String(repeating: "あ", count: 170), "1\n2", "1\t2"]
         for (index, expected) in samples.enumerated() {
             view.string = ""
             XCTAssertTrue(keyboard.send(KeyboardText(sequence: UInt64(index + 1), captureRevision: 1, text: expected),
