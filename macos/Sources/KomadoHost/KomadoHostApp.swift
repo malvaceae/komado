@@ -104,6 +104,7 @@ private struct HostView: View {
                     }
                     Text("次に画面共有を開始するときに適用します。")
                         .foregroundStyle(.secondary)
+                    Toggle("音声の共有を許可", isOn: $model.allowAudioSharing)
                     Toggle("Androidからの操作を許可", isOn: $model.allowRemoteControl)
                     Toggle("クリップボード共有を許可", isOn: $model.allowClipboardSharing)
                         .disabled(!model.allowRemoteControl)

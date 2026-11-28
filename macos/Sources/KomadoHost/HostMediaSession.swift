@@ -13,7 +13,9 @@ final class HostMediaSession {
     private let delegate: HostPeerDelegate
     private let peer: LKRTCPeerConnection
     let videoSource: LKRTCVideoSource
+    let audioCapture: AudioCapture
     private let videoTrack: LKRTCVideoTrack
+    private let audioTrack: LKRTCAudioTrack
     private let dataChannel: LKRTCDataChannel
     private let onFailure: @Sendable () -> Void
     private var state: State = .idle
@@ -24,6 +26,9 @@ final class HostMediaSession {
     init(route: MediaSessionGate, onControl: (@Sendable (ControlInput) -> Void)? = nil,
          onFailure: @escaping @Sendable () -> Void) throws {
         let factory = MediaFactory.create()
+        let audioCapture = AudioCapture()
+        guard factory.audioDeviceModule.setManualRenderingMode(true) == 0 else { throw SessionError.creationFailed }
+        factory.audioDeviceModule.observer = audioCapture
         let delegate = HostPeerDelegate(route: route, onControl: onControl, onFailure: onFailure)
         let configuration = LKRTCConfiguration()
         configuration.iceServers = []
@@ -34,7 +39,13 @@ final class HostMediaSession {
         }
         let source = factory.videoSource(forScreenCast: true)
         let track = factory.videoTrack(with: source, trackId: "screen")
+        let audio = factory.audioTrack(withTrackId: "audio")
+        guard audio.setAudioProcessingOptions(.raw()).isSuccess else {
+            peer.close()
+            throw SessionError.creationFailed
+        }
         guard peer.add(track, streamIds: ["komado"]) != nil,
+              peer.add(audio, streamIds: ["komado"]) != nil,
               let channel = peer.dataChannel(forLabel: "control", configuration: LKRTCDataChannelConfiguration()) else {
             peer.close()
             throw SessionError.creationFailed
@@ -44,6 +55,8 @@ final class HostMediaSession {
         self.peer = peer
         self.videoSource = source
         self.videoTrack = track
+        self.audioCapture = audioCapture
+        self.audioTrack = audio
         self.dataChannel = channel
         self.onFailure = onFailure
         delegate.setOnChannelOpen { [weak self] in
@@ -145,6 +158,7 @@ final class HostMediaSession {
         announceTimeout?.cancel()
         announceTimeout = nil
         delegate.close()
+        audioCapture.setEnabled(false)
         dataChannel.close()
         peer.close()
     }

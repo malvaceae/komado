@@ -150,7 +150,7 @@ class AndroidMediaSessionTest {
         }
     }
 
-    @Test fun rejectsUnexpectedAudioBeforeAnswering() {
+    @Test fun acceptsAudioOffer() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val egl = EglBase.create()
         val factory = MediaFactory.create(instrumentation.targetContext)
@@ -174,8 +174,8 @@ class AndroidMediaSessionTest {
                     }, egl.eglBaseContext)
                 receiver!!.acceptOffer(sdp)
             }
-            assertTrue("Unexpected audio did not close the session", failed.await(10, TimeUnit.SECONDS))
-            assertTrue("Unexpected audio must not receive an answer", !answer.isDone)
+            assertTrue("Audio offer was not answered", answer.get(10, TimeUnit.SECONDS).contains("m=audio "))
+            assertTrue("Audio offer must not fail", failed.count == 1L)
         } finally {
             instrumentation.runOnMainSync { receiver?.close() }
             sender.close()

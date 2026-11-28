@@ -109,7 +109,7 @@ Android Client
     │ LAN / VPNなど
     │
     ├─ WebRTC Video
-    ├─ WebRTC Audio（未実装）
+    ├─ WebRTC Audio
     ├─ WebRTC DataChannel
     └─ TLS Signaling
     │
@@ -143,7 +143,7 @@ macOS側でシグナリングサーバーを起動し、Android側から接続�
 | リアルタイム通信 | libwebrtc |
 | 画面・ウインドウ取得 | ScreenCaptureKit |
 | 映像エンコード | VideoToolbox（libwebrtc経由） |
-| 音声取得 | ScreenCaptureKit / Core Audio（検討中） |
+| 音声取得 | ScreenCaptureKit |
 | 入力イベント生成 | Core Graphics（CGEvent） |
 | ウインドウ制御 | Accessibility API（AXUIElement） |
 | アプリケーション管理 | NSWorkspace |
@@ -229,7 +229,7 @@ Streamのクラウドサービスは利用せず、ビルド済みWebRTCライ�
 | リアルタイム通信 | WebRTC |
 | 映像転送 | SRTP |
 | 映像コーデック | H.264 |
-| 音声コーデック | Opus（検討中） |
+| 音声コーデック | Opus |
 | 操作イベント | WebRTC DataChannel |
 | シグナリング | TLS上の長さ付きフレーム |
 | メッセージ形式 | JSON |
@@ -561,7 +561,7 @@ Androidのバックグラウンドクリップボードアクセス制限を尊�
 5. ICE Candidateを含むWebRTCのSDP Offer / Answerを交換する。
 6. WebRTC接続とDataChannelを確立し、映像と操作イベントを送受信する。
 
-音声転送は今後対応する。
+Mac側で許可されている場合は音声も転送する。
 
 ### 8.2. シグナリング
 

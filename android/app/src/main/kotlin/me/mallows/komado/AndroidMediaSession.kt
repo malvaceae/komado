@@ -58,6 +58,7 @@ internal class AndroidMediaSession(
     private var localSet = false
     private var connected = false
     private var remoteTrack: VideoTrack? = null
+    private var remoteAudio: AudioTrack? = null
     private var trackShown = false
     private var captureRevision: Long? = null
     private var lastSentSequence = 0L
@@ -93,7 +94,6 @@ internal class AndroidMediaSession(
             throw error
         }
         try {
-            peer.setAudioPlayout(false)
             peer.setAudioRecording(false)
         } catch (error: Throwable) {
             peer.close()
@@ -305,6 +305,7 @@ internal class AndroidMediaSession(
         } finally {
             trackShown = false
             remoteTrack = null
+            remoteAudio = null
             channel?.unregisterObserver()
             channel?.dispose()
             channel = null
@@ -318,8 +319,10 @@ internal class AndroidMediaSession(
     override fun onTrack(transceiver: RtpTransceiver) {
         val received = transceiver.receiver.track()
         if (received is AudioTrack) {
-            runCatching { received.setEnabled(false) }
-            postIfOpen { fail() }
+            postIfOpen {
+                if (remoteAudio == null) remoteAudio = received
+                else if (remoteAudio !== received) fail()
+            }
             return
         }
         val track = received as? VideoTrack ?: return

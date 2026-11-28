@@ -108,6 +108,7 @@ final class HostModelTests: XCTestCase {
         let model = HostModel(identityStore: HostTLSIdentityStore(service: service), registry: registry,
                               pairing: pairing, authentication: auth, settings: settings)
         XCTAssertFalse(model.allowRemoteControl)
+        XCTAssertFalse(model.allowAudioSharing)
         XCTAssertFalse(model.keepAwakeWhileListening)
         XCTAssertEqual(model.captureResolution, .standard)
         model.captureResolution = .reduced
@@ -144,10 +145,12 @@ final class HostModelTests: XCTestCase {
         await model.issueInvitation()
         XCTAssertEqual(model.invitation?.count, 64)
         model.allowRemoteControl = true
+        model.allowAudioSharing = true
         await model.stop()
         XCTAssertFalse(model.running)
         XCTAssertFalse(settings.bool(forKey: "restoreListening"))
         XCTAssertFalse(model.allowRemoteControl)
+        XCTAssertFalse(model.allowAudioSharing)
         XCTAssertNil(model.invitation)
         XCTAssertFalse(try waitingAssertionExists())
         XCTAssertTrue(settings.bool(forKey: "keepAwakeWhileListening"))

@@ -34,7 +34,8 @@ final class DisplayCaptureTests: XCTestCase {
         defer { track.remove(counter) }
         let route = MediaSessionGate()
         let capturedWindow = try XCTUnwrap(target)
-        let starting = Task { try await DisplayCapture.start(window: capturedWindow, source: source, route: route) {} }
+        let audio = AudioCapture()
+        let starting = Task { try await DisplayCapture.start(window: capturedWindow, source: source, route: route, audio: audio) {} }
         try await Task.sleep(for: .seconds(2))
         XCTAssertEqual(counter.value, 0)
         route.connected()
@@ -50,6 +51,8 @@ final class DisplayCaptureTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(100))
         }
         XCTAssertGreaterThan(counter.value, 0, "A static window must be shown after the peer connects")
+        try await capture.setAudioEnabled(true)
+        try await capture.setAudioEnabled(false)
     }
 
     @MainActor

@@ -59,6 +59,12 @@ final class HostModel: ObservableObject {
     @Published var allowClipboardAutomatic = false {
         didSet { if !allowClipboardAutomatic { clipboardTransfer.stopAutomatic() } }
     }
+    @Published var allowAudioSharing = false {
+        didSet {
+            if !allowAudioSharing { mediaSession?.audioCapture.setEnabled(false) }
+            updateAudioCapture()
+        }
+    }
     @Published var captureResolution: CaptureResolution {
         didSet { settings.set(captureResolution.rawValue, forKey: Self.captureResolutionKey) }
     }
@@ -98,6 +104,7 @@ final class HostModel: ObservableObject {
     private var screenMonitor: ScreenEnvironmentMonitor?
     private var mediaTask: Task<Void, Never>?
     private var mediaCleanup: Task<Bool, Never>?
+    private var audioUpdate: Task<Void, Never>?
     private var capture: DisplayCapture?
     private var controlDisplayID: CGDirectDisplayID?
     private var controlBounds: CGRect?
@@ -412,6 +419,7 @@ final class HostModel: ObservableObject {
             if mediaConnection == id { stopMedia() }
             if connectedSession == id {
                 if switchingControl { allowRemoteControl = false; allowClipboardSharing = false }
+                allowAudioSharing = false
                 switchingControl = false
                 connectedSession = nil
                 connectedDevice = nil
@@ -595,7 +603,7 @@ final class HostModel: ObservableObject {
                         self.moveDispatcher = PointerMoveDispatcher()
                         self.controllingScreen = true
                     }
-                    captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, resolution: resolution, onStopped: onStopped)
+                    captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, resolution: resolution, audio: session.audioCapture, onStopped: onStopped)
                 case let .application(info, bundleIdentifier), let .applicationControl(info, bundleIdentifier):
                     guard let application = content.applications.first(where: {
                         $0.processID > 0 && UInt32($0.processID) == info.id && $0.bundleIdentifier == bundleIdentifier
@@ -625,7 +633,7 @@ final class HostModel: ObservableObject {
                         self.controllingScreen = true
                     }
                     captured = try await DisplayCapture.start(application: application, display: display, source: session.videoSource,
-                                                              route: route, resolution: resolution, onStopped: onStopped)
+                                                              route: route, resolution: resolution, audio: session.audioCapture, onStopped: onStopped)
                 case let .window(info, processID), let .windowControl(info, processID, _):
                     guard let window = content.windows.first(where: {
                         WindowCatalog.matches(window: $0, info: info, processID: processID)
@@ -651,14 +659,37 @@ final class HostModel: ObservableObject {
                     self.sharingWindow = true
                     self.sharingApplication = false
                     self.sharingScreen = true
-                    captured = try await DisplayCapture.start(window: window, source: session.videoSource, route: route, resolution: resolution, onStopped: onStopped)
+                    captured = try await DisplayCapture.start(window: window, source: session.videoSource, route: route, resolution: resolution, audio: session.audioCapture, onStopped: onStopped)
                 }
                 guard self.mediaID == id, !Task.isCancelled else { try? await captured.stop(); return }
                 self.capture = captured
+                self.updateAudioCapture()
                 self.error = nil
                 self.sleepActivity = IdleSleepActivity()
                 try session.announceCapture(revision: 1)
             } catch { self?.mediaFailed(id: id) }
+        }
+    }
+
+    private func updateAudioCapture() {
+        guard audioUpdate == nil, let captured = capture, let session = mediaSession else { return }
+        let id = mediaID
+        audioUpdate = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.mediaID == id { self.audioUpdate = nil } }
+            do {
+                while !Task.isCancelled && self.mediaID == id {
+                    let enabled = self.allowAudioSharing
+                    try await captured.setAudioEnabled(enabled)
+                    guard !Task.isCancelled, self.mediaID == id else { return }
+                    if enabled == self.allowAudioSharing {
+                        session.audioCapture.setEnabled(enabled)
+                        return
+                    }
+                }
+            } catch {
+                if !Task.isCancelled { self.mediaFailed(id: id) }
+            }
         }
     }
 
@@ -864,6 +895,9 @@ final class HostModel: ObservableObject {
         let previousTask = mediaTask
         previousTask?.cancel()
         mediaTask = nil
+        let previousAudioUpdate = audioUpdate
+        previousAudioUpdate?.cancel()
+        audioUpdate = nil
         mediaGate?.close()
         mediaGate = nil
         sharingScreen = false
@@ -878,11 +912,13 @@ final class HostModel: ObservableObject {
         sleepActivity = nil
         let current = capture
         capture = nil
+        if !preserveControl { allowAudioSharing = false }
         let priorCleanup = mediaCleanup
         if previousTask != nil || current != nil || resize != nil {
             let cleanup = Task {
                 _ = await priorCleanup?.value
                 await previousTask?.value
+                await previousAudioUpdate?.value
                 var stopped = true
                 if let current { do { try await current.stop() } catch { stopped = false } }
                 resize?.restore()

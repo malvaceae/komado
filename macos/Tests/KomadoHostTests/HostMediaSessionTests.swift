@@ -97,6 +97,7 @@ final class HostMediaSessionTests: XCTestCase {
         let offer = try await session.makeOffer()
         XCTAssertTrue(offer.hasPrefix("v=0\r\n"))
         XCTAssertTrue(offer.contains("m=video "))
+        XCTAssertTrue(offer.contains("m=audio "))
         XCTAssertTrue(offer.contains("m=application "))
         do {
             _ = try await session.makeOffer()

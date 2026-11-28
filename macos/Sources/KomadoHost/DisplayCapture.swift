@@ -31,41 +31,43 @@ final class DisplayCapture {
 
     private let stream: SCStream
     private let bridge: DisplayFrameBridge
+    private let configuration: SCStreamConfiguration
     private var stopped = false
     var frameMapping: CaptureFrameMapping? { bridge.frameMapping }
 
-    private init(stream: SCStream, bridge: DisplayFrameBridge) {
+    private init(stream: SCStream, bridge: DisplayFrameBridge, configuration: SCStreamConfiguration) {
         self.stream = stream
         self.bridge = bridge
+        self.configuration = configuration
     }
 
-    static func start(display: SCDisplay, source: LKRTCVideoSource, route: MediaSessionGate, resolution: CaptureResolution = .standard,
+    static func start(display: SCDisplay, source: LKRTCVideoSource, route: MediaSessionGate, resolution: CaptureResolution = .standard, audio: AudioCapture? = nil,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         let size = try dimensions(width: display.width, height: display.height, resolution: resolution)
         return try await start(filter: SCContentFilter(display: display, excludingWindows: []),
-                               size: size, source: source, route: route, onStopped: onStopped)
+                               size: size, source: source, route: route, audio: audio, onStopped: onStopped)
     }
 
-    static func start(window: SCWindow, source: LKRTCVideoSource, route: MediaSessionGate, resolution: CaptureResolution = .standard,
+    static func start(window: SCWindow, source: LKRTCVideoSource, route: MediaSessionGate, resolution: CaptureResolution = .standard, audio: AudioCapture? = nil,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         let width = window.frame.width, height = window.frame.height
         guard width.isFinite, height.isFinite, width >= 2, height >= 2,
               width <= Double(Int32.max), height <= Double(Int32.max) else { throw CaptureError.invalidDimensions }
         let size = try dimensions(width: Int(width.rounded(.up)), height: Int(height.rounded(.up)), resolution: resolution)
         return try await start(filter: SCContentFilter(desktopIndependentWindow: window),
-                               size: size, source: source, route: route, onStopped: onStopped)
+                               size: size, source: source, route: route, audio: audio, onStopped: onStopped)
     }
 
     static func start(application: SCRunningApplication, display: SCDisplay, source: LKRTCVideoSource,
-                      route: MediaSessionGate, resolution: CaptureResolution = .standard,
+                      route: MediaSessionGate, resolution: CaptureResolution = .standard, audio: AudioCapture? = nil,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         let size = try dimensions(width: display.width, height: display.height, resolution: resolution)
         let filter = SCContentFilter(display: display, including: [application], exceptingWindows: [])
-        return try await start(filter: filter, size: size, source: source, route: route, onStopped: onStopped)
+        return try await start(filter: filter, size: size, source: source, route: route, audio: audio, onStopped: onStopped)
     }
 
     private static func start(filter: SCContentFilter, size: (width: Int, height: Int), source: LKRTCVideoSource,
-                              route: MediaSessionGate, onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
+                              route: MediaSessionGate, audio: AudioCapture?, onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         // ScreenCaptureKit may emit no further frames for an unchanged window.
         // Start only after the peer is ready so its first frame is not discarded.
         try await route.waitUntilConnected()
@@ -75,10 +77,16 @@ final class DisplayCapture {
         configuration.height = size.height
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
-        let bridge = DisplayFrameBridge(source: source, route: route, onStopped: onStopped)
+        configuration.sampleRate = 48_000
+        configuration.channelCount = 2
+        let bridge = DisplayFrameBridge(source: source, route: route, audio: audio, onStopped: onStopped)
         let stream = SCStream(filter: filter, configuration: configuration, delegate: bridge)
         try stream.addStreamOutput(bridge, type: .screen,
                                    sampleHandlerQueue: DispatchQueue(label: "me.mallows.komado.capture"))
+        if audio != nil {
+            try stream.addStreamOutput(bridge, type: .audio,
+                                       sampleHandlerQueue: DispatchQueue(label: "me.mallows.komado.audio"))
+        }
         do {
             try await stream.startCapture()
             if Task.isCancelled {
@@ -86,7 +94,7 @@ final class DisplayCapture {
                 try? await stream.stopCapture()
                 throw CancellationError()
             }
-            return DisplayCapture(stream: stream, bridge: bridge)
+            return DisplayCapture(stream: stream, bridge: bridge, configuration: configuration)
         } catch {
             bridge.deactivate()
             throw error
@@ -98,6 +106,12 @@ final class DisplayCapture {
         stopped = true
         bridge.deactivate()
         try await stream.stopCapture()
+    }
+
+    func setAudioEnabled(_ value: Bool) async throws {
+        guard !stopped else { return }
+        configuration.capturesAudio = value
+        try await stream.updateConfiguration(configuration)
     }
 
     /// Preserve aspect ratio within the H.264 frame-size limit without upscaling.
@@ -131,12 +145,14 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
     private var active = true
     private var mapping: CaptureFrameMapping?
     private let source: LKRTCVideoSource
+    private let audio: AudioCapture?
     private let capturer: LKRTCVideoCapturer
     private let route: MediaSessionGate
     private let onStopped: @Sendable () -> Void
 
-    init(source: LKRTCVideoSource, route: MediaSessionGate, onStopped: @escaping @Sendable () -> Void) {
+    init(source: LKRTCVideoSource, route: MediaSessionGate, audio: AudioCapture?, onStopped: @escaping @Sendable () -> Void) {
         self.source = source
+        self.audio = audio
         self.capturer = LKRTCVideoCapturer(delegate: source)
         self.route = route
         self.onStopped = onStopped
@@ -155,6 +171,10 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        if type == .audio {
+            if lock.withLock({ active }), route.isAllowed { audio?.capture(sampleBuffer) }
+            return
+        }
         guard type == .screen else { return }
         guard sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
