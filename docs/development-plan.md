@@ -101,7 +101,7 @@ ARM64およびARM32に対応するため、WebRTCライブラリに含まれる�
 ```text
 Android Client
     │
-    ├─ Jetpack Compose
+    ├─ Android Views
     ├─ libwebrtc
     ├─ MediaCodec
     └─ Touch / Keyboard / IME
@@ -109,9 +109,9 @@ Android Client
     │ LAN / VPNなど
     │
     ├─ WebRTC Video
-    ├─ WebRTC Audio
+    ├─ WebRTC Audio（未実装）
     ├─ WebRTC DataChannel
-    └─ WebSocket Signaling
+    └─ TLS Signaling
     │
 macOS Host
     │
@@ -143,23 +143,21 @@ macOS側でシグナリングサーバーを起動し、Android側から接続�
 | リアルタイム通信 | libwebrtc |
 | 画面・ウインドウ取得 | ScreenCaptureKit |
 | 映像エンコード | VideoToolbox（libwebrtc経由） |
-| 音声取得 | ScreenCaptureKit / Core Audio |
+| 音声取得 | ScreenCaptureKit / Core Audio（検討中） |
 | 入力イベント生成 | Core Graphics（CGEvent） |
 | ウインドウ制御 | Accessibility API（AXUIElement） |
 | アプリケーション管理 | NSWorkspace |
 | ネットワーク通信 | Network.framework |
 | クリップボード | NSPasteboard |
-| スリープ抑制 | IOKit |
+| スリープ抑制 | ProcessInfo |
 | ログイン時の自動起動 | SMAppService |
 | 設定保存 | UserDefaults |
 | 認証情報保存 | Keychain |
-| ログ | OSLog |
-| テスト | Swift Testing / XCTest |
-| フォーマッター | swift-format |
+| テスト | XCTest |
 
 #### WebRTCライブラリ
 
-第一候補としてstasel/WebRTCを採用する。
+stasel/WebRTC 158.0.0を利用する。
 
 https://github.com/stasel/WebRTC
 
@@ -167,7 +165,7 @@ GoogleのWebRTCソースコードからビルドされたXCFrameworkを利用す
 
 macOS向けのarm64およびx86_64バイナリが提供されている。
 
-以下を検証したうえで正式採用する。
+以下について検証を続ける。
 
 - macOS 13以降との互換性
 - Apple SiliconおよびIntel Macでの動作
@@ -182,47 +180,43 @@ macOS向けのarm64およびx86_64バイナリが提供されている。
 | 項目 | 採用技術 |
 |---|---|
 | 開発言語 | Kotlin |
-| UI | Jetpack Compose |
-| デザインシステム | Material 3 |
+| UI | Android Views |
 | IDE | Android Studio |
 | ビルド | Gradle Kotlin DSL |
-| アーキテクチャ | MVVM / UDF |
-| 状態管理 | ViewModel / StateFlow |
-| 非同期処理 | Kotlin Coroutines |
+| 非同期処理 | Executor |
 | リアルタイム通信 | libwebrtc |
 | 映像デコード | MediaCodec（libwebrtc経由） |
 | 映像描画 | SurfaceViewRenderer |
-| タッチ操作 | MotionEvent / Compose Gesture API |
+| タッチ操作 | MotionEvent / ScaleGestureDetector |
 | キーボード入力 | InputConnection / Android IME |
-| シグナリング通信 | OkHttp |
-| JSON処理 | kotlinx.serialization |
+| シグナリング通信 | SSLSocket |
+| JSON処理 | org.json |
 | クリップボード | ClipboardManager |
-| 設定保存 | Jetpack DataStore |
+| 設定保存 | SharedPreferences |
 | 認証情報保護 | Android Keystore |
-| テスト | JUnit / Compose UI Testing |
-| フォーマッター | ktlint |
+| テスト | JUnit / AndroidX Test |
 
 #### WebRTCライブラリ
 
-第一候補としてGetStream/webrtc-androidを採用する。
+GetStream/webrtc-android 1.3.10を利用する。
 
 https://github.com/GetStream/webrtc-android
 
 依存パッケージ：
 
 ```kotlin
-implementation("io.getstream:stream-webrtc-android:<version>")
+implementation("io.getstream:stream-webrtc-android:1.3.10")
 ```
 
 Streamのクラウドサービスは利用せず、ビルド済みWebRTCライブラリのみを利用する。
 
-以下を検証したうえで正式採用する。
+以下について検証を続ける。
 
 - Android 8（API 26）以降との互換性
 - arm64-v8aおよびarmeabi-v7aへの対応
 - x86およびx86_64への対応
 - H.264ハードウェアデコード
-- Jetpack Composeとの統合
+- Androidの画面・入力処理との統合
 - macOS側ライブラリとの相互接続性
 
 両プラットフォームの依存バージョンは、互換性を確認したうえで固定する。
@@ -235,11 +229,11 @@ Streamのクラウドサービスは利用せず、ビルド済みWebRTCライ�
 | リアルタイム通信 | WebRTC |
 | 映像転送 | SRTP |
 | 映像コーデック | H.264 |
-| 音声コーデック | Opus |
+| 音声コーデック | Opus（検討中） |
 | 操作イベント | WebRTC DataChannel |
-| シグナリング | WebSocket over TLS |
+| シグナリング | TLS上の長さ付きフレーム |
 | メッセージ形式 | JSON |
-| 接続先指定 | LAN IP / ホスト名 / Tailscale IP / MagicDNS |
+| 接続先指定 | IPアドレス / ホスト名 |
 | 端末認証 | ペアリング方式 |
 
 WebRTCが提供する輻輳制御、パケットロス対策、ビットレート制御、暗号化などを利用し、独自実装は最小限にする。
@@ -403,15 +397,12 @@ MacBookの蓋を閉じた状態での動作は、macOSの電源管理やクラ�
 以下の方法でMacを登録できるようにする。
 
 - QRコードによるペアリング
-- LANまたはTailscaleのIPアドレスの手動入力
-- LANのホスト名の手動入力
-- MagicDNSホスト名の手動入力
+- IPアドレスの手動入力
+- ホスト名の手動入力
 
 ホストへの到達性を確認し、接続できない場合は原因に応じた案内を表示する。
 
-Tailscaleの接続状態を取得できるかについては、Androidの公開APIおよびTailscaleクライアントの仕様を確認する。
-
-Tailscale固有の接続状態を取得できない場合は、ホストへの到達性確認とユーザーへの案内によって対応する。
+ネットワークの種類やVPN製品の状態を認証条件とせず、ホストへの到達性と端末の認証を確認する。
 
 ### 7.3. リモート操作対象の選択
 
@@ -564,22 +555,19 @@ Androidのバックグラウンドクリップボードアクセス制限を尊�
 ### 8.1. 接続フロー
 
 1. Android側で登録済みホストを選択する。
-2. 同一LANまたはTailscale経由でmacOS側のシグナリングサーバーに接続する。
+2. 到達可能なネットワークからmacOS側のシグナリングサーバーに接続する。
 3. ペアリング済み端末であることを認証する。
-4. プロトコルの形式を確認する。
-5. WebRTCのSDP Offer / Answerを交換する。
-6. ICE Candidateを交換する。
-7. WebRTC接続を確立する。
-8. DataChannelを確立する。
-9. Android側からキャプチャ対象を選択する。
-10. macOS側でキャプチャを開始する。
-11. 映像・音声・操作イベントの通信を開始する。
+4. 必要に応じて操作対象を選択し、画面転送を要求する。
+5. ICE Candidateを含むWebRTCのSDP Offer / Answerを交換する。
+6. WebRTC接続とDataChannelを確立し、映像と操作イベントを送受信する。
+
+音声転送は今後対応する。
 
 ### 8.2. シグナリング
 
-macOS側でWebSocketサーバーを起動する。
+macOS側でTLS上の長さ付きフレームを使うシグナリングサーバーを起動する。
 
-以下の情報を交換する。
+必要に応じて以下の情報を交換する。実装済みの形式は[通信プロトコル](protocol.md)に記載する。
 
 - プロトコルバージョン
 - 端末認証情報
@@ -595,7 +583,7 @@ macOS側でWebSocketサーバーを起動する。
 
 TLS証明書の信頼確立はペアリング処理と統合する。
 
-WebRTCのメディア通信について、同一LANおよびTailscaleでのICE接続と通信経路を検証する。
+WebRTCのメディア通信について、LANやVPNを含む利用環境でICE接続と通信経路を検証する。
 
 ### 8.4. DataChannel
 
@@ -716,7 +704,7 @@ Android側では以下の情報を考慮する。
 
 - Wi-Fiとモバイル回線の切り替え
 - 一時的な通信切断
-- Tailscaleの再接続
+- 利用中のネットワークの再接続
 - ホストアプリケーションの再起動
 - WebRTC接続の切断
 
@@ -731,15 +719,14 @@ ICE RestartおよびPeerConnectionの再生成を状況に応じて使い分け�
 - 到達可能なネットワークでの接続に対応する。
 - シグナリングサーバーをインターネットに公開しない。
 - 利用者が意図しないインターネットへのシグナリング公開を防ぐため、待ち受け範囲とアクセス制御を設計する。
-- Tailscale Grantsによる接続元・接続先の制限を推奨する。
 - WebRTCの動的UDPポートを考慮してアクセス制御を設計する。
 - 通信経路や送信元IPアドレスのみを端末認証の根拠としない。
 
-TailscaleのIPアドレス範囲に該当することだけを、正当な端末であることの証明として扱わない。
+現在の待ち受け条件は[ネットワーク接続の決定](decisions/0001-network-access.md)を参照する。
 
 ### 9.2. ペアリング
 
-Tailscaleに接続していることだけをkomadoの認証条件としない。
+ネットワークに接続していることだけをkomadoの認証条件としない。
 
 Mac上で明示的に発行したペアリング情報を使用してAndroid端末を登録する。
 
@@ -766,7 +753,6 @@ macOS側はKeychain、Android側はAndroid Keystoreで保護された鍵や暗�
 
 以下の暗号化方式を利用する。
 
-- Tailscaleを利用する場合はWireGuard暗号化
 - シグナリング通信のTLS
 - WebRTCのDTLS / SRTP
 
@@ -940,7 +926,7 @@ komado/
 - [ ] Android API 26を最低対応APIとしたビルド
 - [ ] Android向けARM64・ARM32バイナリの確認
 - [ ] Android向けx86・x86_64バイナリの確認
-- [ ] 同一LANおよびTailscale経由でのICE接続
+- [ ] LANやVPNを含む利用環境でのICE接続
 - [ ] ScreenCaptureKitによる画面取得
 - [ ] WebRTCによる映像転送
 - [ ] H.264ハードウェアエンコード・デコード
@@ -954,7 +940,7 @@ komado/
 
 完了条件：
 
-Macの画面を実機Androidへ転送でき、同一LANまたはTailscale経由で操作イベントを送信できること。
+Macの画面を実機Androidへ転送でき、到達可能なネットワークで操作イベントを送信できること。
 
 主要な技術的制約を整理し、採用ライブラリと対応環境を確定すること。
 
@@ -1113,17 +1099,15 @@ macOS版とAndroid版の双方を再現可能な手順でビルド・配布で�
 以下のネットワーク条件で検証する。
 
 - 同一LAN内
-- Tailscaleによる直接接続
-- Tailscale DERP経由
+- VPNなど利用するネットワーク経由
 - モバイル回線
 - Wi-Fiとモバイル回線の切り替え
 - 低速回線
 - 高遅延環境
 - パケットロス発生環境
 - 一時切断
-- Tailscale停止・再起動
+- 利用中のネットワークの停止・再接続
 - 未登録端末からの接続
-- 同一LAN内の未登録端末からの接続
 
 ### 13.5. 端末・OS状態のテスト
 
@@ -1240,7 +1224,7 @@ Intel Macおよび旧世代Androidへの対応は、初期開発の対象外と�
 
 | 項目 | 検証内容 |
 |---|---|
-| WebRTCの接続 | 同一LAN・TailscaleでのICE Candidateの選択、通信経路 |
+| WebRTCの接続 | LAN・VPNなどでのICE Candidateの選択、通信経路 |
 | WebRTCライブラリ | macOS・Android間の互換性、必要なAPIの提供状況 |
 | macOS互換性 | macOS 13以降でのAPI利用可否 |
 | Mac CPU互換性 | Apple Silicon・Intelでのビルドおよび動作 |
@@ -1273,7 +1257,6 @@ Intel Macおよび旧世代Androidへの対応は、初期開発の対象外と�
 
 ### Android
 
-- [Jetpack Compose](https://developer.android.com/compose)
 - [MediaCodec](https://developer.android.com/reference/android/media/MediaCodec)
 - [InputConnection](https://developer.android.com/reference/android/view/inputmethod/InputConnection)
 - [Android Keystore](https://developer.android.com/privacy-and-security/keystore)
@@ -1285,12 +1268,3 @@ Intel Macおよび旧世代Androidへの対応は、初期開発の対象外と�
 - [WebRTC Source Code](https://webrtc.googlesource.com/src/)
 - [stasel/WebRTC](https://github.com/stasel/WebRTC)
 - [GetStream/webrtc-android](https://github.com/GetStream/webrtc-android)
-
-### Tailscale
-
-- [Tailscale Documentation](https://tailscale.com/docs/)
-- [Install Tailscale on macOS](https://tailscale.com/docs/install/mac)
-- [Install Tailscale on Android](https://tailscale.com/docs/install/android)
-- [Connection types](https://tailscale.com/docs/reference/connection-types)
-- [MagicDNS](https://tailscale.com/kb/1081/magicdns)
-- [Grants](https://tailscale.com/kb/1324/grants)
