@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.view.KeyEvent
 import android.view.InputDevice
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.ViewConfiguration
@@ -79,7 +80,7 @@ internal class ZoomableVideoView(context: Context, private val video: SurfaceVie
 
     init {
         clipChildren = true
-        addView(video, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        addView(video, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         contentDescription = context.getString(R.string.video_description)
         isFocusable = true
     }
