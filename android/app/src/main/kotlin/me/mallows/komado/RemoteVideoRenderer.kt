@@ -10,7 +10,7 @@ import org.webrtc.VideoTrack
 /** Owns the view and EGL resources for one remote video display. */
 internal class RemoteVideoRenderer(
     context: Context,
-    events: RendererCommon.RendererEvents? = null,
+    private val events: RendererCommon.RendererEvents? = null,
 ) : AutoCloseable {
     val view = SurfaceViewRenderer(context)
     private val egl: EglBase
@@ -40,6 +40,15 @@ internal class RemoteVideoRenderer(
         view.clearImage()
         next?.addSink(view)
         track = next
+    }
+
+    fun reset() {
+        requireMainThread()
+        show(null)
+        view.release()
+        view.init(egl.eglBaseContext, events)
+        view.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+        view.setMirror(false)
     }
 
     override fun close() {

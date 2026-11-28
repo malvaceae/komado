@@ -27,6 +27,7 @@ public actor SignalingServer {
         case listenerUnavailable(interfaceName: String, address: String, port: UInt16)
         case authenticated(UUID, PairedDevice)
         case mediaRequested(UUID, PairedDevice, MediaTarget)
+        case mediaStopRequested(UUID, PairedDevice)
         case answer(UUID, PairedDevice, String)
         case disconnected(UUID)
         case throttled
@@ -136,6 +137,11 @@ public actor SignalingServer {
         try await current.session.sendOffer(sdp)
     }
 
+    public func sendMediaStopped(sessionID: UUID) async throws {
+        guard let current = active, !stopped, !removing, current.id == sessionID else { throw ServerError.noConnection }
+        try await current.session.sendMediaStopped()
+    }
+
     /// Blocks new sessions and disconnects the current one before removing the
     /// device. All registration removal must use this while the server is active.
     @discardableResult
@@ -197,6 +203,7 @@ public actor SignalingServer {
         let session = SignalingSession(connection: connection, handshake: handshake, queue: queue,
                                        onAuthenticated: { [weak self] device in await self?.authenticated(id: id, device: device) },
                                        onMediaRequested: { [weak self] device, target in await self?.mediaRequested(id: id, device: device, target: target) },
+                                       onMediaStopRequested: { [weak self] device in await self?.mediaStopRequested(id: id, device: device) },
                                        onAnswer: { [weak self] device, sdp in await self?.answer(id: id, device: device, sdp: sdp) },
                                        onClosed: { [weak self] in await self?.sessionClosed(id: id) })
         active = (id, session)
@@ -216,6 +223,11 @@ public actor SignalingServer {
     private func mediaRequested(id: UUID, device: PairedDevice, target: MediaTarget) {
         guard !stopped, active?.id == id else { return }
         onEvent(.mediaRequested(id, device, target))
+    }
+
+    private func mediaStopRequested(id: UUID, device: PairedDevice) {
+        guard !stopped, active?.id == id else { return }
+        onEvent(.mediaStopRequested(id, device))
     }
 
     private func sessionClosed(id: UUID) {

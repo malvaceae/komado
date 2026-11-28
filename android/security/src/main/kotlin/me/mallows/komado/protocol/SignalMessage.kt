@@ -31,6 +31,8 @@ sealed interface SignalMessage {
     data class Windows(val next: Int, val values: List<WindowInfo>) : SignalMessage
     data class StartWindow(val id: Long) : SignalMessage
     data class StartWindowControl(val id: Long) : SignalMessage
+    data object StopMedia : SignalMessage
+    data object MediaStopped : SignalMessage
     data class Offer(val sdp: String) : SignalMessage
     data class Answer(val sdp: String) : SignalMessage
 }
@@ -131,6 +133,14 @@ object SignalMessageCodec {
                     if (fields.size != 3) throw MessageException()
                     SignalMessage.StartWindow(positiveInteger(fields[2], 4_294_967_295L))
                 }
+                "media.stop" -> {
+                    if (fields.size != 2) throw MessageException()
+                    SignalMessage.StopMedia
+                }
+                "media.stopped" -> {
+                    if (fields.size != 2) throw MessageException()
+                    SignalMessage.MediaStopped
+                }
                 "offer" -> {
                     if (fields.size != 3 || !validSDP(fields[2])) throw MessageException()
                     SignalMessage.Offer(fields[2])
@@ -184,6 +194,8 @@ object SignalMessageCodec {
             }
             is SignalMessage.StartWindow -> listOf("1", "window.start", message.id.toString())
             is SignalMessage.StartWindowControl -> listOf("1", "window.control", message.id.toString())
+            SignalMessage.StopMedia -> listOf("1", "media.stop")
+            SignalMessage.MediaStopped -> listOf("1", "media.stopped")
             is SignalMessage.Offer -> {
                 if (!validSDP(message.sdp)) throw MessageException()
                 listOf("1", "offer", message.sdp)

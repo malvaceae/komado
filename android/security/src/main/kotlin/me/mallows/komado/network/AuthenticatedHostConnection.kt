@@ -16,6 +16,7 @@ import java.net.Socket
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ScheduledFuture
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManager
@@ -25,11 +26,12 @@ class AuthenticatedHostConnection private constructor(
     private val socket: SSLSocket,
     val deviceID: UUID,
 ) : Closeable {
-    private enum class MediaState { IDLE, EXPECTING_OFFER, OFFER_RECEIVED, ANSWER_SENT }
+    private enum class MediaState { IDLE, EXPECTING_OFFER, OFFER_RECEIVED, ANSWER_SENT, STOP_REQUESTED }
     private val mediaLock = Any()
     private var mediaState = MediaState.IDLE
     private var displaysRequested = false
     private var windowsRequested = false
+    @Volatile private var stopTimeout: ScheduledFuture<*>? = null
     @Volatile private var closed = false
 
     /** Request one media session after device authentication. */
@@ -120,17 +122,47 @@ class AuthenticatedHostConnection private constructor(
         }
     }
 
-    /** Blocks until the host closes the signaling connection. */
-    fun awaitClosure() {
+    /** Requests the current media session to stop while retaining authentication. */
+    fun requestMediaStop() = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.ANSWER_SENT) throw IOException("Unexpected signaling state")
+        try {
+            send(socket, SignalMessage.StopMedia)
+            mediaState = MediaState.STOP_REQUESTED
+            stopTimeout = timeouts.schedule({ runCatching { close() } }, 20, TimeUnit.SECONDS)
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        }
+    }
+
+    /** Waits for a requested media stop, or for the signaling connection to close. */
+    fun awaitClosure(): Boolean {
         synchronized(mediaLock) {
-            if (closed || mediaState != MediaState.ANSWER_SENT) throw IOException("Unexpected signaling state")
+            if (closed || mediaState !in setOf(MediaState.ANSWER_SENT, MediaState.STOP_REQUESTED)) throw IOException("Unexpected signaling state")
             socket.soTimeout = 0
         }
-        if (socket.inputStream.read() != -1) throw IOException("Unexpected signaling data")
+        val first = socket.inputStream.read()
+        if (first == -1) return false
+        val header = byteArrayOf(first.toByte()) + readExact(socket.inputStream, 3)
+        val length = header.fold(0L) { result, byte -> (result shl 8) or (byte.toLong() and 0xff) }
+        if (length !in 1..SignalFrame.MAXIMUM_PAYLOAD.toLong()) throw IOException("Invalid signaling frame")
+        val message = SignalMessageCodec.decode(readExact(socket.inputStream, length.toInt()))
+        synchronized(mediaLock) {
+            if (closed || mediaState != MediaState.STOP_REQUESTED || message != SignalMessage.MediaStopped) {
+                throw IOException("Unexpected signaling data")
+            }
+            stopTimeout?.cancel(false)
+            stopTimeout = null
+            mediaState = MediaState.IDLE
+            displaysRequested = false
+            windowsRequested = false
+        }
+        return true
     }
 
     override fun close() {
         closed = true
+        stopTimeout?.cancel(false)
         socket.close()
     }
 

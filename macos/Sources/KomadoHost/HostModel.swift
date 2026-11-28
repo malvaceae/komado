@@ -89,6 +89,7 @@ final class HostModel: ObservableObject {
     private var connectedSession: UUID?
     private var mediaConnection: UUID?
     private var mediaTarget: MediaTarget?
+    private var switchingControl = false
     private var mediaSession: HostMediaSession?
     private var mediaGate: MediaSessionGate?
     private var screenMonitor: ScreenEnvironmentMonitor?
@@ -236,6 +237,7 @@ final class HostModel: ObservableObject {
 
     func stop() async {
         stopMedia()
+        switchingControl = false
         allowRemoteControl = false
         let current = server
         generation = UUID()
@@ -376,11 +378,18 @@ final class HostModel: ObservableObject {
             refresh()
         case let .mediaRequested(id, _, target):
             Task { [weak self] in await self?.startMedia(connection: id, target: target) }
+        case let .mediaStopRequested(id, _):
+            Task { [weak self] in await self?.stopMediaForSwitch(connection: id) }
         case let .answer(id, _, sdp):
             if mediaConnection == id { applyAnswer(sdp) }
         case let .disconnected(id):
             if mediaConnection == id { stopMedia() }
-            if connectedSession == id { connectedSession = nil; connectedDevice = nil }
+            if connectedSession == id {
+                if switchingControl { allowRemoteControl = false; allowClipboardSharing = false }
+                switchingControl = false
+                connectedSession = nil
+                connectedDevice = nil
+            }
         case .throttled: error = "接続試行が多いため、一時的に新しい接続を待機しています。"
         case .failed:
             error = "待ち受けに失敗しました。ネットワークとポートを確認してください。"
@@ -395,6 +404,11 @@ final class HostModel: ObservableObject {
         guard let server, await server.isActive(sessionID: connection), self.server === server, running else { return }
         if mediaConnection != nil && mediaConnection != connection { stopMedia() }
         guard mediaSession == nil else { return }
+        if switchingControl && !target.isControl {
+            allowRemoteControl = false
+            allowClipboardSharing = false
+            switchingControl = false
+        }
         screenPermission = CGPreflightScreenCaptureAccess()
         guard screenPermission else {
             error = "画面収録の許可が必要です。許可してから接続し直してください。"
@@ -410,6 +424,7 @@ final class HostModel: ObservableObject {
         mediaID = id
         mediaConnection = connection
         mediaTarget = target
+        switchingControl = false
         let failed: @Sendable () -> Void = { [weak self] in
             Task { @MainActor [weak self] in self?.mediaFailed(id: id) }
         }
@@ -653,12 +668,31 @@ final class HostModel: ObservableObject {
         if invalidDrag || (!executed && dragDispatcher?.isDragging == true) { mediaFailed(id: id) }
     }
 
-    private func stopMedia() {
+    private func stopMediaForSwitch(connection: UUID) async {
+        guard let server, connectedSession == connection, mediaConnection == connection else {
+            await server?.disconnect(sessionID: connection)
+            return
+        }
+        let stopped = stopMedia(preserveControl: true)
+        if let stopped, !(await stopped.value) {
+            await server.disconnect(sessionID: connection)
+            return
+        }
+        guard self.server === server, connectedSession == connection, await server.isActive(sessionID: connection) else { return }
+        do { try await server.sendMediaStopped(sessionID: connection) }
+        catch { await server.disconnect(sessionID: connection) }
+    }
+
+    @discardableResult
+    private func stopMedia(preserveControl: Bool = false) -> Task<Bool, Never>? {
         let wasControl = mediaTarget?.isControl == true
         mediaID = UUID()
         mediaConnection = nil
         mediaTarget = nil
-        if wasControl { allowRemoteControl = false; allowClipboardSharing = false }
+        if wasControl {
+            if preserveControl { switchingControl = true }
+            else { allowRemoteControl = false; allowClipboardSharing = false; switchingControl = false }
+        }
         pointerDispatcher?.close()
         textDispatcher?.close()
         keyDispatcher?.close()
@@ -676,7 +710,8 @@ final class HostModel: ObservableObject {
         controlDisplayID = nil
         controlBounds = nil
         controlWindow = nil
-        mediaTask?.cancel()
+        let previousTask = mediaTask
+        previousTask?.cancel()
         mediaTask = nil
         mediaGate?.close()
         mediaGate = nil
@@ -689,10 +724,16 @@ final class HostModel: ObservableObject {
         mediaSession = nil
         sleepActivity?.end()
         sleepActivity = nil
-        if let current = capture {
-            capture = nil
-            Task { try? await current.stop() }
+        let current = capture
+        capture = nil
+        if previousTask != nil || current != nil {
+            return Task {
+                await previousTask?.value
+                guard let current else { return true }
+                do { try await current.stop(); return true } catch { return false }
+            }
         }
+        return nil
     }
 
     private static func format(_ data: Data, separator: String) -> String {

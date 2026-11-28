@@ -89,6 +89,11 @@ class AuthenticatedHostConnectionTest {
                                 "a=candidate:1 1 udp 1 127.0.0.1 54321 typ host\r\n" +
                                 "a=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n"
                             assertEquals(expected, (receive(socket) as SignalMessage.Answer).sdp)
+                            assertEquals(SignalMessage.StopMedia, receive(socket))
+                            send(socket, SignalMessage.MediaStopped)
+                            assertEquals(SignalMessage.StartMedia, receive(socket))
+                            send(socket, SignalMessage.Offer("v=0\r\ns=second offer\r\n"))
+                            assertEquals("v=0\r\ns=second answer\r\n", (receive(socket) as SignalMessage.Answer).sdp)
                         } else {
                             send(socket, SignalMessage.Offer("v=0\r\ns=offer\r\n"))
                             assertThrows(java.io.EOFException::class.java) { receive(socket) }
@@ -109,7 +114,13 @@ class AuthenticatedHostConnectionTest {
                     "a=candidate:1 1 udp 1 127.0.0.1 54321 typ host\r\n" +
                     "a=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n")
                 assertThrows(IOException::class.java) { paired.sendAnswer("v=0\r\ns=answer\r\n") }
-                paired.awaitClosure()
+                paired.requestMediaStop()
+                assertThrows(IOException::class.java) { paired.requestMedia() }
+                assertTrue(paired.awaitClosure())
+                paired.requestMedia()
+                assertEquals("v=0\r\ns=second offer\r\n", paired.receiveOffer())
+                paired.sendAnswer("v=0\r\ns=second answer\r\n")
+                assertFalse(paired.awaitClosure())
                 paired.close()
                 val reconnected = AuthenticatedHostConnection.reconnect("127.0.0.1", server.localPort, fingerprint, id, key)
                 assertEquals(id, reconnected.deviceID)

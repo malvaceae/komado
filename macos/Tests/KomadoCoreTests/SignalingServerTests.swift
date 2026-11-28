@@ -210,6 +210,8 @@ final class SignalingServerTests: XCTestCase {
         authenticated.expectedFulfillmentCount = 2
         let firstAuthenticated = expectation(description: "first connection authenticated")
         let mediaRequested = expectation(description: "media requested")
+        let mediaStopRequested = expectation(description: "media stop requested")
+        let switchMediaRequested = expectation(description: "next media requested")
         let selectedMediaRequested = expectation(description: "selected display requested")
         let controlRequested = expectation(description: "control requested")
         let answerReceived = expectation(description: "SDP answer")
@@ -234,7 +236,14 @@ final class SignalingServerTests: XCTestCase {
                     }
                     if target == .mainDisplayControl {
                         controlRequested.fulfill()
-                    } else if box.noteMedia(display, control: target.isControl) == 1 { mediaRequested.fulfill() } else { selectedMediaRequested.fulfill() }
+                    } else {
+                        switch box.noteMedia(display, control: target.isControl) {
+                        case 1: mediaRequested.fulfill()
+                        case 2: switchMediaRequested.fulfill()
+                        default: selectedMediaRequested.fulfill()
+                        }
+                    }
+                case .mediaStopRequested: mediaStopRequested.fulfill()
                 case let .answer(_, _, sdp): box.setAnswer(sdp); answerReceived.fulfill()
                 case .disconnected: disconnected.fulfill()
                 default: break
@@ -307,6 +316,20 @@ final class SignalingServerTests: XCTestCase {
             try await server.sendOffer(offer)
             XCTFail("A second offer must not be accepted")
         } catch { }
+        try await first.send(.stopMedia)
+        await fulfillment(of: [mediaStopRequested], timeout: 10)
+        try await server.sendMediaStopped(sessionID: currentConnection)
+        let stoppedResponse = try await first.receive()
+        XCTAssertEqual(stoppedResponse, .mediaStopped)
+        try await first.send(.listDisplays)
+        guard case .displays = try await first.receive() else { return XCTFail("Expected a fresh display list") }
+        try await first.send(.listWindows(0))
+        guard case .windows = try await first.receive() else { return XCTFail("Expected a fresh window list") }
+        try await first.send(.startMedia)
+        await fulfillment(of: [switchMediaRequested], timeout: 10)
+        try await server.sendOffer(offer, sessionID: currentConnection)
+        let nextOffer = try await first.receive()
+        XCTAssertEqual(nextOffer, .offer(offer))
         first.connection.cancel()
         // The server permits the next connection after it observes this close.
         await server.disconnect(sessionID: currentConnection)

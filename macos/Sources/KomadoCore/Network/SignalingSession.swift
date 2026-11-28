@@ -1,15 +1,16 @@
 import Foundation
 import Network
 
-/// One TLS connection with an authenticated, one-off SDP offer/answer exchange.
+/// One authenticated TLS connection with an SDP exchange for each media session.
 actor SignalingSession {
     enum SessionError: Error { case notAuthenticated, unexpectedState }
-    private enum MediaState { case idle, preparingOffer, awaitingAnswer, complete }
+    private enum MediaState { case idle, preparingOffer, awaitingAnswer, complete, stopping }
     private let connection: NWConnection
     private let handshake: ServerHandshake
     private let queue: DispatchQueue
     private let onAuthenticated: @Sendable (PairedDevice) async -> Void
     private let onMediaRequested: @Sendable (PairedDevice, MediaTarget) async -> Void
+    private let onMediaStopRequested: @Sendable (PairedDevice) async -> Void
     private let onAnswer: @Sendable (PairedDevice, String) async -> Void
     private let onClosed: @Sendable () async -> Void
     private var decoder = SignalFrame.Decoder()
@@ -26,6 +27,7 @@ actor SignalingSession {
     init(connection: NWConnection, handshake: ServerHandshake, queue: DispatchQueue,
          onAuthenticated: @escaping @Sendable (PairedDevice) async -> Void,
          onMediaRequested: @escaping @Sendable (PairedDevice, MediaTarget) async -> Void,
+         onMediaStopRequested: @escaping @Sendable (PairedDevice) async -> Void,
          onAnswer: @escaping @Sendable (PairedDevice, String) async -> Void,
          onClosed: @escaping @Sendable () async -> Void) {
         self.connection = connection
@@ -33,6 +35,7 @@ actor SignalingSession {
         self.queue = queue
         self.onAuthenticated = onAuthenticated
         self.onMediaRequested = onMediaRequested
+        self.onMediaStopRequested = onMediaStopRequested
         self.onAnswer = onAnswer
         self.onClosed = onClosed
     }
@@ -74,6 +77,21 @@ actor SignalingSession {
         })
     }
 
+    func sendMediaStopped() throws {
+        guard !closed, device != nil, mediaState == .stopping else { throw SessionError.unexpectedState }
+        let encoded = try SignalFrame.encode(SignalMessage.mediaStopped.encode())
+        mediaState = .idle
+        displaySnapshot = nil
+        windowSnapshot = nil
+        nextWindowOffset = 0
+        sentWindowCount = 0
+        timeout?.cancel()
+        timeout = nil
+        connection.send(content: encoded, completion: .contentProcessed { [weak self] error in
+            Task { await self?.sentCatalog(error: error) }
+        })
+    }
+
     private func stateChanged(_ state: NWConnection.State) async {
         guard !closed else { return }
         switch state {
@@ -107,6 +125,15 @@ actor SignalingSession {
                 }
                 let message = try SignalMessage.decode(frame)
                 if let device {
+                    if message == .stopMedia && mediaState == .complete {
+                        mediaState = .stopping
+                        timeout = Task { [weak self] in
+                            do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                            await self?.close()
+                        }
+                        await onMediaStopRequested(device)
+                        return
+                    }
                     if message == .listDisplays && mediaState == .idle && displaySnapshot == nil {
                         let displays = try DisplayCatalog.active()
                         let response = try SignalFrame.encode(SignalMessage.displays(displays).encode())

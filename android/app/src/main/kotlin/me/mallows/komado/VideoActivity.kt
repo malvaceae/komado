@@ -9,6 +9,7 @@ import android.os.Looper
 import android.view.ViewGroup
 import android.view.View
 import android.view.Gravity
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.FrameLayout
@@ -44,6 +45,7 @@ import kotlin.math.roundToInt
 
 class VideoActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
+    private val switchExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val lock = Any()
     @Volatile private var active = true
@@ -69,6 +71,7 @@ class VideoActivity : ComponentActivity() {
     private var clipboardSendButton: Button? = null
     private var clipboardReceiveButton: Button? = null
     private var statisticsButton: Button? = null
+    private var switchButton: Button? = null
     private var fullscreenButton: Button? = null
     private var exitFullscreenButton: Button? = null
     private var fullscreen = false
@@ -77,6 +80,7 @@ class VideoActivity : ComponentActivity() {
     }
     private lateinit var header: View
     private var windowNote: View? = null
+    private var showingWindowNote = false
     private lateinit var controlsScroll: VideoControlsScrollView
     private enum class ClipboardAction { GET, PREPARE_SEND, SEND, AUTO_START, AUTO_POLL, AUTO_PREPARE, AUTO_SEND }
     private var clipboardAction: ClipboardAction? = null
@@ -93,10 +97,14 @@ class VideoActivity : ComponentActivity() {
     private val automaticTick = Runnable { automaticStep() }
     private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
+    private enum class Target { MAIN, DISPLAY, WINDOW }
+    private var nextTarget: Target? = null
+    @Volatile private var switching = false
+    @Volatile private var rendererGeneration = 0
     private var textDeliveryUnconfirmed = false
     private var lastVideoTapSent = false
     private lateinit var status: TextView
-    private val firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
+    private var firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,18 +117,22 @@ class VideoActivity : ComponentActivity() {
         root.addView(header)
         status = TextView(this).apply { setText(R.string.screen_authenticating); setPadding(dp(16), dp(8), dp(16), dp(8)) }
         root.addView(status)
-        if (controlMode && intent.getBooleanExtra(CHOOSE_WINDOW, false)) {
+        showingWindowNote = controlMode && intent.getBooleanExtra(CHOOSE_WINDOW, false)
+        if (controlMode) {
             windowNote = TextView(this).apply {
                 setText(R.string.window_control_note)
                 setPadding(dp(16), 0, dp(16), dp(8))
+                visibility = if (showingWindowNote) View.VISIBLE else View.GONE
             }
             root.addView(windowNote)
         }
         try {
             val video = RemoteVideoRenderer(this, object : RendererCommon.RendererEvents {
                 override fun onFirstFrameRendered() {
+                    if (switching) return
+                    val generation = rendererGeneration
                     runOnUiThread {
-                        if (active) {
+                        if (active && !switching && generation == rendererGeneration) {
                             firstFrameShown = true
                             firstFrameDeadline.finish()
                             status.setText(R.string.screen_connected)
@@ -129,8 +141,10 @@ class VideoActivity : ComponentActivity() {
                     }
                 }
                 override fun onFrameResolutionChanged(width: Int, height: Int, rotation: Int) {
+                    if (switching) return
+                    val generation = rendererGeneration
                     runOnUiThread {
-                        if (active) {
+                        if (active && !switching && generation == rendererGeneration) {
                             viewport?.setFrameSize(width, height, rotation)
                             val valid = width > 0 && height > 0 && rotation in listOf(0, 90, 180, 270)
                             zoomButtons.forEach { it.isEnabled = valid }
@@ -268,6 +282,12 @@ class VideoActivity : ComponentActivity() {
             setOnClickListener { showVideoStatistics() }
         }
         controls.addView(statisticsButton)
+        switchButton = Button(this).apply {
+            setText(R.string.change_target)
+            isEnabled = false
+            setOnClickListener { showTargetChoices() }
+        }
+        controls.addView(switchButton)
         fullscreenButton = Button(this).apply {
             setText(R.string.fullscreen)
             isEnabled = false
@@ -291,28 +311,90 @@ class VideoActivity : ComponentActivity() {
                 }
                 if (!keep) { established.close(); return@execute }
                 runCatching { HostStore(applicationContext).recordConnection(host, System.currentTimeMillis()) }
-                if (intent.getBooleanExtra(CHOOSE_WINDOW, false)) {
-                    showProgress(R.string.window_list_waiting)
-                    val windows = try { established.listWindows() } catch (_: Exception) {
-                        runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.window_selection_failed) } }
-                        return@execute
-                    }
-                    runOnUiThread {
-                        if (active) {
-                            if (windows.isEmpty()) { stopSession(failed = true); status.setText(R.string.no_windows) }
-                            else { status.setText(R.string.window_choosing); chooseWindow(established, windows) }
-                        }
-                    }
-                } else if (intent.getBooleanExtra(CHOOSE_DISPLAY, false)) {
-                    showProgress(R.string.screen_list_waiting)
-                    val displays = try { established.listDisplays() } catch (_: Exception) {
-                        runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.screen_selection_failed) } }
-                        return@execute
-                    }
-                    runOnUiThread { if (active) { status.setText(R.string.screen_choosing); chooseDisplay(established, displays) } }
-                } else startMedia(established, null)
+                val target = when {
+                    intent.getBooleanExtra(CHOOSE_WINDOW, false) -> Target.WINDOW
+                    intent.getBooleanExtra(CHOOSE_DISPLAY, false) -> Target.DISPLAY
+                    else -> Target.MAIN
+                }
+                prepareTarget(established, target)
             } catch (_: Exception) { showFailure() }
         }
+    }
+
+    private fun prepareTarget(established: AuthenticatedHostConnection, target: Target) {
+        when (target) {
+            Target.MAIN -> startMedia(established, null)
+            Target.DISPLAY -> {
+                showProgress(R.string.screen_list_waiting)
+                val displays = try { established.listDisplays() } catch (_: Exception) {
+                    runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.screen_selection_failed) } }
+                    return
+                }
+                runOnUiThread { if (active) { status.setText(R.string.screen_choosing); chooseDisplay(established, displays) } }
+            }
+            Target.WINDOW -> {
+                showProgress(R.string.window_list_waiting)
+                val windows = try { established.listWindows() } catch (_: Exception) {
+                    runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.window_selection_failed) } }
+                    return
+                }
+                runOnUiThread {
+                    if (active) {
+                        if (windows.isEmpty()) { stopSession(failed = true); status.setText(R.string.no_windows) }
+                        else { status.setText(R.string.window_choosing); chooseWindow(established, windows) }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showTargetChoices() {
+        if (!active || switching) return
+        val targets = arrayOf(getString(if (controlMode) R.string.control_screen else R.string.view_screen),
+            getString(R.string.select_screen), getString(R.string.select_window))
+        val dialog = AlertDialog.Builder(this).setTitle(R.string.change_target).setItems(targets) { _, index ->
+            val current = synchronized(lock) { connection } ?: return@setItems
+            if (clipboardAction != null || media?.hasUnconfirmedText() != false) {
+                Toast.makeText(this, R.string.switch_waiting_input, Toast.LENGTH_SHORT).show()
+                return@setItems
+            }
+            nextTarget = Target.entries[index]
+            switching = true
+            rendererGeneration++
+            firstFrameShown = false
+            captureRevision = null
+            firstFrameDeadline.finish()
+            keyboard?.clearFocus()
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken, 0)
+            suspendAutomaticClipboard()
+            updateControlAvailability()
+            status.setText(R.string.switching_target)
+            switchExecutor.execute {
+                try { current.requestMediaStop() } catch (_: Exception) { showFailure() }
+            }
+        }.setNegativeButton(R.string.cancel, null).create()
+        targetDialog = dialog
+        dialog.setOnDismissListener { if (targetDialog === dialog) targetDialog = null }
+        dialog.show()
+    }
+
+    private fun finishTargetSwitch(established: AuthenticatedHostConnection) {
+        if (!active || !switching || synchronized(lock) { connection !== established }) return
+        val target = nextTarget ?: run { stopSession(failed = true); return }
+        nextTarget = null
+        media?.close()
+        media = null
+        try { renderer?.reset() } catch (_: Exception) { stopSession(failed = true); return }
+        switching = false
+        showingWindowNote = controlMode && target == Target.WINDOW
+        windowNote?.visibility = if (showingWindowNote) View.VISIBLE else View.GONE
+        firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
+        viewport?.setTrackpadMode(false)
+        trackpadEnabled = false
+        trackpadButton?.setText(R.string.enable_trackpad)
+        zoomButtons.forEach { it.isEnabled = false }
+        if (automaticWanted && hasWindowFocus()) beginAutomaticClipboard()
+        executor.execute { prepareTarget(established, target) }
     }
 
     private fun chooseDisplay(established: AuthenticatedHostConnection, displays: List<DisplayInfo>) {
@@ -348,18 +430,19 @@ class VideoActivity : ComponentActivity() {
                             executor.execute {
                                 try {
                                     established.sendAnswer(sdp)
-                                    established.awaitClosure()
-                                    showFailure()
+                                    if (established.awaitClosure()) runOnUiThread { finishTargetSwitch(established) }
+                                    else showFailure()
                                 } catch (_: Exception) { showFailure() }
                             }
                         }
                         override fun onCaptureReady(revision: Long) {
+                            if (switching) return
                             captureRevision = revision
                             firstFrameDeadline.start()
                             updateControlAvailability()
                         }
-                        override fun onVideo(track: VideoTrack?) { renderer?.show(track) }
-                        override fun onFailure() { stopSession(failed = true) }
+                        override fun onVideo(track: VideoTrack?) { if (!switching || track == null) renderer?.show(track) }
+                        override fun onFailure() { if (!switching) stopSession(failed = true) }
                         override fun onTextDeliveryUnconfirmed() {
                             textDeliveryUnconfirmed = true
                             status.setText(R.string.text_delivery_unconfirmed)
@@ -386,6 +469,7 @@ class VideoActivity : ComponentActivity() {
 
     override fun onDestroy() {
         executor.shutdownNow()
+        switchExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -406,6 +490,7 @@ class VideoActivity : ComponentActivity() {
         clipboardSendButton?.isEnabled = clipboardAvailable
         clipboardReceiveButton?.isEnabled = clipboardAvailable
         statisticsButton?.isEnabled = active && firstFrameShown
+        switchButton?.isEnabled = available && !switching
         fullscreenButton?.isEnabled = active && firstFrameShown
         automaticSwitch?.isEnabled = available && controlMode
         specialKeys?.setAvailable(available)
@@ -418,7 +503,7 @@ class VideoActivity : ComponentActivity() {
         fullscreenBack.isEnabled = value
         header.visibility = if (value) View.GONE else View.VISIBLE
         status.visibility = if (value) View.GONE else View.VISIBLE
-        windowNote?.visibility = if (value) View.GONE else View.VISIBLE
+        windowNote?.visibility = if (!value && showingWindowNote) View.VISIBLE else View.GONE
         controlsScroll.visibility = if (value) View.GONE else View.VISIBLE
         exitFullscreenButton?.visibility = if (value) View.VISIBLE else View.GONE
         val controller = WindowCompat.getInsetsController(window, window.decorView)
@@ -737,6 +822,8 @@ class VideoActivity : ComponentActivity() {
             connection = null
             old
         }
+        switching = false
+        nextTarget = null
         runCatching { current?.close() }
         targetDialog?.dismiss()
         targetDialog = null
@@ -761,6 +848,7 @@ class VideoActivity : ComponentActivity() {
         clipboardSendButton?.isEnabled = false
         clipboardReceiveButton?.isEnabled = false
         statisticsButton?.isEnabled = false
+        switchButton?.isEnabled = false
         keyboardButton?.isEnabled = false
         specialKeys?.setAvailable(false)
         keyboard?.close()
