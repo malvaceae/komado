@@ -4,7 +4,7 @@ import Network
 /// One authenticated TLS connection with an SDP exchange for each media session.
 actor SignalingSession {
     enum SessionError: Error { case notAuthenticated, unexpectedState }
-    private enum MediaState { case idle, preparingOffer, awaitingAnswer, complete, stopping, windowAction }
+    private enum MediaState { case idle, preparingOffer, awaitingAnswer, complete, stopping, windowAction, launching }
     private let connection: NWConnection
     private let handshake: ServerHandshake
     private let queue: DispatchQueue
@@ -13,6 +13,7 @@ actor SignalingSession {
     private let canResume: @Sendable (PairedDevice) async -> Bool
     private let onMediaStopRequested: @Sendable (PairedDevice) async -> Void
     private let onWindowAction: @Sendable (PairedDevice, WindowInfo, Int32, WindowAction) async -> Void
+    private let onLaunchApplication: @Sendable (PairedDevice, UInt32, URL) async -> Void
     private let onAnswer: @Sendable (PairedDevice, String) async -> Void
     private let onClosed: @Sendable () async -> Void
     private var decoder = SignalFrame.Decoder()
@@ -27,6 +28,10 @@ actor SignalingSession {
     private var applicationSnapshot: [ApplicationSelection]?
     private var nextApplicationOffset: UInt16? = 0
     private var sentApplicationCount = 0
+    private var launchableSnapshot: [LaunchableApplication]?
+    private var nextLaunchableOffset: UInt16? = 0
+    private var sentLaunchableCount = 0
+    private var launchingID: UInt32?
     private var windowSnapshot: [WindowSelection]?
     private var nextWindowOffset: UInt16? = 0
     private var sentWindowCount = 0
@@ -38,6 +43,7 @@ actor SignalingSession {
          canResume: @escaping @Sendable (PairedDevice) async -> Bool,
          onMediaStopRequested: @escaping @Sendable (PairedDevice) async -> Void,
          onWindowAction: @escaping @Sendable (PairedDevice, WindowInfo, Int32, WindowAction) async -> Void,
+         onLaunchApplication: @escaping @Sendable (PairedDevice, UInt32, URL) async -> Void,
          onAnswer: @escaping @Sendable (PairedDevice, String) async -> Void,
          onClosed: @escaping @Sendable () async -> Void) {
         self.connection = connection
@@ -48,6 +54,7 @@ actor SignalingSession {
         self.canResume = canResume
         self.onMediaStopRequested = onMediaStopRequested
         self.onWindowAction = onWindowAction
+        self.onLaunchApplication = onLaunchApplication
         self.onAnswer = onAnswer
         self.onClosed = onClosed
     }
@@ -97,6 +104,9 @@ actor SignalingSession {
         applicationSnapshot = nil
         nextApplicationOffset = 0
         sentApplicationCount = 0
+        launchableSnapshot = nil
+        nextLaunchableOffset = 0
+        sentLaunchableCount = 0
         windowSnapshot = nil
         nextWindowOffset = 0
         sentWindowCount = 0
@@ -115,6 +125,24 @@ actor SignalingSession {
         windowSnapshot = nil
         nextWindowOffset = 0
         sentWindowCount = 0
+        timeout?.cancel()
+        timeout = nil
+        connection.send(content: encoded, completion: .contentProcessed { [weak self] error in
+            Task { await self?.sentCatalog(error: error) }
+        })
+    }
+
+    func sendLaunchApplicationResult(id: UInt32, success: Bool) throws {
+        guard !closed, device != nil, mediaState == .launching, launchingID == id else { throw SessionError.unexpectedState }
+        let encoded = try SignalFrame.encode(SignalMessage.launchApplicationResult(id, success).encode())
+        mediaState = .idle
+        launchingID = nil
+        launchableSnapshot = nil
+        nextLaunchableOffset = 0
+        sentLaunchableCount = 0
+        applicationSnapshot = nil
+        nextApplicationOffset = 0
+        sentApplicationCount = 0
         timeout?.cancel()
         timeout = nil
         connection.send(content: encoded, completion: .contentProcessed { [weak self] error in
@@ -221,6 +249,57 @@ actor SignalingSession {
                         connection.send(content: response, completion: .contentProcessed { [weak self] error in
                             Task { await self?.sentCatalog(error: error) }
                         })
+                        return
+                    }
+                    if case let .listLaunchableApplications(offset) = message, mediaState == .idle {
+                        if offset == 0 && nextLaunchableOffset == nil {
+                            launchableSnapshot = nil
+                            nextLaunchableOffset = 0
+                            sentLaunchableCount = 0
+                        }
+                        guard nextLaunchableOffset == offset else { await close(); return }
+                        let snapshot: [LaunchableApplication]
+                        if let current = launchableSnapshot { snapshot = current }
+                        else {
+                            guard offset == 0 else { await close(); return }
+                            snapshot = try await LaunchableApplicationCatalog.all()
+                            guard !closed, mediaState == .idle else { return }
+                            launchableSnapshot = snapshot
+                        }
+                        let start = Int(offset), end = min(Int(offset) + 32, snapshot.count)
+                        guard start <= end else { await close(); return }
+                        let next = end < snapshot.count ? UInt16(end) : 0
+                        nextLaunchableOffset = next == 0 ? nil : next
+                        sentLaunchableCount = end
+                        let response = try SignalFrame.encode(SignalMessage.launchableApplications(next: next,
+                            values: snapshot[start..<end].map(\.info)).encode())
+                        connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                            Task { await self?.sentCatalog(error: error) }
+                        })
+                        return
+                    }
+                    if case let .launchableApplicationIcon(id) = message, mediaState == .idle {
+                        guard let snapshot = launchableSnapshot,
+                              let selected = snapshot.prefix(sentLaunchableCount).first(where: { $0.info.id == id }) else { await close(); return }
+                        let icon = await LaunchableApplicationCatalog.icon(selected)
+                        guard !closed, mediaState == .idle else { return }
+                        let response = try SignalFrame.encode(SignalMessage.launchableApplicationIconResult(id, icon).encode())
+                        connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                            Task { await self?.sentCatalog(error: error) }
+                        })
+                        return
+                    }
+                    if case let .launchApplication(id) = message, mediaState == .idle {
+                        guard let snapshot = launchableSnapshot,
+                              let selected = snapshot.prefix(sentLaunchableCount).first(where: { $0.info.id == id }) else { await close(); return }
+                        mediaState = .launching
+                        launchingID = id
+                        timeout = Task { [weak self] in
+                            do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                            await self?.close()
+                        }
+                        await onLaunchApplication(device, id, selected.url)
+                        if !closed { receive() }
                         return
                     }
                     if case let .listWindows(offset) = message, mediaState == .idle {

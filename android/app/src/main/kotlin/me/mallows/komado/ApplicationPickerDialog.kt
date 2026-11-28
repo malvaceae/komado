@@ -23,6 +23,8 @@ internal class ApplicationPickerDialog(
     private val onCancel: () -> Unit,
     private val onIconRequested: (ApplicationInfo) -> Unit,
     private val onRefresh: () -> Unit,
+    private val title: Int = R.string.application_picker_title,
+    private val onLaunch: (() -> Unit)? = null,
 ) {
     private val icons = mutableMapOf<Long, Bitmap>()
     private val requestedIcons = mutableSetOf<Long>()
@@ -55,7 +57,7 @@ internal class ApplicationPickerDialog(
             orientation = LinearLayout.VERTICAL
             setPadding(padding, 0, padding, 0)
             addView(TextView(activity).apply {
-                setText(R.string.application_picker_title)
+                setText(title)
                 setTextAppearance(android.R.style.TextAppearance_Material_Title)
                 setPadding(0, padding, 0, 0)
             })
@@ -75,11 +77,13 @@ internal class ApplicationPickerDialog(
             override fun afterTextChanged(s: Editable?) = Unit
         })
         update("")
-        dialog = AlertDialog.Builder(activity).setCustomTitle(header)
+        val builder = AlertDialog.Builder(activity).setCustomTitle(header)
             .setAdapter(adapter) { _, index -> onChoose(visible[index]) }
             .setNeutralButton(R.string.refresh) { _, _ -> onRefresh() }
             .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
-            .setOnCancelListener { onCancel() }.create()
+            .setOnCancelListener { onCancel() }
+        if (onLaunch != null) builder.setPositiveButton(R.string.launch_application) { _, _ -> onLaunch.invoke() }
+        dialog = builder.create()
     }
 
     fun show() {

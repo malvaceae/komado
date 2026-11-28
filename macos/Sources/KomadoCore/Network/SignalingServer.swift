@@ -35,6 +35,7 @@ public actor SignalingServer {
         case mediaRequested(UUID, PairedDevice, MediaTarget, resuming: Bool)
         case mediaStopRequested(UUID, PairedDevice)
         case windowActionRequested(UUID, PairedDevice, WindowInfo, Int32, WindowAction)
+        case applicationLaunchRequested(UUID, PairedDevice, UInt32, URL)
         case answer(UUID, PairedDevice, String)
         case disconnected(UUID)
         case throttled
@@ -173,6 +174,11 @@ public actor SignalingServer {
         try await current.session.sendWindowActionResult(id: id, success: success)
     }
 
+    public func sendLaunchApplicationResult(id: UInt32, success: Bool, sessionID: UUID) async throws {
+        guard let current = active, !stopped, !removing, current.id == sessionID else { throw ServerError.noConnection }
+        try await current.session.sendLaunchApplicationResult(id: id, success: success)
+    }
+
     /// Blocks new sessions and disconnects the current one before removing the
     /// device. All registration removal must use this while the server is active.
     @discardableResult
@@ -250,6 +256,9 @@ public actor SignalingServer {
                                        onWindowAction: { [weak self] device, window, processID, action in
                                            await self?.windowActionRequested(id: id, device: device, window: window, processID: processID, action: action)
                                        },
+                                       onLaunchApplication: { [weak self] device, applicationID, url in
+                                           await self?.applicationLaunchRequested(id: id, device: device, applicationID: applicationID, url: url)
+                                       },
                                        onAnswer: { [weak self] device, sdp in await self?.answer(id: id, device: device, sdp: sdp) },
                                        onClosed: { [weak self] in await self?.sessionClosed(id: id) })
         active = (id, session)
@@ -283,6 +292,11 @@ public actor SignalingServer {
     private func windowActionRequested(id: UUID, device: PairedDevice, window: WindowInfo, processID: Int32, action: WindowAction) {
         guard !stopped, active?.id == id else { return }
         onEvent(.windowActionRequested(id, device, window, processID, action))
+    }
+
+    private func applicationLaunchRequested(id: UUID, device: PairedDevice, applicationID: UInt32, url: URL) {
+        guard !stopped, active?.id == id else { return }
+        onEvent(.applicationLaunchRequested(id, device, applicationID, url))
     }
 
     private func sessionClosed(id: UUID) {

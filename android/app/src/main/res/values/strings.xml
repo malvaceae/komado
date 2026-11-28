@@ -88,6 +88,11 @@
     <string name="application_search_empty">一致するアプリがありません。</string>
     <string name="application_list_waiting">アプリ一覧を取得中…</string>
     <string name="application_choosing">アプリを選択してください。</string>
+    <string name="launch_application">アプリを起動</string>
+    <string name="launch_picker_title">起動するアプリを選択</string>
+    <string name="launch_list_waiting">起動できるアプリを検索中…</string>
+    <string name="launch_succeeded">アプリを起動しました。表示するアプリを選択してください。</string>
+    <string name="launch_failed">アプリを起動できませんでした。Mac側の操作許可を確認してください。</string>
     <string name="application_selection_failed">アプリ一覧を取得できませんでした。</string>
     <string name="application_capture_note">選択したアプリのみ表示します。メニューバーは「表示対象を変更」から画面を選んでください。他の画面のウインドウは含まれません。</string>
     <string name="control_window">ウインドウを操作</string>

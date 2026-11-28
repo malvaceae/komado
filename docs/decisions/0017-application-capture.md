@@ -15,11 +15,13 @@ ScreenCaptureKitの[アプリ指定フィルター](https://developer.apple.com/
 
 認証後にScreenCaptureKitのアプリ一覧をページ単位で送り、アイコンはAndroidが表示する候補から必要に応じて取得する。選択画面から一覧を手動で再取得できる。開始時は送信済みのプロセスIDとバンドル識別子を再照合する。アプリの画面上のウインドウを含むディスプレイを選び、なければメイン画面を使う。ポインター入力時はAccessibilityで最前面の要素のプロセスIDを取得し、対象アプリと照合する。メニュー項目はウインドウ情報を持たない場合がある。キーボード入力時はフォーカスしたウインドウを照合する。
 
+未起動アプリは[NSMetadataQuery](https://developer.apple.com/documentation/foundation/nsmetadataquery)でSpotlightの索引から選び、Mac側の操作許可を確認して[NSWorkspace](https://developer.apple.com/documentation/appkit/nsworkspace)で起動する。候補のIDは接続中の一覧に限り有効で、Androidからファイルパスは指定できない。名前が重複する候補には場所を表示する。起動後は起動中の一覧を再取得する。
+
 ## 影響・制約・未解決事項
 
 取得対象は一つのディスプレイで、別の画面にあるウインドウは表示されない。アプリ終了やプロセスIDの再利用などの競合を完全には防げない。アイコンが取得できないアプリは標準の代替アイコンを表示する。テストアプリのコンテキストメニューとモーダルダイアログがMacの映像に含まれ、Androidエミュレーターから操作できることを確認した。メニューバーはアプリ指定フィルターの標準設定では映らない。macOS 14.2以降の[設定](https://developer.apple.com/documentation/screencapturekit/sccontentfilter/includemenubar)で有効にすると別アプリが前面のときもそのメニューバーが映るため、表示・操作には画面全体への切り替えを使う。Androidエミュレーターから画面全体に切り替え、テストアプリのメニューバーの項目を選択できることを確認した。アプリ外に生成されるメニュー・ダイアログ、一般アプリ、実機、複数ディスプレイは未検証である。
 
-一覧は起動中のアプリが対象で、未起動アプリの専用の起動機能は未実装。[NSMetadataQuery](https://developer.apple.com/documentation/foundation/nsmetadataquery)でSpotlightの索引からアプリを取得し、[NSWorkspace](https://developer.apple.com/documentation/appkit/nsworkspace)で一時的なテストアプリを起動できた。同一IDのアプリが複数見つかる場合もある。索引の網羅性、重複時の選択とAndroidからの操作方法は未検証である。
+起動候補はSpotlightの索引に依存するため、索引にないアプリは表示されない。起動の受理後にアプリのウインドウが現れるまで時間がかかる場合は、起動中の一覧を更新する。API 37で一時的なアプリについて、操作許可なしの拒否と許可後の起動・表示を確認した。一般アプリ、索引が無効な環境とAndroid実機は未検証である。
 
 ## 関連資料
 

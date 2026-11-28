@@ -402,6 +402,8 @@ final class HostModel: ObservableObject {
             Task { [weak self] in await self?.stopMediaForSwitch(connection: id) }
         case let .windowActionRequested(id, _, window, processID, action):
             Task { [weak self] in await self?.performWindowAction(connection: id, window: window, processID: processID, action: action) }
+        case let .applicationLaunchRequested(id, _, applicationID, url):
+            Task { [weak self] in await self?.launchApplication(connection: id, applicationID: applicationID, url: url) }
         case let .answer(id, _, sdp):
             if mediaConnection == id { applyAnswer(sdp) }
         case let .disconnected(id):
@@ -433,6 +435,21 @@ final class HostModel: ObservableObject {
             success = WindowActions.perform(action, window: target, windows: content.windows)
         }
         do { try await server.sendWindowActionResult(id: window.id, success: success, sessionID: connection) }
+        catch { await server.disconnect(sessionID: connection) }
+    }
+
+    private func launchApplication(connection: UUID, applicationID: UInt32, url: URL) async {
+        guard let server, await server.isActive(sessionID: connection), self.server === server,
+              connectedSession == connection, running else { return }
+        if allowRemoteControl { switchingControl = true }
+        var success = false
+        if allowRemoteControl, consoleStatus(), NSApplication.shared.isProtectedDataAvailable,
+           url.isFileURL, FileManager.default.fileExists(atPath: url.path),
+           await server.isActive(sessionID: connection), self.server === server,
+           connectedSession == connection, running, allowRemoteControl, consoleStatus(), NSApplication.shared.isProtectedDataAvailable {
+            success = (try? await NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())) != nil
+        }
+        do { try await server.sendLaunchApplicationResult(id: applicationID, success: success, sessionID: connection) }
         catch { await server.disconnect(sessionID: connection) }
     }
 

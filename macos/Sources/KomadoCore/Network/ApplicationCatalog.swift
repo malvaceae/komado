@@ -39,18 +39,23 @@ enum ApplicationCatalog {
 
     static func icon(_ expected: ApplicationSelection) -> Data {
         guard let application = NSRunningApplication(processIdentifier: Int32(expected.info.id)), !application.isTerminated,
-              (application.bundleIdentifier ?? "") == expected.bundleIdentifier,
-              let icon = application.icon,
-              let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 32,
-                                            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-              let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return Data() }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = context
-        context.imageInterpolation = .high
-        icon.draw(in: CGRect(x: 0, y: 0, width: 32, height: 32))
-        NSGraphicsContext.restoreGraphicsState()
-        guard let data = bitmap.representation(using: .png, properties: [:]), data.count <= 8192 else { return Data() }
-        return data
+              (application.bundleIdentifier ?? "") == expected.bundleIdentifier else { return Data() }
+        return catalogIcon(application.icon)
     }
+}
+
+@MainActor
+func catalogIcon(_ image: NSImage?) -> Data {
+    guard let icon = image,
+          let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 32,
+                                        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+          let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return Data() }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    context.imageInterpolation = .high
+    icon.draw(in: CGRect(x: 0, y: 0, width: 32, height: 32))
+    NSGraphicsContext.restoreGraphicsState()
+    guard let data = bitmap.representation(using: .png, properties: [:]), data.count <= 8192 else { return Data() }
+    return data
 }

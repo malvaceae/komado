@@ -563,18 +563,38 @@ class VideoActivity : ComponentActivity() {
         }
     }
 
-    private fun chooseApplication(established: AuthenticatedHostConnection, applications: List<ApplicationInfo>) {
+    private fun prepareLaunchableApplications(established: AuthenticatedHostConnection) {
+        showProgress(R.string.launch_list_waiting)
+        val applications = try { established.listLaunchableApplications() } catch (_: Exception) {
+            runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.application_selection_failed) } }
+            return
+        }
+        runOnUiThread { if (active) chooseApplication(established, applications, launchable = true) }
+    }
+
+    private fun chooseApplication(established: AuthenticatedHostConnection, applications: List<ApplicationInfo>, launchable: Boolean = false) {
         val cancelled = AtomicBoolean(false)
         lateinit var picker: ApplicationPickerDialog
         picker = ApplicationPickerDialog(this, applications, onChoose = { application ->
             cancelled.set(true)
             targetDialog = null
-            selected = Selection.Application(application)
-            if (active) executor.execute { startMedia(established, null, applicationId = application.id) }
-        }, onCancel = { cancelled.set(true); finish() }, onIconRequested = { application ->
+            if (active && launchable) executor.execute {
+                val success = try { established.launchApplication(application.id) } catch (_: Exception) { showFailure(); return@execute }
+                runOnUiThread { if (active) Toast.makeText(this, if (success) R.string.launch_succeeded else R.string.launch_failed, Toast.LENGTH_LONG).show() }
+                if (success) prepareTarget(established, Target.APPLICATION) else prepareLaunchableApplications(established)
+            } else if (active) {
+                selected = Selection.Application(application)
+                executor.execute { startMedia(established, null, applicationId = application.id) }
+            }
+        }, onCancel = {
+            cancelled.set(true)
+            if (launchable && active) executor.execute { prepareTarget(established, Target.APPLICATION) } else finish()
+        }, onIconRequested = { application ->
             if (active && !cancelled.get()) executor.execute {
                 if (active && !cancelled.get()) {
-                    val bytes = try { established.applicationIcon(application.id) } catch (_: Exception) {
+                    val bytes = try {
+                        if (launchable) established.launchableApplicationIcon(application.id) else established.applicationIcon(application.id)
+                    } catch (_: Exception) {
                         if (!cancelled.get()) showFailure()
                         return@execute
                     }
@@ -589,8 +609,15 @@ class VideoActivity : ComponentActivity() {
         }, onRefresh = {
             cancelled.set(true)
             targetDialog = null
-            if (active) executor.execute { prepareTarget(established, Target.APPLICATION) }
-        })
+            if (active) executor.execute {
+                if (launchable) prepareLaunchableApplications(established) else prepareTarget(established, Target.APPLICATION)
+            }
+        }, title = if (launchable) R.string.launch_picker_title else R.string.application_picker_title,
+            onLaunch = if (controlMode && !launchable) ({
+                cancelled.set(true)
+                targetDialog = null
+                if (active) executor.execute { prepareLaunchableApplications(established) }
+            }) else null)
         targetDialog = picker.dialog
         picker.dialog.setOnDismissListener {
             cancelled.set(true)

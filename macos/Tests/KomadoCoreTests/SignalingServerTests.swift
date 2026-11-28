@@ -19,6 +19,7 @@ private final class ServerTestBox: @unchecked Sendable {
     private var requestedDisplay: UInt32?
     private var requestedControl = false
     private var requestedResume = false
+    private var launchRequest: (UUID, UInt32)?
     func setInterface(_ value: NWInterface?) -> Bool {
         lock.withLock {
             guard !pathObserved else { return false }
@@ -44,6 +45,8 @@ private final class ServerTestBox: @unchecked Sendable {
     func getRequestedControl() -> Bool { lock.withLock { requestedControl } }
     func setRequestedResume(_ value: Bool) { lock.withLock { requestedResume = value } }
     func getRequestedResume() -> Bool { lock.withLock { requestedResume } }
+    func setLaunchRequest(_ session: UUID, _ id: UInt32) { lock.withLock { launchRequest = (session, id) } }
+    func getLaunchRequest() -> (UUID, UInt32)? { lock.withLock { launchRequest } }
 }
 
 private final class ServerTestPeer: @unchecked Sendable {
@@ -122,6 +125,74 @@ private final class ServerTestPeer: @unchecked Sendable {
 }
 
 final class SignalingServerTests: XCTestCase {
+    func testLaunchRejectsCandidatesNotSentToThePeer() async throws {
+        let box = ServerTestBox(), pathReady = expectation(description: "network path")
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { path in
+            if box.setInterface(path.availableInterfaces.first { $0.type == .wifi || $0.type == .wiredEthernet }) { pathReady.fulfill() }
+        }
+        monitor.start(queue: DispatchQueue.global())
+        defer { monitor.cancel() }
+        await fulfillment(of: [pathReady], timeout: 10)
+        guard let interface = box.getInterface(),
+              let address = try ListenerAccess.addresses(on: interface).first(where: { if case .ipv4 = $0 { return true }; return false }) else {
+            throw XCTSkip("No active local IPv4 interface")
+        }
+        let service = "me.mallows.komado.test.launch.\(UUID().uuidString)", registryService = "\(service).devices"
+        defer {
+            SecItemDelete([kSecClass: kSecClassKey, kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+                           kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+                           kSecAttrApplicationTag: Data("\(service).private-key".utf8)] as CFDictionary)
+            SecItemDelete([kSecClass: kSecClassGenericPassword, kSecAttrService: service] as CFDictionary)
+            SecItemDelete([kSecClass: kSecClassGenericPassword, kSecAttrService: registryService] as CFDictionary)
+        }
+        let registry = PairedDeviceRegistry(service: registryService)
+        let pairing = PairingCoordinator(registry: registry, now: { .zero })
+        let auth = DeviceAuthenticationCoordinator(registry: registry, now: { .zero })
+        let invitation = try await pairing.issueInvitation()
+        let identity = try HostTLSIdentityStore(service: service).create()
+        let listening = expectation(description: "listening")
+        let server = try SignalingServer.create(identity: identity.identity,
+            bindings: [ListenerBinding(scope: .localLink, interface: interface, address: address)],
+            port: .any, pairing: pairing, authentication: auth) { event in
+                switch event {
+                case let .listenersChanged(_, endpoints, _):
+                    if let port = endpoints.first?.port, box.getPort() == nil { box.setPort(port); listening.fulfill() }
+                case let .authenticated(id, _): box.setLastAuthenticated(id)
+                case let .applicationLaunchRequested(session, _, id, _): box.setLaunchRequest(session, id)
+                default: break
+                }
+            }
+        try await server.start()
+        await fulfillment(of: [listening], timeout: 10)
+        let peer = ServerTestPeer(host: address, port: try XCTUnwrap(box.getPort()).asPort(), fingerprint: identity.fingerprintSHA256)
+        let key = P256.Signing.PrivateKey()
+        try await peer.start()
+        try await peer.send(.pair(name: "Android", invitation: invitation, publicKeyDER: key.publicKey.derRepresentation))
+        guard case let .challenge(challenge) = try await peer.receive() else { return XCTFail("Expected challenge") }
+        let signature = try key.signature(for: Data("komado.device-auth.v1\0".utf8) + challenge).derRepresentation
+        try await peer.send(.proof(signature))
+        guard case .accepted = try await peer.receive() else { return XCTFail("Expected acceptance") }
+        for _ in 0..<100 {
+            if box.getLastAuthenticated() != nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let session = try XCTUnwrap(box.getLastAuthenticated())
+        try await peer.send(.listLaunchableApplications(0))
+        guard case let .launchableApplications(_, firstPage) = try await peer.receive() else { return XCTFail("Expected application page") }
+        let absent = UInt32(Int32.max)
+        XCTAssertFalse(firstPage.contains { $0.id == absent })
+        try await peer.send(.launchApplication(absent))
+        for _ in 0..<100 {
+            if !(await server.isActive(sessionID: session)) { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let active = await server.isActive(sessionID: session)
+        XCTAssertFalse(active)
+        XCTAssertNil(box.getLaunchRequest())
+        peer.connection.cancel()
+        await server.stop()
+    }
     func testRemovingOneListenerKeepsOtherAvailable() async throws {
         let box = ServerTestBox(), pathReady = expectation(description: "network path")
         let monitor = NWPathMonitor()
@@ -261,6 +332,7 @@ final class SignalingServerTests: XCTestCase {
                         }
                     }
                 case .mediaStopRequested: mediaStopRequested.fulfill()
+                case let .applicationLaunchRequested(session, _, id, _): box.setLaunchRequest(session, id)
                 case let .answer(_, _, sdp): box.setAnswer(sdp); answerReceived.fulfill()
                 case .disconnected: disconnected.fulfill()
                 default: break
@@ -299,6 +371,31 @@ final class SignalingServerTests: XCTestCase {
             guard case let .applicationIconResult(id, icon) = try await first.receive() else { return XCTFail("Expected application icon") }
             XCTAssertEqual(id, applicationID)
             XCTAssertLessThanOrEqual(icon.count, 8192)
+        }
+        var launchOffset: UInt16 = 0
+        var launchIDs = Set<UInt32>()
+        repeat {
+            try await first.send(.listLaunchableApplications(launchOffset))
+            guard case let .launchableApplications(next, values) = try await first.receive() else { return XCTFail("Expected launchable application page") }
+            for application in values { XCTAssertTrue(launchIDs.insert(application.id).inserted) }
+            if next != 0 { XCTAssertEqual(Int(next), launchIDs.count) }
+            launchOffset = next
+        } while launchOffset != 0
+        if let launchID = launchIDs.first {
+            try await first.send(.launchableApplicationIcon(launchID))
+            guard case let .launchableApplicationIconResult(id, icon) = try await first.receive() else { return XCTFail("Expected launchable application icon") }
+            XCTAssertEqual(id, launchID)
+            XCTAssertLessThanOrEqual(icon.count, 8192)
+            try await first.send(.launchApplication(launchID))
+            for _ in 0..<100 {
+                if box.getLaunchRequest() != nil { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            let request = try XCTUnwrap(box.getLaunchRequest())
+            XCTAssertEqual(request.1, launchID)
+            try await server.sendLaunchApplicationResult(id: launchID, success: false, sessionID: request.0)
+            let launchResult = try await first.receive()
+            XCTAssertEqual(launchResult, .launchApplicationResult(launchID, false))
         }
         applicationOffset = 0
         applicationIDs.removeAll()

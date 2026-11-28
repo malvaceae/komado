@@ -54,6 +54,19 @@ class ApplicationPickerDialogTest {
         }
     }
 
+    @Test fun launchButtonOpensTheLaunchPicker() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            var launched = false
+            scenario.onActivity { activity ->
+                val picker = ApplicationPickerDialog(activity, emptyList(), {}, {}, {}, {}, onLaunch = { launched = true })
+                picker.show()
+                assertTrue(picker.dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick())
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            assertTrue(launched)
+        }
+    }
+
     private fun <T : View> find(root: View, type: Class<T>): T? {
         if (type.isInstance(root)) return type.cast(root)
         if (root is ViewGroup) for (i in 0 until root.childCount) find(root.getChildAt(i), type)?.let { return it }

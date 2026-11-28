@@ -35,6 +35,7 @@ class AuthenticatedHostConnection private constructor(
     private var displaysRequested = false
     private var windowsRequested = false
     private var applicationsRequested = false
+    private var launchableApplicationsRequested = false
     private var resumeChecked = false
     @Volatile private var stopTimeout: ScheduledFuture<*>? = null
     @Volatile private var closed = false
@@ -120,6 +121,63 @@ class AuthenticatedHostConnection private constructor(
             val response = receive(socket) as? SignalMessage.ApplicationIconResult ?: throw IOException("Expected application icon")
             if (response.id != id) throw IOException("Unexpected application icon")
             response.data
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        } finally { timeout.cancel(false) }
+    }
+
+    fun listLaunchableApplications(): List<ApplicationInfo> = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
+        launchableApplicationsRequested = false
+        val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        try {
+            val applications = mutableListOf<ApplicationInfo>()
+            val ids = mutableSetOf<Long>()
+            var offset = 0
+            do {
+                send(socket, SignalMessage.ListLaunchableApplications(offset))
+                val page = receive(socket) as? SignalMessage.LaunchableApplications ?: throw IOException("Expected launchable applications")
+                if (page.values.any { !ids.add(it.id) }) throw IOException("Duplicate application")
+                applications.addAll(page.values)
+                if (applications.size > 65_535) throw IOException("Application list too large")
+                if (page.next != 0 && (page.values.size != 32 || page.next != applications.size || page.next >= 65_535)) {
+                    throw IOException("Invalid application pagination")
+                }
+                offset = page.next
+            } while (offset != 0)
+            launchableApplicationsRequested = true
+            applications
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        } finally { timeout.cancel(false) }
+    }
+
+    fun launchableApplicationIcon(id: Long): ByteArray = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE || !launchableApplicationsRequested) throw IOException("Unexpected signaling state")
+        val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        try {
+            send(socket, SignalMessage.LaunchableApplicationIcon(id))
+            val result = receive(socket) as? SignalMessage.LaunchableApplicationIconResult ?: throw IOException("Expected application icon")
+            if (result.id != id) throw IOException("Unexpected application icon")
+            result.data
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        } finally { timeout.cancel(false) }
+    }
+
+    fun launchApplication(id: Long): Boolean = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE || !launchableApplicationsRequested) throw IOException("Unexpected signaling state")
+        val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        try {
+            send(socket, SignalMessage.LaunchApplication(id))
+            val result = receive(socket) as? SignalMessage.LaunchApplicationResult ?: throw IOException("Expected application launch result")
+            if (result.id != id) throw IOException("Unexpected application launch result")
+            launchableApplicationsRequested = false
+            applicationsRequested = false
+            result.success
         } catch (error: Exception) {
             runCatching { close() }
             throw error
@@ -243,6 +301,7 @@ class AuthenticatedHostConnection private constructor(
             displaysRequested = false
             windowsRequested = false
             applicationsRequested = false
+            launchableApplicationsRequested = false
         }
         return true
     }

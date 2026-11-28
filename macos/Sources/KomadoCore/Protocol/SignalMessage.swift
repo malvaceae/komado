@@ -65,6 +65,12 @@ public enum SignalMessage: Equatable, Sendable {
     case applications(next: UInt16, values: [ApplicationInfo])
     case applicationIcon(UInt32)
     case applicationIconResult(UInt32, Data)
+    case listLaunchableApplications(UInt16)
+    case launchableApplications(next: UInt16, values: [ApplicationInfo])
+    case launchableApplicationIcon(UInt32)
+    case launchableApplicationIconResult(UInt32, Data)
+    case launchApplication(UInt32)
+    case launchApplicationResult(UInt32, Bool)
     case startApplication(UInt32)
     case startApplicationControl(UInt32)
     case startWindow(UInt32)
@@ -151,10 +157,10 @@ public enum SignalMessage: Equatable, Sendable {
             }
             guard !windows.isEmpty || next == 0 else { throw MessageError.invalid }
             return .windows(next: UInt16(next), values: windows)
-        case "application.list":
+        case "application.list", "launch.list":
             guard fields.count == 3, let offset = nonnegativeInteger(fields[2], max: 65_535) else { throw MessageError.invalid }
-            return .listApplications(UInt16(offset))
-        case "application.listed":
+            return fields[1] == "application.list" ? .listApplications(UInt16(offset)) : .listLaunchableApplications(UInt16(offset))
+        case "application.listed", "launch.listed":
             guard fields.count >= 3, fields.count <= 67, (fields.count - 3).isMultiple(of: 2),
                   let next = nonnegativeInteger(fields[2], max: 65_535) else { throw MessageError.invalid }
             var applications: [ApplicationInfo] = []
@@ -165,14 +171,21 @@ public enum SignalMessage: Equatable, Sendable {
                 applications.append(ApplicationInfo(id: UInt32(id), name: fields[i + 1]))
             }
             guard !applications.isEmpty || next == 0 else { throw MessageError.invalid }
-            return .applications(next: UInt16(next), values: applications)
-        case "application.icon":
+            return fields[1] == "application.listed" ? .applications(next: UInt16(next), values: applications) : .launchableApplications(next: UInt16(next), values: applications)
+        case "application.icon", "launch.icon":
             guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(Int32.max)) else { throw MessageError.invalid }
-            return .applicationIcon(UInt32(id))
-        case "application.iconed":
+            return fields[1] == "application.icon" ? .applicationIcon(UInt32(id)) : .launchableApplicationIcon(UInt32(id))
+        case "application.iconed", "launch.iconed":
             guard fields.count == 4, let id = positiveInteger(fields[2], max: UInt64(Int32.max)),
                   let data = decodeBase64(fields[3], range: 0...8192) else { throw MessageError.invalid }
-            return .applicationIconResult(UInt32(id), data)
+            return fields[1] == "application.iconed" ? .applicationIconResult(UInt32(id), data) : .launchableApplicationIconResult(UInt32(id), data)
+        case "launch.start":
+            guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(Int32.max)) else { throw MessageError.invalid }
+            return .launchApplication(UInt32(id))
+        case "launch.result":
+            guard fields.count == 4, let id = positiveInteger(fields[2], max: UInt64(Int32.max)),
+                  fields[3] == "0" || fields[3] == "1" else { throw MessageError.invalid }
+            return .launchApplicationResult(UInt32(id), fields[3] == "1")
         case "application.start", "application.control":
             guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(Int32.max)) else { throw MessageError.invalid }
             return fields[1] == "application.start" ? .startApplication(UInt32(id)) : .startApplicationControl(UInt32(id))
@@ -260,6 +273,14 @@ public enum SignalMessage: Equatable, Sendable {
             fields = ["1", "application.listed", String(next)] + values.flatMap { [String($0.id), $0.name] }
         case let .applicationIcon(id): fields = ["1", "application.icon", String(id)]
         case let .applicationIconResult(id, data): fields = ["1", "application.iconed", String(id), data.base64EncodedString()]
+        case let .listLaunchableApplications(offset): fields = ["1", "launch.list", String(offset)]
+        case let .launchableApplications(next, values):
+            guard values.count <= 32 else { throw MessageError.invalid }
+            fields = ["1", "launch.listed", String(next)] + values.flatMap { [String($0.id), $0.name] }
+        case let .launchableApplicationIcon(id): fields = ["1", "launch.icon", String(id)]
+        case let .launchableApplicationIconResult(id, data): fields = ["1", "launch.iconed", String(id), data.base64EncodedString()]
+        case let .launchApplication(id): fields = ["1", "launch.start", String(id)]
+        case let .launchApplicationResult(id, success): fields = ["1", "launch.result", String(id), success ? "1" : "0"]
         case let .startApplication(id): fields = ["1", "application.start", String(id)]
         case let .startApplicationControl(id): fields = ["1", "application.control", String(id)]
         case let .startWindowControl(id, size):

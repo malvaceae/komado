@@ -54,6 +54,54 @@ class AuthenticatedHostConnectionTest {
         store.deleteEntry(serverAlias)
     }
 
+    @Test fun listsAndLaunchesOnlyAfterACompleteSnapshot() {
+        withServer { server, fingerprint ->
+            val executor = Executors.newSingleThreadExecutor()
+            val values = (1..33).map { ApplicationInfo(it.toLong(), "Application $it") }
+            val icon = byteArrayOf(1, 2, 3)
+            val task = executor.submit {
+                (server.accept() as SSLSocket).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.startHandshake()
+                    receive(socket) as SignalMessage.Pair
+                    send(socket, SignalMessage.Challenge(ByteArray(32)))
+                    receive(socket) as SignalMessage.Proof
+                    send(socket, SignalMessage.Accepted(UUID.randomUUID()))
+                    repeat(2) { attempt ->
+                        assertEquals(SignalMessage.ListLaunchableApplications(0), receive(socket))
+                        send(socket, SignalMessage.LaunchableApplications(32, values.take(32)))
+                        assertEquals(SignalMessage.ListLaunchableApplications(32), receive(socket))
+                        send(socket, SignalMessage.LaunchableApplications(0, values.drop(32)))
+                        assertEquals(SignalMessage.LaunchableApplicationIcon(33), receive(socket))
+                        send(socket, SignalMessage.LaunchableApplicationIconResult(33, icon))
+                        assertEquals(SignalMessage.LaunchApplication(33), receive(socket))
+                        send(socket, SignalMessage.LaunchApplicationResult(33, attempt == 1))
+                    }
+                    assertEquals(SignalMessage.ListApplications(0), receive(socket))
+                    send(socket, SignalMessage.Applications(0, listOf(ApplicationInfo(44, "Running app"))))
+                }
+            }
+            try {
+                AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint, "Android test", ByteArray(32), key).use { connection ->
+                    assertThrows(IOException::class.java) { connection.launchApplication(33) }
+                    assertEquals(values, connection.listLaunchableApplications())
+                    assertTrue(icon.contentEquals(connection.launchableApplicationIcon(33)))
+                    assertFalse(connection.launchApplication(33))
+                    assertThrows(IOException::class.java) { connection.launchApplication(33) }
+                    assertEquals(values, connection.listLaunchableApplications())
+                    assertTrue(icon.contentEquals(connection.launchableApplicationIcon(33)))
+                    assertTrue(connection.launchApplication(33))
+                    assertEquals(listOf(ApplicationInfo(44, "Running app")), connection.listApplications())
+                }
+                task.get(20, TimeUnit.SECONDS)
+            } finally {
+                server.close()
+                executor.shutdownNow()
+                executor.awaitTermination(10, TimeUnit.SECONDS)
+            }
+        }
+    }
+
     @Test fun listsMoreThan512WindowsAndSelectsTheLast() {
         withServer { server, fingerprint ->
             val executor = Executors.newSingleThreadExecutor()
