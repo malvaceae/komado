@@ -8,10 +8,10 @@ struct KomadoHostApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        MenuBarExtra(model.sharingScreen ? "画面を共有中" : "komado",
+        MenuBarExtra(model.sharingScreen ? "\(model.sharingApplication ? "アプリ" : model.sharingWindow ? "ウインドウ" : "画面")を共有中" : "komado",
                      systemImage: model.sharingScreen ? "rectangle.on.rectangle" : "macwindow") {
             Text(model.running ? (model.connectedDevice != nil ? "接続中" : (model.ready ? "接続待機中" : "準備中")) : "停止中")
-            if model.sharingScreen { Text("\(model.sharingWindow ? "ウインドウ" : "画面")を共有中: \(model.sharingDisplayName ?? "画面")") }
+            if model.sharingScreen { Text("\(model.sharingApplication ? "アプリ" : model.sharingWindow ? "ウインドウ" : "画面")を共有中: \(model.sharingDisplayName ?? "画面")") }
             if model.controllingScreen { Text("Androidからの操作を許可中") }
             if let device = model.connectedDevice { Text("接続中: \(device)") }
             Divider()
@@ -52,7 +52,7 @@ private struct HostView: View {
                     Text("komado").font(.largeTitle.bold())
                     Text(model.running ? (model.connectedDevice != nil ? "接続中" : (model.ready ? "接続待機中" : "準備中")) : "停止中")
                         .foregroundStyle(.secondary)
-                    if model.sharingScreen { Label("\(model.sharingWindow ? "ウインドウ" : "画面")を共有中: \(model.sharingDisplayName ?? "画面")", systemImage: "rectangle.on.rectangle") }
+                    if model.sharingScreen { Label("\(model.sharingApplication ? "アプリ" : model.sharingWindow ? "ウインドウ" : "画面")を共有中: \(model.sharingDisplayName ?? "画面")", systemImage: "rectangle.on.rectangle") }
                     if model.controllingScreen { Text("Androidからの操作を許可中") }
                 }
                 if let error = model.error {

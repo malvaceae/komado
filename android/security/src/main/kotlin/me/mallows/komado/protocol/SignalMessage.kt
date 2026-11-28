@@ -11,6 +11,7 @@ import java.nio.charset.CodingErrorAction
 import java.util.UUID
 
 data class DisplayInfo(val id: Long, val width: Int, val height: Int)
+data class ApplicationInfo(val id: Long, val name: String)
 data class WindowInfo(val id: Long, val width: Int, val height: Int, val application: String, val title: String)
 data class WindowSize(val width: Int, val height: Int)
 
@@ -30,6 +31,12 @@ sealed interface SignalMessage {
     data class Displays(val values: List<DisplayInfo>) : SignalMessage
     data class ListWindows(val offset: Int) : SignalMessage
     data class Windows(val next: Int, val values: List<WindowInfo>) : SignalMessage
+    data class ListApplications(val offset: Int) : SignalMessage
+    data class Applications(val next: Int, val values: List<ApplicationInfo>) : SignalMessage
+    data class ApplicationIcon(val id: Long) : SignalMessage
+    data class ApplicationIconResult(val id: Long, val data: ByteArray) : SignalMessage
+    data class StartApplication(val id: Long) : SignalMessage
+    data class StartApplicationControl(val id: Long) : SignalMessage
     data class StartWindow(val id: Long) : SignalMessage
     data class StartWindowControl(val id: Long, val size: WindowSize? = null) : SignalMessage
     data object StopMedia : SignalMessage
@@ -126,6 +133,33 @@ object SignalMessageCodec {
                     if ((values.isEmpty() && next != 0) || values.map { it.id }.toSet().size != values.size) throw MessageException()
                     SignalMessage.Windows(next, values)
                 }
+                "application.list" -> {
+                    if (fields.size != 3) throw MessageException()
+                    SignalMessage.ListApplications(nonnegativeInteger(fields[2], 65_535).toInt())
+                }
+                "application.listed" -> {
+                    if (fields.size !in 3..67 || (fields.size - 3) % 2 != 0) throw MessageException()
+                    val next = nonnegativeInteger(fields[2], 65_535).toInt()
+                    val values = (3 until fields.size step 2).map { i ->
+                        if (!validWindowLabel(fields[i + 1])) throw MessageException()
+                        ApplicationInfo(positiveInteger(fields[i], Int.MAX_VALUE.toLong()), fields[i + 1])
+                    }
+                    if ((values.isEmpty() && next != 0) || values.map { it.id }.toSet().size != values.size) throw MessageException()
+                    SignalMessage.Applications(next, values)
+                }
+                "application.icon" -> {
+                    if (fields.size != 3) throw MessageException()
+                    SignalMessage.ApplicationIcon(positiveInteger(fields[2], Int.MAX_VALUE.toLong()))
+                }
+                "application.iconed" -> {
+                    if (fields.size != 4) throw MessageException()
+                    SignalMessage.ApplicationIconResult(positiveInteger(fields[2], Int.MAX_VALUE.toLong()), decodeBase64(fields[3], 0..8192))
+                }
+                "application.start", "application.control" -> {
+                    if (fields.size != 3) throw MessageException()
+                    val id = positiveInteger(fields[2], Int.MAX_VALUE.toLong())
+                    if (fields[1] == "application.start") SignalMessage.StartApplication(id) else SignalMessage.StartApplicationControl(id)
+                }
                 "window.control" -> {
                     if (fields.size != 3 && fields.size != 5) throw MessageException()
                     val size = if (fields.size == 5) WindowSize(positiveInteger(fields[3], 65_535).toInt(),
@@ -195,6 +229,13 @@ object SignalMessageCodec {
                     listOf(it.id.toString(), it.width.toString(), it.height.toString(), it.application, it.title)
                 }
             }
+            is SignalMessage.ListApplications -> listOf("1", "application.list", message.offset.toString())
+            is SignalMessage.Applications -> listOf("1", "application.listed", message.next.toString()) +
+                message.values.flatMap { listOf(it.id.toString(), it.name) }
+            is SignalMessage.ApplicationIcon -> listOf("1", "application.icon", message.id.toString())
+            is SignalMessage.ApplicationIconResult -> listOf("1", "application.iconed", message.id.toString(), b64(message.data))
+            is SignalMessage.StartApplication -> listOf("1", "application.start", message.id.toString())
+            is SignalMessage.StartApplicationControl -> listOf("1", "application.control", message.id.toString())
             is SignalMessage.StartWindow -> listOf("1", "window.start", message.id.toString())
             is SignalMessage.StartWindowControl -> listOf("1", "window.control", message.id.toString()) +
                 (message.size?.let { listOf(it.width.toString(), it.height.toString()) } ?: emptyList())

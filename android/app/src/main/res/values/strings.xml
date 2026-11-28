@@ -78,6 +78,16 @@
     <string name="screen_option">画面 %1$d（%2$d × %3$d px）</string>
     <string name="screen_selection_failed">画面一覧を取得できませんでした。Macの状態とアプリのバージョンを確認してください。</string>
     <string name="select_window">ウインドウを選択</string>
+    <string name="select_application">アプリを表示</string>
+    <string name="control_application">アプリを操作</string>
+    <string name="application_picker_title">アプリを選択</string>
+    <string name="application_search">アプリ名</string>
+    <string name="application_search_empty">一致するアプリがありません。</string>
+    <string name="application_list_waiting">アプリ一覧を取得中…</string>
+    <string name="application_choosing">アプリを選択してください。</string>
+    <string name="application_selection_failed">アプリ一覧を取得できませんでした。</string>
+    <string name="no_applications">表示できるアプリがありません。</string>
+    <string name="application_capture_note">選択したアプリがある画面を表示します。他の画面のウインドウは含まれません。</string>
     <string name="control_window">ウインドウを操作</string>
     <string name="window_control_note">Mac上で見えている部分を操作できます。文字入力にはウインドウのフォーカスが必要です。</string>
     <string name="window_option">%1$s — %2$s</string>

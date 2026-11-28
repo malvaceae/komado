@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.Configuration
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -26,6 +27,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.DisplayInfo
+import me.mallows.komado.protocol.ApplicationInfo
 import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.protocol.WindowSize
 import me.mallows.komado.protocol.KeyboardKey
@@ -43,6 +45,7 @@ import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
 class VideoActivity : ComponentActivity() {
@@ -83,6 +86,8 @@ class VideoActivity : ComponentActivity() {
     private lateinit var header: View
     private var windowNote: View? = null
     private var showingWindowNote = false
+    private var applicationNote: View? = null
+    private var showingApplicationNote = false
     private var windowResizeSwitch: CheckBox? = null
     private var updatingResizeSwitch = false
     private var currentWindowId: Long? = null
@@ -103,7 +108,7 @@ class VideoActivity : ComponentActivity() {
     private val automaticTick = Runnable { automaticStep() }
     private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
-    private enum class Target { MAIN, DISPLAY, WINDOW }
+    private enum class Target { MAIN, DISPLAY, APPLICATION, WINDOW }
     private var nextTarget: Target? = null
     @Volatile private var switching = false
     @Volatile private var rendererGeneration = 0
@@ -134,6 +139,7 @@ class VideoActivity : ComponentActivity() {
         status = TextView(this).apply { setText(R.string.screen_authenticating); setPadding(dp(16), dp(8), dp(16), dp(8)) }
         root.addView(status)
         showingWindowNote = controlMode && intent.getBooleanExtra(CHOOSE_WINDOW, false)
+        showingApplicationNote = intent.getBooleanExtra(CHOOSE_APPLICATION, false)
         if (controlMode) {
             windowNote = TextView(this).apply {
                 setText(R.string.window_control_note)
@@ -142,6 +148,12 @@ class VideoActivity : ComponentActivity() {
             }
             root.addView(windowNote)
         }
+        applicationNote = TextView(this).apply {
+            setText(R.string.application_capture_note)
+            setPadding(dp(16), 0, dp(16), dp(8))
+            visibility = if (showingApplicationNote) View.VISIBLE else View.GONE
+        }
+        root.addView(applicationNote)
         try {
             val video = RemoteVideoRenderer(this, object : RendererCommon.RendererEvents {
                 override fun onFirstFrameRendered() {
@@ -347,6 +359,7 @@ class VideoActivity : ComponentActivity() {
                 runCatching { HostStore(applicationContext).recordConnection(host, System.currentTimeMillis()) }
                 val target = when {
                     intent.getBooleanExtra(CHOOSE_WINDOW, false) -> Target.WINDOW
+                    intent.getBooleanExtra(CHOOSE_APPLICATION, false) -> Target.APPLICATION
                     intent.getBooleanExtra(CHOOSE_DISPLAY, false) -> Target.DISPLAY
                     else -> Target.MAIN
                 }
@@ -366,6 +379,19 @@ class VideoActivity : ComponentActivity() {
                     return
                 }
                 runOnUiThread { if (active) { status.setText(R.string.screen_choosing); chooseDisplay(established, displays) } }
+            }
+            Target.APPLICATION -> {
+                showProgress(R.string.application_list_waiting)
+                val applications = try { established.listApplications() } catch (_: Exception) {
+                    runOnUiThread { if (active) { stopSession(failed = true); status.setText(R.string.application_selection_failed) } }
+                    return
+                }
+                runOnUiThread {
+                    if (active) {
+                        if (applications.isEmpty()) { stopSession(failed = true); status.setText(R.string.no_applications) }
+                        else { status.setText(R.string.application_choosing); chooseApplication(established, applications) }
+                    }
+                }
             }
             Target.WINDOW -> {
                 showProgress(R.string.window_list_waiting)
@@ -391,7 +417,7 @@ class VideoActivity : ComponentActivity() {
     private fun showTargetChoices() {
         if (!active || switching) return
         val targets = arrayOf(getString(if (controlMode) R.string.control_screen else R.string.view_screen),
-            getString(R.string.select_screen), getString(R.string.select_window))
+            getString(R.string.select_screen), getString(R.string.application_picker_title), getString(R.string.select_window))
         val dialog = AlertDialog.Builder(this).setTitle(R.string.change_target).setItems(targets) { _, index ->
             beginTargetSwitch(Target.entries[index])
         }.setNegativeButton(R.string.cancel, null).create()
@@ -442,7 +468,9 @@ class VideoActivity : ComponentActivity() {
         try { renderer?.reset() } catch (_: Exception) { stopSession(failed = true); return }
         switching = false
         showingWindowNote = controlMode && target == Target.WINDOW
+        showingApplicationNote = target == Target.APPLICATION
         windowNote?.visibility = if (showingWindowNote) View.VISIBLE else View.GONE
+        applicationNote?.visibility = if (showingApplicationNote) View.VISIBLE else View.GONE
         windowResizeSwitch?.visibility = if (showingWindowNote) View.VISIBLE else View.GONE
         if (reload == null) currentWindowId = null
         firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
@@ -475,10 +503,42 @@ class VideoActivity : ComponentActivity() {
         }, onCancel = { finish() })
     }
 
-    private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?, windowId: Long? = null, size: WindowSize? = null) {
+    private fun chooseApplication(established: AuthenticatedHostConnection, applications: List<ApplicationInfo>) {
+        val cancelled = AtomicBoolean(false)
+        lateinit var picker: ApplicationPickerDialog
+        picker = ApplicationPickerDialog(this, applications, onChoose = { application ->
+            cancelled.set(true)
+            targetDialog = null
+            if (active) executor.execute { startMedia(established, null, applicationId = application.id) }
+        }, onCancel = { cancelled.set(true); finish() }, onIconRequested = { application ->
+            if (active && !cancelled.get()) executor.execute {
+                if (active && !cancelled.get()) {
+                    val bytes = try { established.applicationIcon(application.id) } catch (_: Exception) {
+                        if (!cancelled.get()) showFailure()
+                        return@execute
+                    }
+                    if (bytes.isEmpty()) return@execute
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                    if (options.outWidth !in 1..64 || options.outHeight !in 1..64) return@execute
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@execute
+                    runOnUiThread { if (active && !cancelled.get() && targetDialog === picker.dialog) picker.updateIcon(application.id, bitmap) }
+                }
+            }
+        })
+        targetDialog = picker.dialog
+        picker.dialog.setOnDismissListener {
+            cancelled.set(true)
+            if (targetDialog === picker.dialog) targetDialog = null
+        }
+        picker.show()
+    }
+
+    private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?, windowId: Long? = null,
+                           size: WindowSize? = null, applicationId: Long? = null) {
         showProgress(R.string.screen_waiting)
         try {
-            established.requestMedia(displayId, windowId, control = controlMode, windowSize = size)
+            established.requestMedia(displayId, windowId, control = controlMode, windowSize = size, applicationId = applicationId)
             val offer = established.receiveOffer()
             runOnUiThread {
                 if (!active) return@runOnUiThread
@@ -575,6 +635,7 @@ class VideoActivity : ComponentActivity() {
         header.visibility = if (value) View.GONE else View.VISIBLE
         status.visibility = if (value) View.GONE else View.VISIBLE
         windowNote?.visibility = if (!value && showingWindowNote) View.VISIBLE else View.GONE
+        applicationNote?.visibility = if (!value && showingApplicationNote) View.VISIBLE else View.GONE
         controlsScroll.visibility = if (value) View.GONE else View.VISIBLE
         exitFullscreenButton?.visibility = if (value) View.VISIBLE else View.GONE
         val controller = WindowCompat.getInsetsController(window, window.decorView)
@@ -945,6 +1006,7 @@ class VideoActivity : ComponentActivity() {
         const val HOST_ID = "me.mallows.komado.host_id"
         const val CHOOSE_DISPLAY = "me.mallows.komado.choose_display"
         const val CHOOSE_WINDOW = "me.mallows.komado.choose_window"
+        const val CHOOSE_APPLICATION = "me.mallows.komado.choose_application"
         const val CONTROL_MODE = "me.mallows.komado.control_mode"
     }
 }

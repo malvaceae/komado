@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import me.mallows.komado.protocol.SignalFrame
 import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.protocol.SignalMessageCodec
+import me.mallows.komado.protocol.ApplicationInfo
 import me.mallows.komado.protocol.WindowSize
 import me.mallows.komado.security.DeviceSigningKey
 import org.junit.After
@@ -92,7 +93,9 @@ class AuthenticatedHostConnectionTest {
                             assertEquals(expected, (receive(socket) as SignalMessage.Answer).sdp)
                             assertEquals(SignalMessage.StopMedia, receive(socket))
                             send(socket, SignalMessage.MediaStopped)
-                            assertEquals(SignalMessage.StartMedia, receive(socket))
+                            assertEquals(SignalMessage.ListApplications(0), receive(socket))
+                            send(socket, SignalMessage.Applications(0, listOf(ApplicationInfo(123, "Test application"))))
+                            assertEquals(SignalMessage.StartApplication(123), receive(socket))
                             send(socket, SignalMessage.Offer("v=0\r\ns=second offer\r\n"))
                             assertEquals("v=0\r\ns=second answer\r\n", (receive(socket) as SignalMessage.Answer).sdp)
                         } else {
@@ -118,7 +121,8 @@ class AuthenticatedHostConnectionTest {
                 paired.requestMediaStop()
                 assertThrows(IOException::class.java) { paired.requestMedia() }
                 assertTrue(paired.awaitClosure())
-                paired.requestMedia()
+                assertEquals(listOf(ApplicationInfo(123, "Test application")), paired.listApplications())
+                paired.requestMedia(applicationId = 123)
                 assertEquals("v=0\r\ns=second offer\r\n", paired.receiveOffer())
                 paired.sendAnswer("v=0\r\ns=second answer\r\n")
                 assertFalse(paired.awaitClosure())
@@ -132,6 +136,45 @@ class AuthenticatedHostConnectionTest {
                 }
                 assertThrows(IOException::class.java) { reconnected.receiveOffer() }
                 reconnected.close()
+                task.get(20, TimeUnit.SECONDS)
+            } finally {
+                server.close()
+                executor.shutdownNow()
+                executor.awaitTermination(10, TimeUnit.SECONDS)
+            }
+        }
+    }
+
+    @Test fun listsApplicationsLoadsIconAndStartsSelectedApp() {
+        withServer { server, fingerprint ->
+            val executor = Executors.newSingleThreadExecutor()
+            val id = UUID.randomUUID()
+            val applications = (1..33).map { ApplicationInfo(it.toLong(), "Application $it") }
+            val icon = byteArrayOf(1, 2, 3, 4)
+            val task = executor.submit {
+                (server.accept() as SSLSocket).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.startHandshake()
+                    receive(socket) as SignalMessage.Pair
+                    send(socket, SignalMessage.Challenge(ByteArray(32)))
+                    receive(socket) as SignalMessage.Proof
+                    send(socket, SignalMessage.Accepted(id))
+                    assertEquals(SignalMessage.ListApplications(0), receive(socket))
+                    send(socket, SignalMessage.Applications(32, applications.take(32)))
+                    assertEquals(SignalMessage.ListApplications(32), receive(socket))
+                    send(socket, SignalMessage.Applications(0, applications.drop(32)))
+                    assertEquals(SignalMessage.ApplicationIcon(33), receive(socket))
+                    send(socket, SignalMessage.ApplicationIconResult(33, icon))
+                    assertEquals(SignalMessage.StartApplicationControl(33), receive(socket))
+                }
+            }
+            try {
+                val connection = AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint,
+                    "Android test", ByteArray(32), key)
+                assertEquals(applications, connection.listApplications())
+                assertTrue(icon.contentEquals(connection.applicationIcon(33)))
+                connection.requestMedia(control = true, applicationId = 33)
+                connection.close()
                 task.get(20, TimeUnit.SECONDS)
             } finally {
                 server.close()

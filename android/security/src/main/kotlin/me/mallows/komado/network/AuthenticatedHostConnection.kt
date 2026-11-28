@@ -4,6 +4,7 @@ import me.mallows.komado.protocol.SignalFrame
 import me.mallows.komado.protocol.SignalMessage
 import me.mallows.komado.protocol.SignalMessageCodec
 import me.mallows.komado.protocol.DisplayInfo
+import me.mallows.komado.protocol.ApplicationInfo
 import me.mallows.komado.protocol.WindowInfo
 import me.mallows.komado.protocol.WindowSize
 import me.mallows.komado.security.DeviceSigningKey
@@ -32,22 +33,27 @@ class AuthenticatedHostConnection private constructor(
     private var mediaState = MediaState.IDLE
     private var displaysRequested = false
     private var windowsRequested = false
+    private var applicationsRequested = false
     @Volatile private var stopTimeout: ScheduledFuture<*>? = null
     @Volatile private var closed = false
 
     /** Request one media session after device authentication. */
-    fun requestMedia(displayId: Long? = null, windowId: Long? = null, control: Boolean = false, windowSize: WindowSize? = null) = synchronized(mediaLock) {
+    fun requestMedia(displayId: Long? = null, windowId: Long? = null, control: Boolean = false,
+                     windowSize: WindowSize? = null, applicationId: Long? = null) = synchronized(mediaLock) {
         if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
         try {
-            if ((displayId != null && windowId != null) || (windowSize != null && (!control || windowId == null))) {
+            if (listOf(displayId, windowId, applicationId).count { it != null } > 1 ||
+                (windowSize != null && (!control || windowId == null))) {
                 throw IOException("Conflicting capture targets")
             }
             val request = when {
                 control && windowId != null -> SignalMessage.StartWindowControl(windowId, windowSize)
+                control && applicationId != null -> SignalMessage.StartApplicationControl(applicationId)
                 control && displayId != null -> SignalMessage.StartDisplayControl(displayId)
                 control -> SignalMessage.StartControl
                 displayId != null -> SignalMessage.StartDisplay(displayId)
                 windowId != null -> SignalMessage.StartWindow(windowId)
+                applicationId != null -> SignalMessage.StartApplication(applicationId)
                 else -> SignalMessage.StartMedia
             }
             send(socket, request)
@@ -56,6 +62,48 @@ class AuthenticatedHostConnection private constructor(
             runCatching { close() }
             throw error
         }
+    }
+
+    /** Fetches a snapshot of the host's available applications. */
+    fun listApplications(): List<ApplicationInfo> = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE || applicationsRequested) throw IOException("Unexpected signaling state")
+        applicationsRequested = true
+        val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        try {
+            val applications = mutableListOf<ApplicationInfo>()
+            val ids = mutableSetOf<Long>()
+            var offset = 0
+            do {
+                send(socket, SignalMessage.ListApplications(offset))
+                val page = receive(socket) as? SignalMessage.Applications ?: throw IOException("Expected application list")
+                if (page.values.any { !ids.add(it.id) }) throw IOException("Duplicate application")
+                applications.addAll(page.values)
+                if (applications.size > 65_535) throw IOException("Application list too large")
+                if (page.next != 0 && (page.values.size != 32 || page.next != applications.size || page.next >= 65_535)) {
+                    throw IOException("Invalid application pagination")
+                }
+                offset = page.next
+            } while (offset != 0)
+            applications
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        } finally { timeout.cancel(false) }
+    }
+
+    /** The host returns a small PNG, or an empty value if no icon is available. */
+    fun applicationIcon(id: Long): ByteArray = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE || !applicationsRequested) throw IOException("Unexpected signaling state")
+        val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        try {
+            send(socket, SignalMessage.ApplicationIcon(id))
+            val response = receive(socket) as? SignalMessage.ApplicationIconResult ?: throw IOException("Expected application icon")
+            if (response.id != id) throw IOException("Unexpected application icon")
+            response.data
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        } finally { timeout.cancel(false) }
     }
 
     /** Fetches one bounded snapshot in pages; the total wait is limited. */
@@ -157,6 +205,7 @@ class AuthenticatedHostConnection private constructor(
             mediaState = MediaState.IDLE
             displaysRequested = false
             windowsRequested = false
+            applicationsRequested = false
         }
         return true
     }

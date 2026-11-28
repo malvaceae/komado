@@ -11,6 +11,12 @@ public struct DisplayInfo: Equatable, Sendable {
     }
 }
 
+public struct ApplicationInfo: Equatable, Sendable {
+    public let id: UInt32
+    public let name: String
+    public init(id: UInt32, name: String) { self.id = id; self.name = name }
+}
+
 public struct WindowInfo: Equatable, Sendable {
     public let id: UInt32
     public let width: UInt32
@@ -49,6 +55,12 @@ public enum SignalMessage: Equatable, Sendable {
     case displays([DisplayInfo])
     case listWindows(UInt16)
     case windows(next: UInt16, values: [WindowInfo])
+    case listApplications(UInt16)
+    case applications(next: UInt16, values: [ApplicationInfo])
+    case applicationIcon(UInt32)
+    case applicationIconResult(UInt32, Data)
+    case startApplication(UInt32)
+    case startApplicationControl(UInt32)
     case startWindow(UInt32)
     case startWindowControl(UInt32, size: WindowSize? = nil)
     case stopMedia
@@ -128,6 +140,31 @@ public enum SignalMessage: Equatable, Sendable {
             }
             guard !windows.isEmpty || next == 0 else { throw MessageError.invalid }
             return .windows(next: UInt16(next), values: windows)
+        case "application.list":
+            guard fields.count == 3, let offset = nonnegativeInteger(fields[2], max: 65_535) else { throw MessageError.invalid }
+            return .listApplications(UInt16(offset))
+        case "application.listed":
+            guard fields.count >= 3, fields.count <= 67, (fields.count - 3).isMultiple(of: 2),
+                  let next = nonnegativeInteger(fields[2], max: 65_535) else { throw MessageError.invalid }
+            var applications: [ApplicationInfo] = []
+            var ids = Set<UInt32>()
+            for i in stride(from: 3, to: fields.count, by: 2) {
+                guard let id = positiveInteger(fields[i], max: UInt64(Int32.max)), validWindowLabel(fields[i + 1]),
+                      ids.insert(UInt32(id)).inserted else { throw MessageError.invalid }
+                applications.append(ApplicationInfo(id: UInt32(id), name: fields[i + 1]))
+            }
+            guard !applications.isEmpty || next == 0 else { throw MessageError.invalid }
+            return .applications(next: UInt16(next), values: applications)
+        case "application.icon":
+            guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(Int32.max)) else { throw MessageError.invalid }
+            return .applicationIcon(UInt32(id))
+        case "application.iconed":
+            guard fields.count == 4, let id = positiveInteger(fields[2], max: UInt64(Int32.max)),
+                  let data = decodeBase64(fields[3], range: 0...8192) else { throw MessageError.invalid }
+            return .applicationIconResult(UInt32(id), data)
+        case "application.start", "application.control":
+            guard fields.count == 3, let id = positiveInteger(fields[2], max: UInt64(Int32.max)) else { throw MessageError.invalid }
+            return fields[1] == "application.start" ? .startApplication(UInt32(id)) : .startApplicationControl(UInt32(id))
         case "window.control":
             guard (fields.count == 3 || fields.count == 5), let id = positiveInteger(fields[2], max: UInt64(UInt32.max)) else { throw MessageError.invalid }
             if fields.count == 3 { return .startWindowControl(UInt32(id)) }
@@ -189,6 +226,15 @@ public enum SignalMessage: Equatable, Sendable {
             fields = ["1", "window.listed", String(next)] + values.flatMap {
                 [String($0.id), String($0.width), String($0.height), $0.application, $0.title]
             }
+        case let .listApplications(offset):
+            fields = ["1", "application.list", String(offset)]
+        case let .applications(next, values):
+            guard values.count <= 32 else { throw MessageError.invalid }
+            fields = ["1", "application.listed", String(next)] + values.flatMap { [String($0.id), $0.name] }
+        case let .applicationIcon(id): fields = ["1", "application.icon", String(id)]
+        case let .applicationIconResult(id, data): fields = ["1", "application.iconed", String(id), data.base64EncodedString()]
+        case let .startApplication(id): fields = ["1", "application.start", String(id)]
+        case let .startApplicationControl(id): fields = ["1", "application.control", String(id)]
         case let .startWindowControl(id, size):
             guard id > 0 else { throw MessageError.invalid }
             fields = ["1", "window.control", String(id)]

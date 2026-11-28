@@ -47,20 +47,21 @@ public enum WindowCatalog {
               window.frame.width <= 65_535, window.frame.height <= 65_535 else { return nil }
         let info = WindowInfo(id: window.windowID, width: UInt32(window.frame.width.rounded(.up)),
                               height: UInt32(window.frame.height.rounded(.up)),
-                              application: label(owner.applicationName, fallback: "アプリ"),
-                              title: label(window.title ?? "", fallback: "タイトルなし"))
+                              application: catalogLabel(owner.applicationName, fallback: "アプリ"),
+                              title: catalogLabel(window.title ?? "", fallback: "タイトルなし"))
         return WindowSelection(info: info, processID: owner.processID)
     }
 
-    private static func label(_ input: String, fallback: String) -> String {
-        var result = ""
-        for scalar in input.unicodeScalars.prefix(512) {
-            if scalar.value < 32 || (0x7f...0x9f).contains(scalar.value) { continue }
-            let character = String(scalar)
-            if result.utf8.count + character.utf8.count > 96 { break }
-            result.append(character)
-        }
-        let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? fallback : trimmed
+}
+
+func catalogLabel(_ input: String, fallback: String) -> String {
+    var result = ""
+    for scalar in input.unicodeScalars.prefix(512) {
+        if scalar.value < 32 || (0x7f...0x9f).contains(scalar.value) { continue }
+        let character = String(scalar)
+        if result.utf8.count + character.utf8.count > 96 { break }
+        result.append(character)
     }
+    let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? fallback : trimmed
 }

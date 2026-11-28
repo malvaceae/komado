@@ -56,6 +56,14 @@ final class DisplayCapture {
                                size: size, source: source, route: route, onStopped: onStopped)
     }
 
+    static func start(application: SCRunningApplication, display: SCDisplay, source: RTCVideoSource,
+                      route: MediaSessionGate, resolution: CaptureResolution = .standard,
+                      onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
+        let size = try dimensions(width: display.width, height: display.height, resolution: resolution)
+        let filter = SCContentFilter(display: display, including: [application], exceptingWindows: [])
+        return try await start(filter: filter, size: size, source: source, route: route, onStopped: onStopped)
+    }
+
     private static func start(filter: SCContentFilter, size: (width: Int, height: Int), source: RTCVideoSource,
                               route: MediaSessionGate, onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         // ScreenCaptureKit may emit no further frames for an unchanged window.

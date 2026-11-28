@@ -33,6 +33,7 @@ final class HostModel: ObservableObject {
     @Published private(set) var connectedDevice: String?
     @Published private(set) var sharingScreen = false
     @Published private(set) var sharingWindow = false
+    @Published private(set) var sharingApplication = false
     @Published private(set) var controllingScreen = false
     @Published private(set) var sharingDisplayName: String?
     @Published private(set) var networkReady = false
@@ -100,6 +101,7 @@ final class HostModel: ObservableObject {
     private var controlDisplayID: CGDirectDisplayID?
     private var controlBounds: CGRect?
     private var controlWindow: WindowControlSafety?
+    private var controlApplication: (id: Int32, bundleIdentifier: String)?
     private var pointerDispatcher: PointerClickDispatcher?
     private var textDispatcher: KeyboardTextDispatcher?
     private var keyDispatcher: KeyboardKeyDispatcher?
@@ -495,7 +497,7 @@ final class HostModel: ObservableObject {
                 }
                 let onScreenOnly: Bool
                 switch target {
-                case .window, .windowControl: onScreenOnly = false
+                case .window, .windowControl, .application, .applicationControl: onScreenOnly = false
                 default: onScreenOnly = true
                 }
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: onScreenOnly)
@@ -520,6 +522,7 @@ final class HostModel: ObservableObject {
                     self.sharingDisplayName = screen?.localizedName ??
                         "\(CGDisplayPixelsWide(display.displayID)) × \(CGDisplayPixelsHigh(display.displayID)) px"
                     self.sharingWindow = false
+                    self.sharingApplication = false
                     self.sharingScreen = true
                     if target.isControl {
                         let bounds = CGDisplayBounds(displayID)
@@ -535,6 +538,36 @@ final class HostModel: ObservableObject {
                         self.controllingScreen = true
                     }
                     captured = try await DisplayCapture.start(display: display, source: session.videoSource, route: route, resolution: resolution, onStopped: onStopped)
+                case let .application(info, bundleIdentifier), let .applicationControl(info, bundleIdentifier):
+                    guard let application = content.applications.first(where: {
+                        $0.processID > 0 && UInt32($0.processID) == info.id && $0.bundleIdentifier == bundleIdentifier
+                    }) else { throw HostMediaSession.SessionError.creationFailed }
+                    let window = content.windows.first { $0.isOnScreen && $0.owningApplication?.processID == application.processID }
+                    let display = window.flatMap { selected in
+                        content.displays.first { $0.frame.contains(CGPoint(x: selected.frame.midX, y: selected.frame.midY)) }
+                    } ?? content.displays.first { $0.displayID == CGMainDisplayID() }
+                    guard let display else { throw HostMediaSession.SessionError.creationFailed }
+                    self.sharingDisplayName = info.name
+                    self.sharingWindow = false
+                    self.sharingApplication = true
+                    self.sharingScreen = true
+                    if target.isControl {
+                        let bounds = CGDisplayBounds(display.displayID)
+                        guard CaptureGeometry(revision: 1, bounds: bounds) != nil else { throw HostMediaSession.SessionError.creationFailed }
+                        self.controlDisplayID = display.displayID
+                        self.controlBounds = bounds
+                        self.controlApplication = (application.processID, bundleIdentifier)
+                        _ = NSRunningApplication(processIdentifier: application.processID)?.activate(options: [])
+                        self.pointerDispatcher = PointerClickDispatcher()
+                        self.textDispatcher = KeyboardTextDispatcher()
+                        self.keyDispatcher = KeyboardKeyDispatcher()
+                        self.scrollDispatcher = PointerScrollDispatcher()
+                        self.dragDispatcher = PointerDragDispatcher()
+                        self.moveDispatcher = PointerMoveDispatcher()
+                        self.controllingScreen = true
+                    }
+                    captured = try await DisplayCapture.start(application: application, display: display, source: session.videoSource,
+                                                              route: route, resolution: resolution, onStopped: onStopped)
                 case let .window(info, processID), let .windowControl(info, processID, _):
                     guard let window = content.windows.first(where: {
                         WindowCatalog.matches(window: $0, info: info, processID: processID)
@@ -558,6 +591,7 @@ final class HostModel: ObservableObject {
                     }
                     self.sharingDisplayName = "\(info.application) — \(info.title)"
                     self.sharingWindow = true
+                    self.sharingApplication = false
                     self.sharingScreen = true
                     captured = try await DisplayCapture.start(window: window, source: session.videoSource, route: route, resolution: resolution, onStopped: onStopped)
                 }
@@ -654,9 +688,38 @@ final class HostModel: ObservableObject {
                 return
             }
             geometry = candidate
+            if let application = controlApplication {
+                guard let running = NSRunningApplication(processIdentifier: application.id), !running.isTerminated,
+                      (running.bundleIdentifier ?? "") == application.bundleIdentifier else {
+                    mediaFailed(id: id)
+                    return
+                }
+                let allowed: Bool
+                let safety = ApplicationControlSafety(processID: application.id)
+                switch input {
+                case .text, .key:
+                    if let focused = FocusedWindow.snapshot() {
+                        allowed = safety.permitsKeyboard(focusedProcessID: focused.processID, focusedBounds: focused.bounds, displayBounds: bounds)
+                    } else { allowed = false }
+                case .click, .scroll, .drag, .move:
+                    if let coordinate = input.pointerCoordinate,
+                       let normalized = mapping.normalizedContentPoint(x: Double(coordinate.x) / 1_000_000,
+                                                                        y: Double(coordinate.y) / 1_000_000),
+                       let point = geometry.point(x: normalized.x, y: normalized.y, captureRevision: input.captureRevision),
+                       let hit = FocusedWindow.window(at: point),
+                       let windows = ControlWindowSnapshot.onScreen() {
+                        allowed = safety.permits(point: point, hitProcessID: hit.processID, hitBounds: hit.bounds, windows: windows)
+                    } else { allowed = false }
+                case .clipboard: allowed = false
+                }
+                guard allowed else {
+                    if confirmedText != nil || dragDispatcher?.isDragging == true { mediaFailed(id: id) }
+                    return
+                }
+            }
             switch input {
             case .text, .key:
-                guard FocusedWindow.isOnDisplay(bounds) else {
+                guard controlApplication != nil || FocusedWindow.isOnDisplay(bounds) else {
                     if confirmedText != nil { mediaFailed(id: id) }
                     return
                 }
@@ -728,6 +791,7 @@ final class HostModel: ObservableObject {
         controlDisplayID = nil
         controlBounds = nil
         controlWindow = nil
+        controlApplication = nil
         let resize = windowResize
         windowResize = nil
         let previousTask = mediaTask
@@ -738,6 +802,7 @@ final class HostModel: ObservableObject {
         sharingScreen = false
         controllingScreen = false
         sharingWindow = false
+        sharingApplication = false
         sharingDisplayName = nil
         screenMonitor = nil
         mediaSession?.close()

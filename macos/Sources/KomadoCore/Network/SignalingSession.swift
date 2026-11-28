@@ -20,6 +20,9 @@ actor SignalingSession {
     private var device: PairedDevice?
     private var mediaState: MediaState = .idle
     private var displaySnapshot: [DisplayInfo]?
+    private var applicationSnapshot: [ApplicationSelection]?
+    private var nextApplicationOffset: UInt16? = 0
+    private var sentApplicationCount = 0
     private var windowSnapshot: [WindowSelection]?
     private var nextWindowOffset: UInt16? = 0
     private var sentWindowCount = 0
@@ -82,6 +85,9 @@ actor SignalingSession {
         let encoded = try SignalFrame.encode(SignalMessage.mediaStopped.encode())
         mediaState = .idle
         displaySnapshot = nil
+        applicationSnapshot = nil
+        nextApplicationOffset = 0
+        sentApplicationCount = 0
         windowSnapshot = nil
         nextWindowOffset = 0
         sentWindowCount = 0
@@ -143,6 +149,39 @@ actor SignalingSession {
                         })
                         return
                     }
+                    if case let .listApplications(offset) = message, mediaState == .idle {
+                        guard nextApplicationOffset == offset else { await close(); return }
+                        let snapshot: [ApplicationSelection]
+                        if let current = applicationSnapshot { snapshot = current }
+                        else {
+                            guard offset == 0 else { await close(); return }
+                            snapshot = try await ApplicationCatalog.all()
+                            guard !closed, mediaState == .idle else { return }
+                            applicationSnapshot = snapshot
+                        }
+                        let start = Int(offset), end = min(Int(offset) + 32, snapshot.count)
+                        guard start <= end else { await close(); return }
+                        let next = end < snapshot.count ? UInt16(end) : 0
+                        nextApplicationOffset = next == 0 ? nil : next
+                        sentApplicationCount = end
+                        let response = try SignalFrame.encode(SignalMessage.applications(next: next,
+                            values: snapshot[start..<end].map(\.info)).encode())
+                        connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                            Task { await self?.sentCatalog(error: error) }
+                        })
+                        return
+                    }
+                    if case let .applicationIcon(id) = message, mediaState == .idle {
+                        guard let snapshot = applicationSnapshot,
+                              let selected = snapshot.prefix(sentApplicationCount).first(where: { $0.info.id == id }) else { await close(); return }
+                        let icon = await ApplicationCatalog.icon(selected)
+                        guard !closed, mediaState == .idle else { return }
+                        let response = try SignalFrame.encode(SignalMessage.applicationIconResult(id, icon).encode())
+                        connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                            Task { await self?.sentCatalog(error: error) }
+                        })
+                        return
+                    }
                     if case let .listWindows(offset) = message, mediaState == .idle {
                         guard nextWindowOffset == offset else { await close(); return }
                         let snapshot: [WindowSelection]
@@ -178,6 +217,16 @@ actor SignalingSession {
                         guard let snapshot = displaySnapshot,
                               try DisplayCatalog.containsSelected(id, in: snapshot, current: DisplayCatalog.active()) else { await close(); return }
                         target = .display(id); startsMedia = true
+                    case let .startApplication(id), let .startApplicationControl(id):
+                        guard let snapshot = applicationSnapshot,
+                              let selected = snapshot.prefix(sentApplicationCount).first(where: { $0.info.id == id }),
+                              try await ApplicationCatalog.matches(selected), !closed else { await close(); return }
+                        if case .startApplicationControl = message {
+                            target = .applicationControl(info: selected.info, bundleIdentifier: selected.bundleIdentifier)
+                        } else {
+                            target = .application(info: selected.info, bundleIdentifier: selected.bundleIdentifier)
+                        }
+                        startsMedia = true
                     case let .startWindowControl(id, size):
                         guard let snapshot = windowSnapshot,
                               let selected = snapshot.prefix(sentWindowCount).first(where: { $0.info.id == id }),

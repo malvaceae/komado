@@ -265,6 +265,24 @@ final class SignalingServerTests: XCTestCase {
         try await first.send(.proof(signature))
         guard case let .accepted(deviceID) = try await first.receive() else { return XCTFail("Expected acceptance") }
         await fulfillment(of: [firstAuthenticated], timeout: 10)
+        var applicationOffset: UInt16 = 0
+        var applicationIDs = Set<UInt32>()
+        repeat {
+            try await first.send(.listApplications(applicationOffset))
+            guard case let .applications(next, values) = try await first.receive() else { return XCTFail("Expected application page") }
+            for application in values { XCTAssertTrue(applicationIDs.insert(application.id).inserted) }
+            if next != 0 {
+                XCTAssertEqual(values.count, 32)
+                XCTAssertEqual(Int(next), applicationIDs.count)
+            }
+            applicationOffset = next
+        } while applicationOffset != 0
+        if let applicationID = applicationIDs.first {
+            try await first.send(.applicationIcon(applicationID))
+            guard case let .applicationIconResult(id, icon) = try await first.receive() else { return XCTFail("Expected application icon") }
+            XCTAssertEqual(id, applicationID)
+            XCTAssertLessThanOrEqual(icon.count, 8192)
+        }
         try await first.send(.listDisplays)
         guard case let .displays(displays) = try await first.receive(), let display = displays.first else {
             return XCTFail("Expected a nonempty display list")
@@ -321,6 +339,8 @@ final class SignalingServerTests: XCTestCase {
         try await server.sendMediaStopped(sessionID: currentConnection)
         let stoppedResponse = try await first.receive()
         XCTAssertEqual(stoppedResponse, .mediaStopped)
+        try await first.send(.listApplications(0))
+        guard case .applications = try await first.receive() else { return XCTFail("Expected a fresh application list") }
         try await first.send(.listDisplays)
         guard case .displays = try await first.receive() else { return XCTFail("Expected a fresh display list") }
         try await first.send(.listWindows(0))
