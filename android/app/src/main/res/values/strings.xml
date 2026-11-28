@@ -6,9 +6,13 @@
     <string name="host_count">%1$d台</string>
     <string name="select_mac_hint">Macをタップして操作を選択します。</string>
     <string name="add_host">Macを追加</string>
+    <string name="scan_title">QRコードを読み取る</string>
+    <string name="open_app_settings">設定を開く</string>
+    <string name="request_camera">カメラを許可</string>
     <string name="scan_pairing_instruction">Macに表示されたペアリング用QRコードを読み取ってください。</string>
     <string name="scan_expired">読み取り情報が失われました。もう一度QRコードを読み取ってください。</string>
-    <string name="camera_permission_denied">QRコードの読み取りにはカメラの許可が必要です。端末の設定で許可してください。</string>
+    <string name="camera_permission_denied">QRコードを読み取るには、カメラの使用許可が必要です。</string>
+    <string name="camera_permission_settings">QRコードを読み取るには、アプリの設定で「権限」からカメラを許可してください。</string>
     <string name="camera_unavailable">カメラを使用できません。カメラの状態を確認してください。</string>
     <string name="save">保存</string>
     <string name="cancel">キャンセル</string>
