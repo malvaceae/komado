@@ -21,10 +21,10 @@ struct KomadoHostApp: App {
                 NSApp.activate(ignoringOtherApps: true)
             }
             if model.running || model.restoreListening {
-                if model.sharingScreen {
-                    Button("画面共有を停止") { Task { await model.stopSharing() } }
+                if model.connectedDevice != nil {
+                    Button("端末を切断") { Task { await model.disconnectDevice() } }
                 }
-                Button("接続を停止") { Task { await model.stop() } }
+                Button("待ち受けを停止") { Task { await model.stop() } }
             }
             Divider()
             Button("終了") { Task { await model.stop(); NSApp.terminate(nil) } }
@@ -114,16 +114,16 @@ private struct HostView: View {
                     Text("操作にはアクセシビリティの許可も必要です。画面ロック中の操作停止は未検証です。")
                         .foregroundStyle(.secondary)
                     if model.running || model.restoreListening {
-                        if model.sharingScreen {
-                            Button("画面共有を停止") { Task { await model.stopSharing() } }
+                        if model.connectedDevice != nil {
+                            Button("端末を切断") { Task { await model.disconnectDevice() } }
                         }
                         if !model.running {
                             Button("待ち受けを再試行") { Task { await model.start() } }
                                 .disabled(model.busy || !model.networkReady || model.fingerprint == nil)
                         }
-                        Button("接続を停止") { Task { await model.stop() } }
+                        Button("待ち受けを停止") { Task { await model.stop() } }
                     } else {
-                        Button("接続を開始") { Task { await model.start() } }
+                        Button("待ち受けを開始") { Task { await model.start() } }
                             .disabled(model.busy || !model.networkReady || model.fingerprint == nil)
                     }
                     if let connected = model.connectedDevice { Text("接続中: \(connected)") }

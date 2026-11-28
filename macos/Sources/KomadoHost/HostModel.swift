@@ -47,7 +47,7 @@ final class HostModel: ObservableObject {
             if !allowRemoteControl { allowClipboardSharing = false }
             if !allowRemoteControl, mediaTarget?.isControl == true {
                 let session = mediaID
-                Task { if mediaID == session { await stopSharing() } }
+                Task { if mediaID == session { await disconnectDevice() } }
             }
         }
     }
@@ -275,11 +275,13 @@ final class HostModel: ObservableObject {
         refresh()
     }
 
-    func stopSharing() async {
-        guard let connection = mediaConnection, let current = server else { return }
+    func disconnectDevice() async {
+        guard let connection = connectedSession, let current = server else { return }
         resumeDeviceID = nil
         settings.removeObject(forKey: Self.resumeDeviceKey)
         let cleanup = stopMedia()
+        switchingControl = false
+        allowRemoteControl = false
         await current.setResumeDeviceID(nil)
         await current.disconnect(sessionID: connection)
         _ = await cleanup?.value
