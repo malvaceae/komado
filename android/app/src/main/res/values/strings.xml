@@ -1,8 +1,10 @@
 <resources>
     <string name="app_name">komado</string>
-    <string name="hosts">接続先</string>
-    <string name="connection_hint">ペアリング済みのMacの画面を表示・操作できます。</string>
-    <string name="empty_hosts">接続先がありません</string>
+    <string name="hosts">Macを選択</string>
+    <string name="empty_hosts">Macが登録されていません。</string>
+    <string name="registered_hosts">登録済み</string>
+    <string name="host_count">%1$d台</string>
+    <string name="select_mac_hint">Macをタップして操作を選択します。</string>
     <string name="add_host">Macを追加</string>
     <string name="scan_pairing_instruction">Macに表示されたペアリング用QRコードを読み取ってください。</string>
     <string name="scan_expired">読み取り情報が失われました。もう一度QRコードを読み取ってください。</string>

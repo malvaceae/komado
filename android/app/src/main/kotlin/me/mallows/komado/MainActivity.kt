@@ -12,6 +12,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +29,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,7 +39,9 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.PairingInvitation
@@ -108,11 +114,14 @@ class MainActivity : ComponentActivity() {
     private fun HostHome() {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 24.dp)) {
-                Text(stringResource(R.string.hosts), style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.padding(top = 24.dp))
-                Text(stringResource(if (busy) R.string.connecting else R.string.connection_hint),
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp))
+                Text(stringResource(R.string.hosts), style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.padding(top = 24.dp, bottom = 24.dp))
+                Row(Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.registered_hosts), style = MaterialTheme.typography.titleSmall)
+                    if (readable) Text(stringResource(R.string.host_count, hosts.size),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
                 LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (!readable || hosts.isEmpty()) {
                         item {
@@ -122,25 +131,28 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     items(hosts, key = { it.id }) { host ->
-                        val destination = if (host.address.contains(':')) "[${host.address}]:${host.port}" else "${host.address}:${host.port}"
-                        val last = host.lastConnectedAt?.let {
-                            getString(R.string.last_connected, DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)))
-                        } ?: getString(R.string.never_connected)
-                        val check = connectionChecks[host.id]?.takeIf {
-                            it.address == host.address && it.port == host.port && it.pairing == host.pairing
-                        }?.let {
-                            val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it.checkedAt))
-                            getString(R.string.checked_connection, time, getString(if (it.succeeded) R.string.check_succeeded else R.string.check_failed))
-                        }
                         Card(onClick = { hostActions(host) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(host.name, style = MaterialTheme.typography.titleMedium)
-                                Text(destination, style = MaterialTheme.typography.bodyMedium)
-                                Text(stringResource(if (host.pairing == null) R.string.not_paired else R.string.paired),
-                                    style = MaterialTheme.typography.labelMedium)
-                                Text(last, style = MaterialTheme.typography.bodySmall)
-                                if (check != null) Text(check, style = MaterialTheme.typography.bodySmall)
+                            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer) {
+                                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                                        Icon(painterResource(R.drawable.ic_computer), contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                    }
+                                }
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(host.name, style = MaterialTheme.typography.titleMedium)
+                                    Text(stringResource(if (host.pairing == null) R.string.not_paired else R.string.paired),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                }
                             }
+                        }
+                    }
+                    if (readable && hosts.isNotEmpty()) {
+                        item {
+                            Text(stringResource(if (busy) R.string.connecting else R.string.select_mac_hint),
+                                modifier = Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -162,6 +174,20 @@ class MainActivity : ComponentActivity() {
                 title = { Text(current.host.name) },
                 text = {
                     Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
+                        val host = current.host
+                        val destination = if (host.address.contains(':')) "[${host.address}]:${host.port}" else "${host.address}:${host.port}"
+                        Text(destination, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val last = host.lastConnectedAt?.let {
+                            getString(R.string.last_connected, DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)))
+                        } ?: getString(R.string.never_connected)
+                        Text(last, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        connectionChecks[host.id]?.takeIf {
+                            it.address == host.address && it.port == host.port && it.pairing == host.pairing
+                        }?.let {
+                            val time = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it.checkedAt))
+                            Text(getString(R.string.checked_connection, time, getString(if (it.succeeded) R.string.check_succeeded else R.string.check_failed)),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         hostActionLabels(current.host).forEachIndexed { index, label ->
                             TextButton(onClick = { performHostAction(current.host, index) }, modifier = Modifier.fillMaxWidth()) {
                                 Text(label, modifier = Modifier.fillMaxWidth())

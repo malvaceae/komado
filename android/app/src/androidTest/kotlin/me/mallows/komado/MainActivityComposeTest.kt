@@ -7,6 +7,8 @@ import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.platform.app.InstrumentationRegistry
@@ -69,6 +71,23 @@ class MainActivityComposeTest {
         } finally {
             compose.activityRule.scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
         }
+    }
+
+    @Test fun registeredMacCanBeRemoved() {
+        val activity = compose.activity
+        val id = UUID.randomUUID().toString()
+        val name = "Test Mac ${id.take(8)}"
+        val pairing = Pairing(UUID.randomUUID().toString(), "AB".repeat(32), "me.mallows.komado.pair.${UUID.randomUUID()}")
+        assertTrue(HostStore(activity).add(Host(id, name, "mac.local", pairing = pairing)))
+        createdHosts.add(id)
+        compose.activityRule.scenario.recreate()
+        compose.onNodeWithText(name).assertIsDisplayed().performClick()
+        compose.onNodeWithText(activity.getString(R.string.delete)).performScrollTo().performClick()
+        compose.waitUntil(5_000) {
+            runCatching { compose.onNodeWithText(activity.getString(R.string.delete_host_title)).assertIsDisplayed() }.isSuccess
+        }
+        compose.onNodeWithText(activity.getString(R.string.delete)).performClick()
+        compose.onNodeWithText(name).assertDoesNotExist()
     }
 
     @Test fun addsOnlyAfterAuthenticatedQrPairing() {
