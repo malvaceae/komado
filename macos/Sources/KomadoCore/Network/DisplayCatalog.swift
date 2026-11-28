@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -9,7 +10,7 @@ enum DisplayCatalog {
         sent.contains { $0.id == id } && current.contains { $0.id == id }
     }
 
-    static func active() throws -> [DisplayInfo] {
+    @MainActor static func active() throws -> [DisplayInfo] {
         var count: UInt32 = 0
         guard CGGetActiveDisplayList(0, nil, &count) == .success, (1...64).contains(count) else {
             throw CatalogError.unavailable
@@ -23,12 +24,18 @@ enum DisplayCatalog {
         guard CGGetActiveDisplayList(0, nil, &currentCount) == .success, currentCount == count else {
             throw CatalogError.unavailable
         }
+        var names: [CGDirectDisplayID: String] = [:]
+        for screen in NSScreen.screens {
+            if let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value {
+                names[id] = catalogLabel(screen.localizedName, fallback: "ディスプレイ")
+            }
+        }
         return try ids.map { id in
             let width = CGDisplayPixelsWide(id), height = CGDisplayPixelsHigh(id)
             guard id > 0, (1...65_535).contains(width), (1...65_535).contains(height) else {
                 throw CatalogError.unavailable
             }
-            return DisplayInfo(id: id, width: UInt32(width), height: UInt32(height))
+            return DisplayInfo(id: id, width: UInt32(width), height: UInt32(height), name: names[id] ?? "ディスプレイ")
         }
     }
 }

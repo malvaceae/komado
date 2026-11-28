@@ -4,10 +4,12 @@ public struct DisplayInfo: Equatable, Sendable {
     public let id: UInt32
     public let width: UInt32
     public let height: UInt32
-    public init(id: UInt32, width: UInt32, height: UInt32) {
+    public let name: String
+    public init(id: UInt32, width: UInt32, height: UInt32, name: String) {
         self.id = id
         self.width = width
         self.height = height
+        self.name = name
     }
 }
 
@@ -113,15 +115,15 @@ public enum SignalMessage: Equatable, Sendable {
             guard fields.count == 2 else { throw MessageError.invalid }
             return .listDisplays
         case "display.listed":
-            guard fields.count >= 5, fields.count <= 194, (fields.count - 2).isMultiple(of: 3) else { throw MessageError.invalid }
+            guard fields.count >= 6, fields.count <= 258, (fields.count - 2).isMultiple(of: 4) else { throw MessageError.invalid }
             var displays: [DisplayInfo] = []
             var ids = Set<UInt32>()
-            for i in stride(from: 2, to: fields.count, by: 3) {
+            for i in stride(from: 2, to: fields.count, by: 4) {
                 guard let id = positiveInteger(fields[i], max: UInt64(UInt32.max)),
                       let width = positiveInteger(fields[i + 1], max: 65_535),
                       let height = positiveInteger(fields[i + 2], max: 65_535),
-                      ids.insert(UInt32(id)).inserted else { throw MessageError.invalid }
-                displays.append(DisplayInfo(id: UInt32(id), width: UInt32(width), height: UInt32(height)))
+                      validCatalogLabel(fields[i + 3]), ids.insert(UInt32(id)).inserted else { throw MessageError.invalid }
+                displays.append(DisplayInfo(id: UInt32(id), width: UInt32(width), height: UInt32(height), name: fields[i + 3]))
             }
             return .displays(displays)
         case "window.list":
@@ -136,7 +138,7 @@ public enum SignalMessage: Equatable, Sendable {
                 guard let id = positiveInteger(fields[i], max: UInt64(UInt32.max)),
                       let width = positiveInteger(fields[i + 1], max: 65_535),
                       let height = positiveInteger(fields[i + 2], max: 65_535),
-                      validWindowLabel(fields[i + 3]), validWindowLabel(fields[i + 4]),
+                      validCatalogLabel(fields[i + 3]), validCatalogLabel(fields[i + 4]),
                       ids.insert(UInt32(id)).inserted else { throw MessageError.invalid }
                 windows.append(WindowInfo(id: UInt32(id), width: UInt32(width), height: UInt32(height),
                                           application: fields[i + 3], title: fields[i + 4]))
@@ -152,7 +154,7 @@ public enum SignalMessage: Equatable, Sendable {
             var applications: [ApplicationInfo] = []
             var ids = Set<UInt32>()
             for i in stride(from: 3, to: fields.count, by: 2) {
-                guard let id = positiveInteger(fields[i], max: UInt64(Int32.max)), validWindowLabel(fields[i + 1]),
+                guard let id = positiveInteger(fields[i], max: UInt64(Int32.max)), validCatalogLabel(fields[i + 1]),
                       ids.insert(UInt32(id)).inserted else { throw MessageError.invalid }
                 applications.append(ApplicationInfo(id: UInt32(id), name: fields[i + 1]))
             }
@@ -229,7 +231,7 @@ public enum SignalMessage: Equatable, Sendable {
         case .listDisplays: fields = ["1", "display.list"]
         case let .displays(displays):
             guard (1...64).contains(displays.count) else { throw MessageError.invalid }
-            fields = ["1", "display.listed"] + displays.flatMap { [String($0.id), String($0.width), String($0.height)] }
+            fields = ["1", "display.listed"] + displays.flatMap { [String($0.id), String($0.width), String($0.height), $0.name] }
         case let .listWindows(offset):
             guard offset <= 512 else { throw MessageError.invalid }
             fields = ["1", "window.list", String(offset)]
@@ -288,7 +290,7 @@ public enum SignalMessage: Equatable, Sendable {
         return positiveInteger(value, max: max)
     }
 
-    private static func validWindowLabel(_ value: String) -> Bool {
+    private static func validCatalogLabel(_ value: String) -> Bool {
         (1...96).contains(value.utf8.count) && !value.unicodeScalars.contains {
             $0.value < 32 || (0x7f...0x9f).contains($0.value)
         }

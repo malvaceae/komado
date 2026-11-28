@@ -75,7 +75,7 @@
     <string name="control_hover">マウスの移動でカーソルを移動</string>
     <string name="control_zoom">ピンチで拡大・縮小</string>
     <string name="select_screen">画面を選択</string>
-    <string name="screen_option">画面 %1$d（%2$d × %3$d px）</string>
+    <string name="screen_option">画面 %1$d：%2$s（%3$d × %4$d px）</string>
     <string name="screen_selection_failed">画面一覧を取得できませんでした。Macの状態とアプリのバージョンを確認してください。</string>
     <string name="select_window">ウインドウを選択</string>
     <string name="select_application">アプリを表示</string>

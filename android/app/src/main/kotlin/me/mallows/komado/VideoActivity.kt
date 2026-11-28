@@ -508,7 +508,7 @@ class VideoActivity : ComponentActivity() {
 
     private fun chooseDisplay(established: AuthenticatedHostConnection, displays: List<DisplayInfo>) {
         val labels = displays.mapIndexed { index, display ->
-            getString(R.string.screen_option, index + 1, display.width, display.height)
+            getString(R.string.screen_option, index + 1, display.name, display.width, display.height)
         }.toTypedArray()
         targetDialog = AlertDialog.Builder(this).setTitle(R.string.select_screen).setItems(labels) { _, index ->
             targetDialog = null

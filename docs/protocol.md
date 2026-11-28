@@ -116,7 +116,7 @@ Androidの画面表示では、`capture.ready`の受信後も最初のフレー�
 
 メッセージを解釈できても認証済みとはみなしません。Mac側の初期認証状態管理は、`pair`または`auth`の後に`proof`を受け付け、想定外の順序や検証失敗でセッションを閉じます。Android側には、事前確認した証明書のフィンガープリントを検証してTLSを確立し、一時情報または端末IDを送って署名チャレンジに応答する接続処理があります。両アプリにQRまたは手動でのペアリングと接続確認、認証後のディスプレイ表示を組み込みました。
 
-認証済みのアイドル状態では、Androidは`["1","display.list"]`を1回送信でき、Macは`["1","display.listed",ID,幅,高さ,...]`を返します。ID・ピクセル幅・高さの3要素を画面ごとに並べ、1〜64画面、重複しない1〜4,294,967,295のID、1〜65,535の幅・高さとします。すべて先頭ゼロのない10進文字列です。取得上限を超えた場合は一部を省略せず接続を終了します。Macは[Core Graphicsの有効なディスプレイ一覧](https://developer.apple.com/documentation/coregraphics/cggetactivedisplaylist(_:_:_:))を使い、ハードウェアミラーリングでは主側のみが一覧に載ります。
+認証済みのアイドル状態では、Androidは`["1","display.list"]`を1回送信でき、Macは`["1","display.listed",ID,幅,高さ,名前,...]`を返します。画面ごとに4要素を並べ、1〜64画面、重複しない1〜4,294,967,295のID、1〜65,535の幅・高さとします。数値は先頭ゼロのない10進文字列、名前は制御文字を含まない1〜96バイトのUTF-8文字列です。取得上限を超えた場合は一部を省略せず接続を終了します。Macは[Core Graphicsの有効なディスプレイ一覧](https://developer.apple.com/documentation/coregraphics/cggetactivedisplaylist(_:_:_:))を使い、ハードウェアミラーリングでは主側のみが一覧に載ります。
 
 `["1","display.control",ID]`は同じ接続で取得した画面一覧から選んだ画面の操作を開始します。Mac側で操作許可とAccessibility権限が必要です。対象画面の検証と制約は[ADR 0010](decisions/0010-display-control.md)を参照してください。
 

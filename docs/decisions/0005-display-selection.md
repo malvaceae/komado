@@ -15,12 +15,12 @@ macOS標準のCore Graphicsは描画可能なディスプレイのIDとピクセ
 
 ## 決定と理由
 
-新規依存を加えず、Core Graphicsの一覧からIDとサイズを取得し、既存の認証済みTLS上でAndroidに渡す。Androidは同一接続で1画面を選択し、Macは一覧を再取得し、選択したIDが引き続き存在することを確認してから開始する。従来のメイン画面開始メッセージも残す。
+新規依存を加えず、Core Graphicsの一覧からIDとサイズを取得し、AppKitの`NSScreen.localizedName`をIDで対応付けて、既存の認証済みTLS上でAndroidに渡す。名前を取得できない場合は「ディスプレイ」と表示する。Androidは同一接続で1画面を選択し、Macは一覧を再取得し、選択したIDが引き続き存在することを確認してから開始する。従来のメイン画面開始メッセージも残す。
 
 ## 影響・制約・未解決事項
 
 - 一覧は1接続につき1回、最大64画面とし、上限超過時は一部を省略せず失敗する。
-- Androidには番号とピクセルサイズを表示する。同サイズの画面を見分けにくいため、名前の取得と表示は今後の課題とする。
+- Androidには番号、名前、ピクセルサイズを表示する。同じ名前の画面は番号で区別する。
 - 画面一覧の変更は擬似データで検証した。開始要求後の構成変更は既存の画面環境通知で接続を終了するが、画面IDの再利用を含む全ての競合は防げない。
 
 ## 関連資料
@@ -29,3 +29,4 @@ macOS標準のCore Graphicsは描画可能なディスプレイのIDとピクセ
 - [互換性](../compatibility.md)
 - [Apple: CGGetActiveDisplayList](https://developer.apple.com/documentation/coregraphics/cggetactivedisplaylist(_:_:_:))
 - [Apple: SCDisplay](https://developer.apple.com/documentation/screencapturekit/scdisplay)
+- [Apple: NSScreen](https://developer.apple.com/documentation/appkit/nsscreen)

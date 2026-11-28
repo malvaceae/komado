@@ -204,10 +204,10 @@
     },
     {
       "type": "array",
-      "description": "One to 64 triples of ID, width in pixels and height in pixels. Ranges, triple count and unique IDs are checked by implementations.",
+      "description": "One to 64 groups of ID, width in pixels, height in pixels and display name. Ranges, grouping, UTF-8 lengths and unique IDs are checked by implementations.",
       "prefixItems": [{ "const": "1" }, { "const": "display.listed" }],
-      "items": { "type": "string", "pattern": "^[1-9][0-9]{0,9}$", "not": { "pattern": "[^0-9]" } },
-      "minItems": 5, "maxItems": 194
+      "items": { "type": "string", "minLength": 1, "maxLength": 96 },
+      "minItems": 6, "maxItems": 258
     },
     {
       "type": "array",

@@ -29,13 +29,15 @@ final class SignalMessageTests: XCTestCase {
     }
 
     func testDisplayListBoundariesAndDuplicateIDs() throws {
-        let displays = (1...64).map { DisplayInfo(id: UInt32($0), width: 1920, height: 1080) }
+        let displays = (1...64).map { DisplayInfo(id: UInt32($0), width: 1920, height: 1080, name: String(repeating: "\"", count: 96)) }
         let message = SignalMessage.displays(displays)
         XCTAssertEqual(try SignalMessage.decode(message.encode()), message)
         XCTAssertThrowsError(try SignalMessage.displays([]).encode())
-        XCTAssertThrowsError(try SignalMessage.displays(displays + [DisplayInfo(id: 65, width: 1, height: 1)]).encode())
+        XCTAssertThrowsError(try SignalMessage.displays(displays + [DisplayInfo(id: 65, width: 1, height: 1, name: "画面")]).encode())
         XCTAssertThrowsError(try SignalMessage.displays([displays[0], displays[0]]).encode())
-        XCTAssertThrowsError(try SignalMessage.displays([DisplayInfo(id: 1, width: 65_536, height: 1)]).encode())
+        XCTAssertThrowsError(try SignalMessage.displays([DisplayInfo(id: 1, width: 65_536, height: 1, name: "画面")]).encode())
+        XCTAssertThrowsError(try SignalMessage.displays([DisplayInfo(id: 1, width: 1, height: 1, name: "")]).encode())
+        XCTAssertThrowsError(try SignalMessage.displays([DisplayInfo(id: 1, width: 1, height: 1, name: String(repeating: "あ", count: 33))]).encode())
         XCTAssertThrowsError(try SignalMessage.startDisplay(0).encode())
     }
 

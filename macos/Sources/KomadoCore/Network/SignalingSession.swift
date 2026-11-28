@@ -157,7 +157,8 @@ actor SignalingSession {
                         return
                     }
                     if message == .listDisplays && mediaState == .idle && displaySnapshot == nil {
-                        let displays = try DisplayCatalog.active()
+                        let displays = try await DisplayCatalog.active()
+                        guard !closed, mediaState == .idle, displaySnapshot == nil else { return }
                         let response = try SignalFrame.encode(SignalMessage.displays(displays).encode())
                         displaySnapshot = displays
                         connection.send(content: response, completion: .contentProcessed { [weak self] error in
@@ -226,12 +227,14 @@ actor SignalingSession {
                     case .startMedia: target = .mainDisplay; startsMedia = true
                     case .startControl: target = .mainDisplayControl; startsMedia = true
                     case let .startDisplayControl(id):
-                        guard let snapshot = displaySnapshot,
-                              try DisplayCatalog.containsSelected(id, in: snapshot, current: DisplayCatalog.active()) else { await close(); return }
+                        let current = try await DisplayCatalog.active()
+                        guard !closed, mediaState == .idle, let snapshot = displaySnapshot,
+                              DisplayCatalog.containsSelected(id, in: snapshot, current: current) else { await close(); return }
                         target = .displayControl(id); startsMedia = true
                     case let .startDisplay(id):
-                        guard let snapshot = displaySnapshot,
-                              try DisplayCatalog.containsSelected(id, in: snapshot, current: DisplayCatalog.active()) else { await close(); return }
+                        let current = try await DisplayCatalog.active()
+                        guard !closed, mediaState == .idle, let snapshot = displaySnapshot,
+                              DisplayCatalog.containsSelected(id, in: snapshot, current: current) else { await close(); return }
                         target = .display(id); startsMedia = true
                     case let .startApplication(id), let .startApplicationControl(id):
                         guard let snapshot = applicationSnapshot,

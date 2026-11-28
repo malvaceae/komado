@@ -39,18 +39,24 @@ class SignalMessageTest {
     }
 
     @Test fun displayListBoundariesAndDuplicateIds() {
-        val values = (1..64).map { DisplayInfo(it.toLong(), 1920, 1080) }
+        val values = (1..64).map { DisplayInfo(it.toLong(), 1920, 1080, "\"".repeat(96)) }
         val message = SignalMessage.Displays(values)
         assertEquals(message, SignalMessageCodec.decode(SignalMessageCodec.encode(message)))
         assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.encode(SignalMessage.Displays(emptyList())) }
         assertThrows(SignalMessageCodec.MessageException::class.java) {
-            SignalMessageCodec.encode(SignalMessage.Displays(values + DisplayInfo(65, 1, 1)))
+            SignalMessageCodec.encode(SignalMessage.Displays(values + DisplayInfo(65, 1, 1, "画面")))
         }
         assertThrows(SignalMessageCodec.MessageException::class.java) {
             SignalMessageCodec.encode(SignalMessage.Displays(listOf(values[0], values[0])))
         }
         assertThrows(SignalMessageCodec.MessageException::class.java) {
-            SignalMessageCodec.encode(SignalMessage.Displays(listOf(DisplayInfo(1, 65_536, 1))))
+            SignalMessageCodec.encode(SignalMessage.Displays(listOf(DisplayInfo(1, 65_536, 1, "画面"))))
+        }
+        assertThrows(SignalMessageCodec.MessageException::class.java) {
+            SignalMessageCodec.encode(SignalMessage.Displays(listOf(DisplayInfo(1, 1, 1, ""))))
+        }
+        assertThrows(SignalMessageCodec.MessageException::class.java) {
+            SignalMessageCodec.encode(SignalMessage.Displays(listOf(DisplayInfo(1, 1, 1, "あ".repeat(33)))))
         }
         assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.encode(SignalMessage.StartDisplay(0)) }
     }
