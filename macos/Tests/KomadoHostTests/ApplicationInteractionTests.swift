@@ -4,17 +4,17 @@ import CoreGraphics
 import CoreMedia
 import CoreVideo
 import ScreenCaptureKit
-import WebRTC
+import LiveKitWebRTC
 import XCTest
 import KomadoCore
 @testable import KomadoHost
 
-private final class MenuFrameProbe: NSObject, RTCVideoRenderer, @unchecked Sendable {
+private final class MenuFrameProbe: NSObject, LKRTCVideoRenderer, @unchecked Sendable {
     private let lock = NSLock()
     private var image: CVPixelBuffer?
     func setSize(_ size: CGSize) {}
-    func renderFrame(_ frame: RTCVideoFrame?) {
-        guard let buffer = frame?.buffer as? RTCCVPixelBuffer else { return }
+    func renderFrame(_ frame: LKRTCVideoFrame?) {
+        guard let buffer = frame?.buffer as? LKRTCCVPixelBuffer else { return }
         lock.withLock { image = buffer.pixelBuffer }
     }
     func pixel(at point: CGPoint) -> [UInt8]? {

@@ -1,6 +1,6 @@
 import Foundation
 import KomadoCore
-@preconcurrency import WebRTC
+@preconcurrency import LiveKitWebRTC
 
 /// Owns one WebRTC peer. The caller exchanges descriptions over authenticated
 /// signaling, starts capture only for that session, and closes on any failure.
@@ -9,12 +9,12 @@ final class HostMediaSession {
     enum SessionError: Error { case creationFailed, unexpectedState, gatheringFailed }
     private enum State { case idle, makingOffer, awaitingAnswer, applyingAnswer, answerApplied, closed }
 
-    private let factory: RTCPeerConnectionFactory
+    private let factory: LKRTCPeerConnectionFactory
     private let delegate: HostPeerDelegate
-    private let peer: RTCPeerConnection
-    let videoSource: RTCVideoSource
-    private let videoTrack: RTCVideoTrack
-    private let dataChannel: RTCDataChannel
+    private let peer: LKRTCPeerConnection
+    let videoSource: LKRTCVideoSource
+    private let videoTrack: LKRTCVideoTrack
+    private let dataChannel: LKRTCDataChannel
     private let onFailure: @Sendable () -> Void
     private var state: State = .idle
     private var pendingRevision: UInt64?
@@ -25,17 +25,17 @@ final class HostMediaSession {
          onFailure: @escaping @Sendable () -> Void) throws {
         let factory = MediaFactory.create()
         let delegate = HostPeerDelegate(route: route, onControl: onControl, onFailure: onFailure)
-        let configuration = RTCConfiguration()
+        let configuration = LKRTCConfiguration()
         configuration.iceServers = []
         configuration.sdpSemantics = .unifiedPlan
-        let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
+        let constraints = LKRTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         guard let peer = factory.peerConnection(with: configuration, constraints: constraints, delegate: delegate) else {
             throw SessionError.creationFailed
         }
         let source = factory.videoSource(forScreenCast: true)
         let track = factory.videoTrack(with: source, trackId: "screen")
         guard peer.add(track, streamIds: ["komado"]) != nil,
-              let channel = peer.dataChannel(forLabel: "control", configuration: RTCDataChannelConfiguration()) else {
+              let channel = peer.dataChannel(forLabel: "control", configuration: LKRTCDataChannelConfiguration()) else {
             peer.close()
             throw SessionError.creationFailed
         }
@@ -75,7 +75,7 @@ final class HostMediaSession {
         guard state != .closed, let revision = pendingRevision, dataChannel.readyState == .open else { return }
         let data = try CaptureReady(revision: revision).encode()
         guard delegate.enableControl(revision: revision) else { throw SessionError.unexpectedState }
-        guard dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false)) else { throw SessionError.creationFailed }
+        guard dataChannel.sendData(LKRTCDataBuffer(data: data, isBinary: false)) else { throw SessionError.creationFailed }
         pendingRevision = nil
         announced = true
         announceTimeout?.cancel()
@@ -85,21 +85,21 @@ final class HostMediaSession {
     func sendClipboardResponse(_ response: ClipboardResponse) -> Bool {
         guard state == .answerApplied, announced, dataChannel.readyState == .open,
               let data = try? response.encode() else { return false }
-        return dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
+        return dataChannel.sendData(LKRTCDataBuffer(data: data, isBinary: false))
     }
 
     func sendTextPosted(sequence: UInt64) -> Bool {
         guard state == .answerApplied, announced, dataChannel.readyState == .open,
               let data = try? KeyboardTextPosted(sequence: sequence).encode() else { return false }
-        return dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
+        return dataChannel.sendData(LKRTCDataBuffer(data: data, isBinary: false))
     }
 
     func makeOffer() async throws -> String {
         guard state == .idle else { throw SessionError.unexpectedState }
         state = .makingOffer
         do {
-            let offer = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<RTCSessionDescription, Error>) in
-                peer.offer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)) { description, error in
+            let offer = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<LKRTCSessionDescription, Error>) in
+                peer.offer(for: LKRTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)) { description, error in
                     if let error { continuation.resume(throwing: error) }
                     else if let description { continuation.resume(returning: description) }
                     else { continuation.resume(throwing: SessionError.creationFailed) }
@@ -126,7 +126,7 @@ final class HostMediaSession {
         state = .applyingAnswer
         do {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                peer.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp)) { error in
+                peer.setRemoteDescription(LKRTCSessionDescription(type: .answer, sdp: sdp)) { error in
                     if let error { continuation.resume(throwing: error) } else { continuation.resume() }
                 }
             }
@@ -150,7 +150,7 @@ final class HostMediaSession {
     }
 }
 
-final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
+final class HostPeerDelegate: NSObject, LKRTCPeerConnectionDelegate, LKRTCDataChannelDelegate, @unchecked Sendable {
     private let route: MediaSessionGate
     private let onFailure: @Sendable () -> Void
     private let onControl: (@Sendable (ControlInput) -> Void)?
@@ -205,7 +205,7 @@ final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChanne
         if notify { control.close(); route.close(); onFailure() }
     }
 
-    func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
+    func dataChannelDidChangeState(_ dataChannel: LKRTCDataChannel) {
         if dataChannel.readyState == .open {
             let callback = lock.withLock { closed ? nil : onChannelOpen }
             callback?()
@@ -214,7 +214,7 @@ final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChanne
         }
     }
 
-    func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
+    func dataChannel(_ dataChannel: LKRTCDataChannel, didReceiveMessageWith buffer: LKRTCDataBuffer) {
         controlDeliveryLock.withLock {
             guard route.isAllowed else { fail(); return }
             guard let input = control.accept(buffer.data, binary: buffer.isBinary) else { fail(); return }
@@ -224,23 +224,23 @@ final class HostPeerDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChanne
         }
     }
 
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
-    func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
+    func peerConnection(_ peerConnection: LKRTCPeerConnection, didChange stateChanged: LKRTCSignalingState) {}
+    func peerConnection(_ peerConnection: LKRTCPeerConnection, didAdd stream: LKRTCMediaStream) {}
+    func peerConnection(_ peerConnection: LKRTCPeerConnection, didRemove stream: LKRTCMediaStream) {}
+    func peerConnectionShouldNegotiate(_ peerConnection: LKRTCPeerConnection) {}
+    func peerConnection(_ peerConnection: LKRTCPeerConnection, didGenerate candidate: LKRTCIceCandidate) {}
+    func peerConnection(_ peerConnection: LKRTCPeerConnection, didRemove candidates: [LKRTCIceCandidate]) {}
+    func peerConnection(_ peerConnection: LKRTCPeerConnection, didOpen dataChannel: LKRTCDataChannel) {}
+    func peerConnection(_ peerConnection: LKRTCPeerConnection, didChange newState: LKRTCIceGatheringState) {
         if newState == .complete { continuation.yield(()) }
     }
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
+    func peerConnection(_ peerConnection: LKRTCPeerConnection, didChange newState: LKRTCIceConnectionState) {
         if newState == .failed || newState == .disconnected {
             fail()
         }
     }
     @objc(peerConnection:didChangeConnectionState:)
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
+    func peerConnection(_ peerConnection: LKRTCPeerConnection, didChange newState: LKRTCPeerConnectionState) {
         if newState == .connected { route.connected() }
         else if newState == .failed || newState == .disconnected { fail() }
     }

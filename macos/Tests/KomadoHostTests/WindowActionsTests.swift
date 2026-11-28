@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 import ScreenCaptureKit
-import WebRTC
+import LiveKitWebRTC
 import XCTest
 @testable import KomadoCore
 @testable import KomadoHost

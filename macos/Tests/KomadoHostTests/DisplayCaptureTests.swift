@@ -3,7 +3,7 @@ import CoreGraphics
 import Foundation
 import Network
 import ScreenCaptureKit
-import WebRTC
+import LiveKitWebRTC
 import XCTest
 @testable import KomadoHost
 
@@ -174,14 +174,14 @@ final class DisplayCaptureTests: XCTestCase {
     }
 }
 
-private final class FrameCounter: NSObject, RTCVideoRenderer, @unchecked Sendable {
+private final class FrameCounter: NSObject, LKRTCVideoRenderer, @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
     private var lastFrameSize: CGSize?
     var value: Int { lock.withLock { count } }
     var frameSize: CGSize? { lock.withLock { lastFrameSize } }
     func setSize(_ size: CGSize) {}
-    func renderFrame(_ frame: RTCVideoFrame?) {
+    func renderFrame(_ frame: LKRTCVideoFrame?) {
         if let frame { lock.withLock { count += 1; lastFrameSize = CGSize(width: Int(frame.width), height: Int(frame.height)) } }
     }
 }

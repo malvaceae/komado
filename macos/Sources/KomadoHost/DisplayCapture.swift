@@ -4,7 +4,7 @@ import CoreVideo
 import Foundation
 import KomadoCore
 import ScreenCaptureKit
-import WebRTC
+import LiveKitWebRTC
 
 enum CaptureResolution: String, CaseIterable, Identifiable {
     case standard, reduced
@@ -39,14 +39,14 @@ final class DisplayCapture {
         self.bridge = bridge
     }
 
-    static func start(display: SCDisplay, source: RTCVideoSource, route: MediaSessionGate, resolution: CaptureResolution = .standard,
+    static func start(display: SCDisplay, source: LKRTCVideoSource, route: MediaSessionGate, resolution: CaptureResolution = .standard,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         let size = try dimensions(width: display.width, height: display.height, resolution: resolution)
         return try await start(filter: SCContentFilter(display: display, excludingWindows: []),
                                size: size, source: source, route: route, onStopped: onStopped)
     }
 
-    static func start(window: SCWindow, source: RTCVideoSource, route: MediaSessionGate, resolution: CaptureResolution = .standard,
+    static func start(window: SCWindow, source: LKRTCVideoSource, route: MediaSessionGate, resolution: CaptureResolution = .standard,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         let width = window.frame.width, height = window.frame.height
         guard width.isFinite, height.isFinite, width >= 2, height >= 2,
@@ -56,7 +56,7 @@ final class DisplayCapture {
                                size: size, source: source, route: route, onStopped: onStopped)
     }
 
-    static func start(application: SCRunningApplication, display: SCDisplay, source: RTCVideoSource,
+    static func start(application: SCRunningApplication, display: SCDisplay, source: LKRTCVideoSource,
                       route: MediaSessionGate, resolution: CaptureResolution = .standard,
                       onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         let size = try dimensions(width: display.width, height: display.height, resolution: resolution)
@@ -64,7 +64,7 @@ final class DisplayCapture {
         return try await start(filter: filter, size: size, source: source, route: route, onStopped: onStopped)
     }
 
-    private static func start(filter: SCContentFilter, size: (width: Int, height: Int), source: RTCVideoSource,
+    private static func start(filter: SCContentFilter, size: (width: Int, height: Int), source: LKRTCVideoSource,
                               route: MediaSessionGate, onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
         // ScreenCaptureKit may emit no further frames for an unchanged window.
         // Start only after the peer is ready so its first frame is not discarded.
@@ -130,14 +130,14 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
     private let lock = NSLock()
     private var active = true
     private var mapping: CaptureFrameMapping?
-    private let source: RTCVideoSource
-    private let capturer: RTCVideoCapturer
+    private let source: LKRTCVideoSource
+    private let capturer: LKRTCVideoCapturer
     private let route: MediaSessionGate
     private let onStopped: @Sendable () -> Void
 
-    init(source: RTCVideoSource, route: MediaSessionGate, onStopped: @escaping @Sendable () -> Void) {
+    init(source: LKRTCVideoSource, route: MediaSessionGate, onStopped: @escaping @Sendable () -> Void) {
         self.source = source
-        self.capturer = RTCVideoCapturer(delegate: source)
+        self.capturer = LKRTCVideoCapturer(delegate: source)
         self.route = route
         self.onStopped = onStopped
     }
@@ -173,7 +173,7 @@ private final class DisplayFrameBridge: NSObject, SCStreamOutput, SCStreamDelega
         guard let image = sampleBuffer.imageBuffer else { stopForUnusableFrame(); return }
         let timestamp = CMTimeConvertScale(sampleBuffer.presentationTimeStamp, timescale: 1_000_000_000, method: .default)
         guard timestamp.isNumeric else { stopForUnusableFrame(); return }
-        let frame = RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: image), rotation: ._0, timeStampNs: timestamp.value)
+        let frame = LKRTCVideoFrame(buffer: LKRTCCVPixelBuffer(pixelBuffer: image), rotation: ._0, timeStampNs: timestamp.value)
         let newMapping = Self.frameMapping(attachments: attachments.first!, image: image)
         lock.withLock {
             guard active else { return }

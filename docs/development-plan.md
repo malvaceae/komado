@@ -157,11 +157,11 @@ macOS側でシグナリングサーバーを起動し、Android側から接続�
 
 #### WebRTCライブラリ
 
-stasel/WebRTC 158.0.0を利用する。
+LiveKitWebRTC 150.7871.08を利用する。
 
-https://github.com/stasel/WebRTC
+https://github.com/livekit/webrtc-xcframework
 
-GoogleのWebRTCソースコードからビルドされたXCFrameworkを利用する。
+WebRTCをもとにビルドされたXCFrameworkを利用する。
 
 macOS向けのarm64およびx86_64バイナリが提供されている。
 
@@ -1266,5 +1266,5 @@ Intel Macおよび旧世代Androidへの対応は、初期開発の対象外と�
 
 - [WebRTC](https://webrtc.org/)
 - [WebRTC Source Code](https://webrtc.googlesource.com/src/)
-- [stasel/WebRTC](https://github.com/stasel/WebRTC)
+- [LiveKitWebRTC](https://github.com/livekit/webrtc-xcframework)
 - [GetStream/webrtc-android](https://github.com/GetStream/webrtc-android)
