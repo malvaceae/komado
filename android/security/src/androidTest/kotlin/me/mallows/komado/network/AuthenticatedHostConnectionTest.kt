@@ -67,6 +67,8 @@ class AuthenticatedHostConnectionTest {
                     receive(socket) as SignalMessage.Proof
                     send(socket, SignalMessage.Accepted(UUID.randomUUID()))
                     assertEquals(SignalMessage.ListWindows(0), receive(socket))
+                    send(socket, SignalMessage.Windows(0, windows.take(1)))
+                    assertEquals(SignalMessage.ListWindows(0), receive(socket))
                     send(socket, SignalMessage.Windows(0, windows))
                     assertEquals(SignalMessage.WindowActionRequest(1, WindowAction.CLOSE), receive(socket))
                     send(socket, SignalMessage.WindowActionResult(1, true))
@@ -81,6 +83,7 @@ class AuthenticatedHostConnectionTest {
             try {
                 AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint, "Android test", ByteArray(32), key).use { connection ->
                     assertThrows(IOException::class.java) { connection.performWindowAction(1, WindowAction.CLOSE) }
+                    assertEquals(windows.take(1), connection.listWindows())
                     assertEquals(windows, connection.listWindows())
                     assertTrue(connection.performWindowAction(1, WindowAction.CLOSE))
                     assertEquals(windows.drop(1), connection.listWindows())

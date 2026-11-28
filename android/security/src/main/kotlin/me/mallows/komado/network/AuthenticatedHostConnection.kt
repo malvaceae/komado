@@ -127,8 +127,8 @@ class AuthenticatedHostConnection private constructor(
 
     /** Fetches one bounded snapshot in pages; the total wait is limited. */
     fun listWindows(): List<WindowInfo> = synchronized(mediaLock) {
-        if (closed || mediaState != MediaState.IDLE || windowsRequested) throw IOException("Unexpected signaling state")
-        windowsRequested = true
+        if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
+        windowsRequested = false
         val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         try {
             val windows = mutableListOf<WindowInfo>()
@@ -145,6 +145,7 @@ class AuthenticatedHostConnection private constructor(
                 }
                 offset = page.next
             } while (offset != 0)
+            windowsRequested = true
             windows
         } catch (error: Exception) {
             runCatching { close() }

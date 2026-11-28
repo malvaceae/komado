@@ -431,8 +431,8 @@ class VideoActivity : ComponentActivity() {
                 }
                 runOnUiThread {
                     if (active) {
-                        if (windows.isEmpty()) { stopSession(failed = true); status.setText(R.string.no_windows) }
-                        else { status.setText(R.string.window_choosing); chooseWindow(established, windows) }
+                        status.setText(R.string.window_choosing)
+                        chooseWindow(established, windows)
                     }
                 }
             }
@@ -535,6 +535,9 @@ class VideoActivity : ComponentActivity() {
                     dialog.setOnDismissListener { if (windowActionDialog === dialog) windowActionDialog = null }
                     dialog.show()
                 }
+        }, onRefresh = {
+            targetDialog = null
+            if (active) executor.execute { prepareTarget(established, Target.WINDOW) }
         })
     }
 

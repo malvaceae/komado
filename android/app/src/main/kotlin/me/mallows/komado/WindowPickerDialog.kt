@@ -15,7 +15,7 @@ import me.mallows.komado.protocol.WindowInfo
 
 internal object WindowPickerDialog {
     fun show(activity: Activity, windows: List<WindowInfo>, onChoose: (WindowInfo) -> Unit, onCancel: () -> Unit,
-             onActions: ((WindowInfo) -> Unit)?): AlertDialog {
+             onActions: ((WindowInfo) -> Unit)?, onRefresh: () -> Unit): AlertDialog {
         val padding = (16 * activity.resources.displayMetrics.density).toInt()
         val search = EditText(activity).apply {
             setSingleLine()
@@ -56,6 +56,7 @@ internal object WindowPickerDialog {
         update("")
         return AlertDialog.Builder(activity).setCustomTitle(header)
             .setAdapter(adapter) { _, index -> onChoose(visible[index]) }
+            .setNeutralButton(R.string.window_refresh) { _, _ -> onRefresh() }
             .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
             .setOnCancelListener { onCancel() }
             .create().also { dialog ->

@@ -316,6 +316,8 @@ final class SignalingServerTests: XCTestCase {
             }
             offset = next
         } while offset != 0
+        try await first.send(.listWindows(0))
+        guard case .windows = try await first.receive() else { return XCTFail("Expected a refreshed window list") }
         let localCandidate = "a=candidate:1 1 udp 1 \(address) 54321 typ host\r\n"
         let otherCandidate = "a=candidate:2 1 udp 1 192.0.2.5 54322 typ host\r\n"
         let offer = "v=0\r\ns=offer\r\nc=IN IP4 192.0.2.5\r\n" + localCandidate + otherCandidate

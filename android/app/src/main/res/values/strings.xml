@@ -92,6 +92,7 @@
     <string name="window_control_note">Mac上で見えている部分を操作できます。文字入力にはウインドウのフォーカスが必要です。</string>
     <string name="window_option">%1$s — %2$s（%3$d × %4$d pt）</string>
     <string name="window_search">アプリ名・タイトル</string>
+    <string name="window_refresh">更新</string>
     <string name="window_action_hint">ウインドウを長押しすると最小化・復元・終了できます。</string>
     <string name="window_action_title">ウインドウの操作</string>
     <string name="window_minimize">最小化</string>
@@ -101,7 +102,6 @@
     <string name="window_action_failed">操作できませんでした。Macの操作許可とウインドウの状態を確認してください。</string>
     <string name="window_search_empty">一致するウインドウがありません。</string>
     <string name="window_selection_failed">ウインドウ一覧を取得できませんでした。Macの画面収録の許可とアプリのバージョンを確認してください。</string>
-    <string name="no_windows">表示できるウインドウがありません。</string>
     <string name="screen_authenticating">Macを認証中…</string>
     <string name="screen_list_waiting">画面一覧を取得中…</string>
     <string name="window_list_waiting">ウインドウ一覧を取得中…</string>

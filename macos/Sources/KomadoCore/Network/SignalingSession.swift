@@ -219,6 +219,11 @@ actor SignalingSession {
                         return
                     }
                     if case let .listWindows(offset) = message, mediaState == .idle {
+                        if offset == 0 && nextWindowOffset == nil {
+                            windowSnapshot = nil
+                            nextWindowOffset = 0
+                            sentWindowCount = 0
+                        }
                         guard nextWindowOffset == offset else { await close(); return }
                         let snapshot: [WindowSelection]
                         if let current = windowSnapshot { snapshot = current }
