@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">komado</string>
     <string name="hosts">接続先</string>
-    <string name="connection_unavailable">ペアリング済みのMacの画面を表示できます。操作機能は準備中です。</string>
+    <string name="connection_hint">ペアリング済みのMacの画面を表示・操作できます。</string>
     <string name="empty_hosts">接続先がありません</string>
     <string name="add_host">接続先を追加</string>
     <string name="scan_pairing">QRコードでMacを追加</string>
@@ -79,9 +79,9 @@
     <string name="screen_selection_failed">画面一覧を取得できませんでした。Macの状態とアプリのバージョンを確認してください。</string>
     <string name="select_window">ウインドウを選択</string>
     <string name="control_window">ウインドウを操作</string>
-    <string name="window_control_note">Mac上で見えている部分を操作できます。文字入力にはウインドウのフォーカスが必要です。移動やサイズ変更後は接続し直してください。</string>
+    <string name="window_control_note">Mac上で見えている部分を操作できます。文字入力にはウインドウのフォーカスが必要です。</string>
     <string name="window_option">%1$s — %2$s</string>
-    <string name="window_search">アプリ名またはタイトルで検索</string>
+    <string name="window_search">アプリ名・タイトル</string>
     <string name="window_search_empty">一致するウインドウがありません。</string>
     <string name="window_selection_failed">ウインドウ一覧を取得できませんでした。Macの画面収録の許可とアプリのバージョンを確認してください。</string>
     <string name="no_windows">表示できるウインドウがありません。</string>
@@ -109,7 +109,7 @@
     <string name="invalid_invitation">64桁のペアリングコードを入力してください</string>
     <string name="pair_success">ペアリングしました。</string>
     <string name="pair_failed">ペアリングに失敗しました。Macの確認情報、コード、接続先を確認してください。Macに登録が残った場合は削除してください。</string>
-    <string name="connection_success">接続と認証を確認しました。画面操作は準備中です。</string>
+    <string name="connection_success">接続と認証を確認しました。</string>
     <string name="connection_failed">接続または認証に失敗しました。Macの状態と接続先を確認してください。</string>
     <string name="local_network_denied">ローカルネットワークを許可しない場合、同じLAN内のMacには接続できません。許可は端末の設定から変更できます。VPN経由の接続は試せます。</string>
     <string name="delete_paired_message">%1$sの情報をこの端末から削除します。接続を無効にするには、Mac側でもこの端末の登録を削除してください。</string>

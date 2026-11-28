@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
             readable = false
         }
         connectionChecks.keys.retainAll(hosts.map { it.id }.toSet())
-        status.setText(if (busy) R.string.connecting else R.string.connection_unavailable)
+        status.setText(if (busy) R.string.connecting else R.string.connection_hint)
         addButton.isEnabled = readable && !busy
         scanButton.isEnabled = readable && !busy
         list.removeAllViews()

@@ -29,6 +29,11 @@ internal object WindowPickerDialog {
         val header = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(padding, 0, padding, 0)
+            addView(TextView(activity).apply {
+                setText(R.string.select_window)
+                setTextAppearance(android.R.style.TextAppearance_Material_Title)
+                setPadding(0, padding, 0, 0)
+            })
             addView(search)
             addView(empty)
         }
@@ -47,13 +52,15 @@ internal object WindowPickerDialog {
             override fun afterTextChanged(s: Editable?) = Unit
         })
         update("")
-        return AlertDialog.Builder(activity).setTitle(R.string.select_window).setView(header)
+        return AlertDialog.Builder(activity).setCustomTitle(header)
             .setAdapter(adapter) { _, index -> onChoose(visible[index]) }
             .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
             .setOnCancelListener { onCancel() }
             .create().also { dialog ->
                 dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
                 dialog.show()
+                // AlertDialog does not detect an editor inside its custom title.
+                dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
             }
     }
 }
