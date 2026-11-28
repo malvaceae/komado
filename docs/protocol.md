@@ -80,7 +80,7 @@ Androidはフォーカス喪失時に同期を停止し、復帰時に変更の�
 
 確定文字列とは別に、特殊キーやショートカットの1回分を`["1","keyboard.key",連番,キャプチャリビジョン,キー,修飾キー]`とします。連番とリビジョンはクリック・確定文字列と共通です。キーはBackspace、Delete、Enter、Tab、Escape、矢印、Home・End・Page Up・Page Down、カンマ・ピリオド・スラッシュ、Spaceと追加の記号キー、英字、数字、F1〜F12の[定義済みの名前](../protocol/schemas/keyboard-key-v1.schema.json)に限定します。修飾キーはCommand・Option・Control・Shiftをそれぞれ1・2・4・8とするビットマスクの10進文字列です。メッセージは1,024バイト以下で、プロトコル上は修飾キーの状態を次の操作へ持ち越しません。OSへの送信途中での異常終了や切断時のキー状態は未検証です。
 
-両OSの形式を[共通テストデータ](../protocol/fixtures/keyboard-key.json)で確認し、既存の制御チャネルの順序・リビジョン検証に加えました。操作モードのIMEからは削除、Enter、Tab、Escape、矢印などを送ります。特殊キー欄では修飾キーを選び、英数字、Escape、Tab、矢印、F1〜F12と組み合わせて送れます。修飾キーの選択は特殊キー欄のみに適用し、切断時に解除します。
+両OSの形式を[共通テストデータ](../protocol/fixtures/keyboard-key.json)で確認し、既存の制御チャネルの順序・リビジョン検証に加えました。操作モードのIMEからは削除、Enter、Tab、Escape、矢印などを送ります。特殊キー欄では修飾キーを選び、英数字、Enter、Backspace、Delete、Escape、Tab、矢印、F1〜F12と組み合わせて送れます。修飾キーの選択は特殊キー欄のみに適用し、切断時に解除します。
 
 Space・記号キーは特殊キー欄から送れます。外付けキーボードからはCommand・Option・Controlを伴う場合のみ送り、通常の文字入力はIMEや文字入力の経路で扱います。Mac側のキーボード配列による違いは未検証です。Home・End・Page Up・Page Downも特殊キー欄と物理キーから送れます。
 

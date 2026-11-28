@@ -34,6 +34,7 @@ internal class SpecialKeyBar(context: Context, private val send: (SpecialKey, In
             setOnClickListener { showShortcutKeys() }
         })
         val keys = listOf("Esc" to SpecialKey.ESCAPE, "Tab" to SpecialKey.TAB,
+            "Enter" to SpecialKey.ENTER, "Backspace" to SpecialKey.BACKSPACE, "Delete" to SpecialKey.DELETE,
             "←" to SpecialKey.LEFT, "↑" to SpecialKey.UP, "↓" to SpecialKey.DOWN, "→" to SpecialKey.RIGHT) +
             (1..12).map { "F$it" to SpecialKey.valueOf("F$it") }
         keys.forEach { (label, key) ->

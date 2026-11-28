@@ -52,6 +52,9 @@ class SpecialKeyBarTest {
             val command = controls.filterIsInstance<ToggleButton>().first { it.textOff == "⌘" }
             val control = controls.filterIsInstance<ToggleButton>().first { it.textOff == "Ctrl" }
             val escape = controls.filterIsInstance<Button>().first { it.text == "Esc" }
+            val enter = controls.filterIsInstance<Button>().first { it.text == "Enter" }
+            val backspace = controls.filterIsInstance<Button>().first { it.text == "Backspace" }
+            val delete = controls.filterIsInstance<Button>().first { it.text == "Delete" }
             val f12 = controls.filterIsInstance<Button>().first { it.text == "F12" }
             val home = controls.filterIsInstance<Button>().first { it.text == "Home" }
             assertFalse(escape.isEnabled)
@@ -61,9 +64,13 @@ class SpecialKeyBarTest {
             command.performClick()
             control.performClick()
             escape.performClick()
+            enter.performClick()
+            backspace.performClick()
+            delete.performClick()
             f12.performClick()
             home.performClick()
-            assertEquals(listOf(SpecialKey.ESCAPE to 5, SpecialKey.F12 to 5, SpecialKey.HOME to 5), sent)
+            assertEquals(listOf(SpecialKey.ESCAPE to 5, SpecialKey.ENTER to 5, SpecialKey.BACKSPACE to 5,
+                SpecialKey.DELETE to 5, SpecialKey.F12 to 5, SpecialKey.HOME to 5), sent)
             bar.setAvailable(false)
             assertFalse(command.isChecked)
             assertFalse(control.isChecked)
