@@ -22,7 +22,7 @@ final class WindowActionsTests: XCTestCase {
             let delegate = Delegate()
             let window = NSWindow(contentRect: NSRect(x: 150, y: 150, width: 450, height: 300), styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false; window.delegate = delegate
-            window.title = "komado refusal test"; window.orderFrontRegardless()
+            window.title = "komado refusal test"; window.makeKeyAndOrderFront(nil); app.activate(ignoringOtherApps: true)
             app.run()
             """]
         helper.standardOutput = FileHandle.nullDevice; helper.standardError = FileHandle.nullDevice
@@ -54,7 +54,7 @@ final class WindowActionsTests: XCTestCase {
             let window = NSWindow(contentRect: NSRect(x: 150, y: 150, width: 450, height: 300), styleMask: [.titled, .resizable, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.title = "komado window action test"
-            window.orderFrontRegardless()
+            window.makeKeyAndOrderFront(nil); app.activate(ignoringOtherApps: true)
             app.run()
             """]
         helper.standardOutput = FileHandle.nullDevice

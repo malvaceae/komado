@@ -20,7 +20,7 @@ final class WindowResizeTests: XCTestCase {
             window.isReleasedWhenClosed = false
             window.title = CommandLine.arguments[1]
             window.minSize = NSSize(width: 300, height: 240)
-            window.orderFrontRegardless()
+            window.makeKeyAndOrderFront(nil); app.activate(ignoringOtherApps: true)
             app.run()
             """, name]
         helper.standardOutput = FileHandle.nullDevice
