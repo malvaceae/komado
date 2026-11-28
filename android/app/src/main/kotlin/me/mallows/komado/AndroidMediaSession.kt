@@ -36,6 +36,7 @@ import java.util.ArrayDeque
 internal class AndroidMediaSession(
     context: Context,
     private val listener: Listener,
+    sharedEglContext: EglBase.Context,
 ) : PeerConnection.Observer, AutoCloseable {
     interface Listener {
         fun onAnswer(sdp: String)
@@ -76,7 +77,7 @@ internal class AndroidMediaSession(
 
     init {
         checkMainThread()
-        egl = EglBase.create()
+        egl = EglBase.create(sharedEglContext)
         factory = try { MediaFactory.create(context, egl.eglBaseContext) } catch (error: Throwable) {
             egl.release()
             throw error

@@ -316,7 +316,7 @@ class VideoActivity : Activity() {
                             status.setText(R.string.text_delivery_unconfirmed)
                         }
                         override fun onClipboardResponse(response: ClipboardResponse) { handleClipboardResponse(response) }
-                    })
+                    }, requireNotNull(renderer).eglContext)
                     media = session
                     session.acceptOffer(offer)
                 } catch (_: Exception) { stopSession(failed = true) }

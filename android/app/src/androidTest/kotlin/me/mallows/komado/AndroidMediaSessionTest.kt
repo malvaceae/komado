@@ -1,7 +1,9 @@
 package me.mallows.komado
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import android.graphics.Color
 import me.mallows.komado.protocol.PointerClick
 import me.mallows.komado.protocol.PointerClickCodec
 import me.mallows.komado.protocol.KeyboardText
@@ -48,8 +50,92 @@ import java.util.concurrent.LinkedBlockingQueue
 
 @RunWith(AndroidJUnit4::class)
 class AndroidMediaSessionTest {
+    @Test fun rendersDecodedVideoWithSharedEglContext() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val egl = EglBase.create()
+        val factory = MediaFactory.create(instrumentation.targetContext, egl.eglBaseContext)
+        val gathered = CountDownLatch(1)
+        val sender = factory.createPeerConnection(PeerConnection.RTCConfiguration(emptyList()), SenderObserver(gathered))!!
+        val source = factory.createVideoSource(true)
+        val track = factory.createVideoTrack("render-test", source)
+        val channel = sender.createDataChannel("control", DataChannel.Init())!!
+        var receiver: AndroidMediaSession? = null
+        var renderer: RemoteVideoRenderer? = null
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    renderer = RemoteVideoRenderer(activity)
+                    activity.setContentView(requireNotNull(renderer).view)
+                }
+                check(sender.addTrack(track, listOf("test")) != null)
+                val created = CompletableFuture<SessionDescription>()
+                sender.createOffer(DescriptionObserver(created = created), MediaConstraints())
+                val localSet = CompletableFuture<Unit>()
+                sender.setLocalDescription(DescriptionObserver(set = localSet), created.get(10, TimeUnit.SECONDS))
+                localSet.get(10, TimeUnit.SECONDS)
+                assertTrue("Sender ICE gathering timed out", gathered.await(10, TimeUnit.SECONDS))
+                val answer = CompletableFuture<String>()
+                val video = CountDownLatch(1)
+                instrumentation.runOnMainSync {
+                    receiver = AndroidMediaSession(instrumentation.targetContext, object : AndroidMediaSession.Listener {
+                        override fun onAnswer(sdp: String) { answer.complete(sdp) }
+                        override fun onCaptureReady(revision: Long) = Unit
+                        override fun onVideo(track: VideoTrack?) {
+                            requireNotNull(renderer).show(track)
+                            if (track != null) video.countDown()
+                        }
+                        override fun onFailure() { answer.completeExceptionally(IllegalStateException("Media session failed")) }
+                    }, requireNotNull(renderer).eglContext)
+                    requireNotNull(receiver).acceptOffer(sender.localDescription.description)
+                }
+                val remoteSet = CompletableFuture<Unit>()
+                sender.setRemoteDescription(DescriptionObserver(set = remoteSet),
+                    SessionDescription(SessionDescription.Type.ANSWER, answer.get(20, TimeUnit.SECONDS)))
+                remoteSet.get(10, TimeUnit.SECONDS)
+                assertTrue("Video track was not attached", video.await(20, TimeUnit.SECONDS))
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+                while (channel.state() != DataChannel.State.OPEN && System.nanoTime() < deadline) Thread.sleep(50)
+                assertTrue("Control channel did not open", channel.state() == DataChannel.State.OPEN)
+                assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap("[\"1\",\"capture.ready\",\"1\"]".toByteArray()), false)))
+                source.capturerObserver.onCapturerStarted(true)
+                var visible = false
+                for (i in 0 until 50) {
+                    val buffer = JavaI420Buffer.allocate(320, 240)
+                    for (index in 0 until buffer.dataY.capacity()) buffer.dataY.put(index, 70.toByte())
+                    for (index in 0 until buffer.dataU.capacity()) buffer.dataU.put(index, 220.toByte())
+                    for (index in 0 until buffer.dataV.capacity()) buffer.dataV.put(index, 110.toByte())
+                    val frame = VideoFrame(buffer, 0, System.nanoTime())
+                    try { source.capturerObserver.onFrameCaptured(frame) } finally { frame.release() }
+                    Thread.sleep(100)
+                    val screenshot = instrumentation.uiAutomation.takeScreenshot()
+                    if (screenshot != null) {
+                        val pixel = screenshot.getPixel(screenshot.width / 2, screenshot.height / 2)
+                        visible = Color.blue(pixel) > 100 && Color.blue(pixel) > Color.red(pixel) + 40
+                        screenshot.recycle()
+                    }
+                    if (visible) break
+                }
+                assertTrue("Decoded video was not displayed", visible)
+                source.capturerObserver.onCapturerStopped()
+                instrumentation.runOnMainSync { receiver?.close(); renderer?.close() }
+                receiver = null
+                renderer = null
+            }
+        } finally {
+            instrumentation.runOnMainSync { receiver?.close(); renderer?.close() }
+            channel.dispose()
+            sender.close()
+            sender.dispose()
+            track.dispose()
+            source.dispose()
+            factory.dispose()
+            egl.release()
+        }
+    }
+
     @Test fun rejectsUnexpectedAudioBeforeAnswering() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val egl = EglBase.create()
         val factory = MediaFactory.create(instrumentation.targetContext)
         val sender = factory.createPeerConnection(PeerConnection.RTCConfiguration(emptyList()), SenderObserver(CountDownLatch(1)))!!
         val failed = CountDownLatch(1)
@@ -68,7 +154,7 @@ class AndroidMediaSessionTest {
                         override fun onCaptureReady(revision: Long) = Unit
                         override fun onVideo(track: VideoTrack?) = Unit
                         override fun onFailure() { failed.countDown() }
-                    })
+                    }, egl.eglBaseContext)
                 receiver!!.acceptOffer(sdp)
             }
             assertTrue("Unexpected audio did not close the session", failed.await(10, TimeUnit.SECONDS))
@@ -78,6 +164,7 @@ class AndroidMediaSessionTest {
             sender.close()
             sender.dispose()
             factory.dispose()
+            egl.release()
         }
     }
 
@@ -222,7 +309,7 @@ class AndroidMediaSessionTest {
                         remoteVideo.completeExceptionally(IllegalStateException("Media session failed"))
                     }
                     override fun onTextDeliveryUnconfirmed() { textUnconfirmed.countDown() }
-                })
+                }, egl.eglBaseContext)
                 assertTrue(!receiver.sendClick(PointerClick(1, 1, 500_000, 500_000, PointerClick.Button.LEFT)))
                 receiver.acceptOffer(offerSdp)
             }
@@ -389,6 +476,7 @@ class AndroidMediaSessionTest {
 
     @Test fun malformedOfferFailsAndClosesSession() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val egl = EglBase.create()
         val failed = CountDownLatch(1)
         var receiver: AndroidMediaSession? = null
         try {
@@ -399,12 +487,13 @@ class AndroidMediaSessionTest {
                         override fun onCaptureReady(revision: Long) = throw AssertionError("Unexpected capture")
                         override fun onVideo(track: VideoTrack?) = throw AssertionError("Unexpected video")
                         override fun onFailure() { failed.countDown() }
-                    })
+                    }, egl.eglBaseContext)
                 receiver.acceptOffer("invalid")
             }
             assertTrue("Invalid offer was not rejected", failed.await(10, TimeUnit.SECONDS))
         } finally {
             instrumentation.runOnMainSync { receiver?.close() }
+            egl.release()
         }
     }
 
@@ -443,7 +532,7 @@ class AndroidMediaSessionTest {
                         receiverFailed.countDown()
                         answer.completeExceptionally(IllegalStateException("Media session failed"))
                     }
-                })
+                }, egl.eglBaseContext)
                 receiver.acceptOffer(alteredOffer)
             }
             val answerSdp = answer.get(20, TimeUnit.SECONDS)
@@ -487,7 +576,7 @@ class AndroidMediaSessionTest {
                     override fun onCaptureReady(revision: Long) = Unit
                     override fun onVideo(track: VideoTrack?) = Unit
                     override fun onFailure() { failed.countDown() }
-                })
+                }, egl.eglBaseContext)
                 receiver.acceptOffer(offer)
             }
             assertTrue("Answer was not generated", answer.await(10, TimeUnit.SECONDS))

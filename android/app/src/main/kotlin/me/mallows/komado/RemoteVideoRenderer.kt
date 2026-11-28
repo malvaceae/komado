@@ -14,6 +14,7 @@ internal class RemoteVideoRenderer(
 ) : AutoCloseable {
     val view = SurfaceViewRenderer(context)
     private val egl: EglBase
+    val eglContext: EglBase.Context get() = egl.eglBaseContext
     private var track: VideoTrack? = null
     private var closed = false
 
