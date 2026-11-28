@@ -34,8 +34,26 @@ class AuthenticatedHostConnection private constructor(
     private var displaysRequested = false
     private var windowsRequested = false
     private var applicationsRequested = false
+    private var resumeChecked = false
     @Volatile private var stopTimeout: ScheduledFuture<*>? = null
     @Volatile private var closed = false
+
+    /** Checks whether the host still allows this device's interrupted session to resume. */
+    fun canResume(): Boolean = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE || resumeChecked) throw IOException("Unexpected signaling state")
+        resumeChecked = true
+        try {
+            send(socket, SignalMessage.ResumeCheck)
+            when (receive(socket)) {
+                SignalMessage.ResumeAllowed -> true
+                SignalMessage.ResumeDenied -> false
+                else -> throw IOException("Unexpected resume response")
+            }
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        }
+    }
 
     /** Request one media session after device authentication. */
     fun requestMedia(displayId: Long? = null, windowId: Long? = null, control: Boolean = false,

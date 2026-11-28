@@ -198,12 +198,17 @@ class AndroidMediaSessionTest {
         exchangeDescriptionsAndGeneratedVideo(closeControlChannel = true)
     }
 
+    @Test fun remoteControlChannelClosureAllowsReconnectWhenNoTextIsPending() {
+        exchangeDescriptionsAndGeneratedVideo(closeBeforeText = true)
+    }
+
     @Test fun localCloseWhileRemoteChannelClosesIsSafe() {
         exchangeDescriptionsAndGeneratedVideo(closeLocally = true)
     }
 
     private fun exchangeDescriptionsAndGeneratedVideo(sendWrongConfirmation: Boolean = true, duplicateCapture: Boolean = false,
-                                                       closeControlChannel: Boolean = false, closeLocally: Boolean = false) {
+                                                       closeControlChannel: Boolean = false, closeLocally: Boolean = false,
+                                                       closeBeforeText: Boolean = false) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val egl = EglBase.create()
         val factory = MediaFactory.create(instrumentation.targetContext, egl.eglBaseContext)
@@ -286,6 +291,7 @@ class AndroidMediaSessionTest {
         val frames = CountDownLatch(1)
         val captureReady = CountDownLatch(1)
         val failed = CountDownLatch(1)
+        val transportFailed = CountDownLatch(1)
         val textUnconfirmed = CountDownLatch(1)
         val sink = VideoSink { frames.countDown() }
         var attached: VideoTrack? = null
@@ -322,6 +328,7 @@ class AndroidMediaSessionTest {
                         answer.completeExceptionally(IllegalStateException("Media session failed"))
                         remoteVideo.completeExceptionally(IllegalStateException("Media session failed"))
                     }
+                    override fun onTransportFailure() { transportFailed.countDown() }
                     override fun onTextDeliveryUnconfirmed() { textUnconfirmed.countDown() }
                 }, egl.eglBaseContext)
                 assertTrue(!receiver.sendClick(PointerClick(1, 1, 500_000, 500_000, PointerClick.Button.LEFT)))
@@ -451,6 +458,13 @@ class AndroidMediaSessionTest {
                 assertEquals(240, snapshot.height)
             }
             source.capturerObserver.onCapturerStopped()
+            if (closeBeforeText) {
+                channel.close()
+                assertTrue("Channel closure should request reconnect", transportFailed.await(5, TimeUnit.SECONDS))
+                assertTrue("No text was pending", !textUnconfirmed.await(500, TimeUnit.MILLISECONDS))
+                assertTrue("Transport failure should be distinct", !failed.await(500, TimeUnit.MILLISECONDS))
+                return
+            }
             if (!duplicateCapture) {
                 val laterText = KeyboardText(21, 1, "sample")
                 instrumentation.runOnMainSync { assertTrue(requireNotNull(receiver).sendText(laterText)) }
@@ -471,6 +485,7 @@ class AndroidMediaSessionTest {
                 }
                 assertTrue("Unconfirmed text did not close the session", failed.await(if (sendWrongConfirmation || closeControlChannel) 5 else 15, TimeUnit.SECONDS))
                 assertTrue("Unconfirmed text was not reported", textUnconfirmed.await(5, TimeUnit.SECONDS))
+                assertTrue("Unconfirmed text must not trigger reconnect", !transportFailed.await(500, TimeUnit.MILLISECONDS))
             } else {
                 assertTrue(channel.send(DataChannel.Buffer(ByteBuffer.wrap("[\"1\",\"capture.ready\",\"1\"]".toByteArray()), false)))
                 assertTrue("Duplicate capture notification was not rejected", failed.await(5, TimeUnit.SECONDS))

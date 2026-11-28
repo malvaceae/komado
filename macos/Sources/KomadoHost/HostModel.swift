@@ -69,6 +69,7 @@ final class HostModel: ObservableObject {
     }
 
     private let settings: UserDefaults
+    private var resumeDeviceID: UUID?
     private let accessibilityStatus: () -> Bool
     private let accessibilityPrompt: () -> Void
     private let consoleStatus: () -> Bool
@@ -114,6 +115,7 @@ final class HostModel: ObservableObject {
     private var waitingSleepActivity: IdleSleepActivity?
     private static let port: NWEndpoint.Port = 48365
     private static let keepAwakeKey = "keepAwakeWhileListening"
+    private static let resumeDeviceKey = "resumeDeviceID"
     private static let captureResolutionKey = "captureResolution"
 
     convenience init() {
@@ -135,6 +137,7 @@ final class HostModel: ObservableObject {
         self.consoleStatus = consoleStatus
         self.accessibilityPermission = accessibilityStatus()
         self.settings = settings
+        self.resumeDeviceID = settings.string(forKey: Self.resumeDeviceKey).flatMap(UUID.init(uuidString:))
         self.captureResolution = settings.string(forKey: Self.captureResolutionKey).flatMap(CaptureResolution.init(rawValue:)) ?? .standard
         self.keepAwakeWhileListening = settings.bool(forKey: Self.keepAwakeKey)
         self.identityStore = identityStore
@@ -217,7 +220,8 @@ final class HostModel: ObservableObject {
             }
             let run = UUID()
             let newServer = try SignalingServer.create(identity: identity.identity, bindings: selected, port: Self.port,
-                                                pairing: pairing, authentication: authentication) { [weak self] event in
+                                                pairing: pairing, authentication: authentication,
+                                                resumeDeviceID: resumeDeviceID) { [weak self] event in
                 Task { @MainActor [weak self] in self?.handle(event, generation: run) }
             }
             generation = run
@@ -240,10 +244,19 @@ final class HostModel: ObservableObject {
     }
 
     func stop() async {
+        await stop(preserveResume: false)
+    }
+
+    private func stop(preserveResume: Bool) async {
+        if !preserveResume {
+            resumeDeviceID = nil
+            settings.removeObject(forKey: Self.resumeDeviceKey)
+        }
         let cleanup = stopMedia()
         switchingControl = false
         allowRemoteControl = false
         let current = server
+        if !preserveResume { await current?.setResumeDeviceID(nil) }
         generation = UUID()
         server = nil
         running = false
@@ -265,7 +278,10 @@ final class HostModel: ObservableObject {
 
     func stopSharing() async {
         guard let connection = mediaConnection, let current = server else { return }
+        resumeDeviceID = nil
+        settings.removeObject(forKey: Self.resumeDeviceKey)
         let cleanup = stopMedia()
+        await current.setResumeDeviceID(nil)
         await current.disconnect(sessionID: connection)
         _ = await cleanup?.value
     }
@@ -305,6 +321,11 @@ final class HostModel: ObservableObject {
         guard !busy else { return }
         busy = true
         defer { busy = false }
+        if resumeDeviceID != nil {
+            resumeDeviceID = nil
+            settings.removeObject(forKey: Self.resumeDeviceKey)
+            await server?.setResumeDeviceID(nil)
+        }
         stopMedia()
         do {
             if let server { _ = try await server.removeDevice(id: device.id) }
@@ -324,7 +345,7 @@ final class HostModel: ObservableObject {
             return (try? ListenerAccess.addresses(on: interface).contains(binding.address)) == true
         }
         if available.isEmpty {
-            await stop()
+            await stop(preserveResume: true)
             error = "ネットワークが変わったため待ち受けを停止しました。もう一度開始してください。"
         } else if available.count != bindings.count {
             await server?.retainListeners(keys: Set(available.map { "\($0.interface.index)|\($0.address)" }))
@@ -382,8 +403,8 @@ final class HostModel: ObservableObject {
             invitationExpiry = nil
             invitationCleanup = Task { try? await pairing.cancelInvitation() }
             refresh()
-        case let .mediaRequested(id, _, target):
-            Task { [weak self] in await self?.startMedia(connection: id, target: target) }
+        case let .mediaRequested(id, device, target, resuming):
+            Task { [weak self] in await self?.startMedia(connection: id, device: device, target: target, resuming: resuming) }
         case let .mediaStopRequested(id, _):
             Task { [weak self] in await self?.stopMediaForSwitch(connection: id) }
         case let .answer(id, _, sdp):
@@ -399,14 +420,14 @@ final class HostModel: ObservableObject {
         case .throttled: error = "接続試行が多いため、一時的に新しい接続を待機しています。"
         case .failed:
             error = "待ち受けに失敗しました。ネットワークとポートを確認してください。"
-            Task { await stop() }
+            Task { await stop(preserveResume: true) }
         case .stopped:
             running = false
             ready = false
         }
     }
 
-    private func startMedia(connection: UUID, target: MediaTarget) async {
+    private func startMedia(connection: UUID, device: PairedDevice, target: MediaTarget, resuming: Bool) async {
         guard let server, await server.isActive(sessionID: connection), self.server === server, running else { return }
         if let cleanup = mediaCleanup {
             _ = await cleanup.value
@@ -420,6 +441,10 @@ final class HostModel: ObservableObject {
             mediaCleanup = nil
         }
         guard mediaSession == nil else { return }
+        if resuming && resumeDeviceID != device.id {
+            await server.disconnect(sessionID: connection)
+            return
+        }
         if switchingControl && !target.isControl {
             allowRemoteControl = false
             allowClipboardSharing = false
@@ -436,6 +461,11 @@ final class HostModel: ObservableObject {
             Task { await server.disconnect(sessionID: connection) }
             return
         }
+        resumeDeviceID = device.id
+        settings.set(device.id.uuidString, forKey: Self.resumeDeviceKey)
+        await server.setResumeDeviceID(device.id)
+        guard await server.isActive(sessionID: connection), self.server === server, running,
+              resumeDeviceID == device.id else { return }
         let id = UUID()
         mediaID = id
         mediaConnection = connection

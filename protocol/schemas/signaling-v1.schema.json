@@ -184,6 +184,21 @@
     },
     {
       "type": "array",
+      "prefixItems": [{ "const": "1" }, { "const": "resume.check" }],
+      "minItems": 2, "maxItems": 2, "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [{ "const": "1" }, { "const": "resume.allowed" }],
+      "minItems": 2, "maxItems": 2, "items": false
+    },
+    {
+      "type": "array",
+      "prefixItems": [{ "const": "1" }, { "const": "resume.denied" }],
+      "minItems": 2, "maxItems": 2, "items": false
+    },
+    {
+      "type": "array",
       "prefixItems": [{ "const": "1" }, { "const": "display.list" }],
       "minItems": 2, "maxItems": 2, "items": false
     },

@@ -44,6 +44,7 @@ internal class AndroidMediaSession(
         /** Detach synchronously when the track is null, before the peer is disposed. */
         fun onVideo(track: VideoTrack?)
         fun onFailure()
+        fun onTransportFailure() = onFailure()
         fun onTextDeliveryUnconfirmed() = Unit
         fun onClipboardResponse(response: ClipboardResponse) = Unit
     }
@@ -280,12 +281,12 @@ internal class AndroidMediaSession(
         return current.send(DataChannel.Buffer(ByteBuffer.wrap(data), false)).also { if (it) lastSentSequence = sequence }
     }
 
-    private fun fail() {
+    private fun fail(transport: Boolean = false) {
         if (state == State.CLOSED) return
         val textUnconfirmed = pendingText.isNotEmpty()
         close()
-        listener.onFailure()
         if (textUnconfirmed) listener.onTextDeliveryUnconfirmed()
+        if (transport && !textUnconfirmed) listener.onTransportFailure() else listener.onFailure()
     }
 
     override fun close() {
@@ -331,13 +332,13 @@ internal class AndroidMediaSession(
     }
     override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = postIfOpen { answerIfReady() }
     override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
-        if (state == PeerConnection.IceConnectionState.FAILED || state == PeerConnection.IceConnectionState.DISCONNECTED) postIfOpen { fail() }
+        if (state == PeerConnection.IceConnectionState.FAILED || state == PeerConnection.IceConnectionState.DISCONNECTED) postIfOpen { fail(transport = true) }
     }
     override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
         if (state == PeerConnection.PeerConnectionState.CONNECTED) postIfOpen {
             connected = true
             showTrackIfReady()
-        } else if (state == PeerConnection.PeerConnectionState.FAILED || state == PeerConnection.PeerConnectionState.DISCONNECTED) postIfOpen { fail() }
+        } else if (state == PeerConnection.PeerConnectionState.FAILED || state == PeerConnection.PeerConnectionState.DISCONNECTED) postIfOpen { fail(transport = true) }
     }
     override fun onDataChannel(dataChannel: DataChannel) {
         handler.post {
@@ -351,7 +352,7 @@ internal class AndroidMediaSession(
                     postIfOpen {
                         if (channel !== dataChannel) return@postIfOpen
                         val currentState = dataChannel.state()
-                        if (currentState == DataChannel.State.CLOSING || currentState == DataChannel.State.CLOSED) fail()
+                        if (currentState == DataChannel.State.CLOSING || currentState == DataChannel.State.CLOSED) fail(transport = true)
                     }
                 }
                 dataChannel.registerObserver(object : DataChannel.Observer {

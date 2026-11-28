@@ -43,9 +43,14 @@ import me.mallows.komado.protocol.ClipboardOperation
 import me.mallows.komado.security.DeviceSigningKey
 import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
+import java.io.EOFException
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
 import kotlin.math.roundToInt
 
 class VideoActivity : ComponentActivity() {
@@ -109,13 +114,24 @@ class VideoActivity : ComponentActivity() {
     private var specialKeys: SpecialKeyBar? = null
     private var firstFrameShown = false
     private enum class Target { MAIN, DISPLAY, APPLICATION, WINDOW }
+    private sealed interface Selection {
+        data object Main : Selection
+        data class Display(val info: DisplayInfo) : Selection
+        data class Application(val info: ApplicationInfo) : Selection
+        data class Window(val info: WindowInfo) : Selection
+    }
+    @Volatile private var selected: Selection? = null
+    private var sessionHost: Host? = null
+    @Volatile private var reconnecting = false
+    private var reconnectedSize: WindowSize? = null
+    private val retryConnection = Runnable { reconnect() }
     private var nextTarget: Target? = null
     @Volatile private var switching = false
     @Volatile private var rendererGeneration = 0
     private var textDeliveryUnconfirmed = false
     private var lastVideoTapSent = false
     private lateinit var status: TextView
-    private var firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
+    private var firstFrameDeadline = FirstFrameDeadline(mainHandler) { firstFrameTimedOut() }
     private val resizeForLayout = object : Runnable {
         override fun run() {
             if (!active || !showingWindowNote || windowResizeSwitch?.isChecked != true) return
@@ -162,6 +178,8 @@ class VideoActivity : ComponentActivity() {
                     runOnUiThread {
                         if (active && !switching && generation == rendererGeneration) {
                             firstFrameShown = true
+                            reconnecting = false
+                            mainHandler.removeCallbacks(retryConnection)
                             firstFrameDeadline.finish()
                             status.setText(R.string.screen_connected)
                             updateControlAvailability()
@@ -348,6 +366,7 @@ class VideoActivity : ComponentActivity() {
             stopSession(failed = true)
             return
         }
+        sessionHost = host
         executor.execute {
             try {
                 val established = AuthenticatedHostConnection.reconnect(host.address, host.port, hexBytes(pairing.fingerprint),
@@ -371,7 +390,10 @@ class VideoActivity : ComponentActivity() {
     private fun prepareTarget(established: AuthenticatedHostConnection, target: Target,
                               reload: Long? = null, size: WindowSize? = null) {
         when (target) {
-            Target.MAIN -> startMedia(established, null)
+            Target.MAIN -> {
+                selected = Selection.Main
+                startMedia(established, null)
+            }
             Target.DISPLAY -> {
                 showProgress(R.string.screen_list_waiting)
                 val displays = try { established.listDisplays() } catch (_: Exception) {
@@ -400,7 +422,8 @@ class VideoActivity : ComponentActivity() {
                     return
                 }
                 if (reload != null) {
-                    if (windows.none { it.id == reload }) { showFailure(); return }
+                    val window = windows.firstOrNull { it.id == reload } ?: run { showFailure(); return }
+                    selected = Selection.Window(window)
                     startMedia(established, null, reload, size)
                     return
                 }
@@ -473,7 +496,7 @@ class VideoActivity : ComponentActivity() {
         applicationNote?.visibility = if (showingApplicationNote) View.VISIBLE else View.GONE
         windowResizeSwitch?.visibility = if (showingWindowNote) View.VISIBLE else View.GONE
         if (reload == null) currentWindowId = null
-        firstFrameDeadline = FirstFrameDeadline(mainHandler) { if (active) stopSession(failed = true) }
+        firstFrameDeadline = FirstFrameDeadline(mainHandler) { firstFrameTimedOut() }
         viewport?.setTrackpadMode(false)
         trackpadEnabled = false
         trackpadButton?.setText(R.string.enable_trackpad)
@@ -489,6 +512,7 @@ class VideoActivity : ComponentActivity() {
         }.toTypedArray()
         targetDialog = AlertDialog.Builder(this).setTitle(R.string.select_screen).setItems(labels) { _, index ->
             targetDialog = null
+            selected = Selection.Display(displays[index])
             if (active) executor.execute { startMedia(established, displays[index].id) }
         }.setNegativeButton(R.string.cancel) { _, _ -> finish() }
             .setOnCancelListener { finish() }.show()
@@ -497,6 +521,7 @@ class VideoActivity : ComponentActivity() {
     private fun chooseWindow(established: AuthenticatedHostConnection, windows: List<WindowInfo>) {
         targetDialog = WindowPickerDialog.show(this, windows, onChoose = { window ->
             targetDialog = null
+            selected = Selection.Window(window)
             currentWindowId = window.id
             val size = desiredWindowSize()
             if (active) executor.execute { startMedia(established, null, window.id, size) }
@@ -509,6 +534,7 @@ class VideoActivity : ComponentActivity() {
         picker = ApplicationPickerDialog(this, applications, onChoose = { application ->
             cancelled.set(true)
             targetDialog = null
+            selected = Selection.Application(application)
             if (active) executor.execute { startMedia(established, null, applicationId = application.id) }
         }, onCancel = { cancelled.set(true); finish() }, onIconRequested = { application ->
             if (active && !cancelled.get()) executor.execute {
@@ -536,44 +562,157 @@ class VideoActivity : ComponentActivity() {
 
     private fun startMedia(established: AuthenticatedHostConnection, displayId: Long?, windowId: Long? = null,
                            size: WindowSize? = null, applicationId: Long? = null) {
-        showProgress(R.string.screen_waiting)
+        if (!isCurrent(established)) return
+        if (!reconnecting) showProgress(R.string.screen_waiting)
         try {
             established.requestMedia(displayId, windowId, control = controlMode, windowSize = size, applicationId = applicationId)
             val offer = established.receiveOffer()
             runOnUiThread {
-                if (!active) return@runOnUiThread
+                if (!isCurrent(established)) return@runOnUiThread
                 try {
                     if (controlMode) configureControlFeatures()
+                    var owner: AndroidMediaSession? = null
                     val session = AndroidMediaSession(applicationContext, object : AndroidMediaSession.Listener {
                         override fun onAnswer(sdp: String) {
-                            if (!active) return
+                            if (!isCurrent(established)) return
                             executor.execute {
                                 try {
+                                    if (!isCurrent(established)) return@execute
                                     established.sendAnswer(sdp)
                                     if (established.awaitClosure()) runOnUiThread { finishTargetSwitch(established) }
-                                    else showFailure()
-                                } catch (_: Exception) { showFailure() }
+                                    else connectionLost(established)
+                                } catch (error: Exception) { signalingFailed(established, error) }
                             }
                         }
                         override fun onCaptureReady(revision: Long) {
-                            if (switching) return
+                            if (switching || !isCurrent(established)) return
                             captureRevision = revision
                             firstFrameDeadline.start()
                             updateControlAvailability()
                         }
-                        override fun onVideo(track: VideoTrack?) { if (!switching || track == null) renderer?.show(track) }
-                        override fun onFailure() { if (!switching) stopSession(failed = true) }
+                        override fun onVideo(track: VideoTrack?) {
+                            if ((isCurrent(established) || (track == null && media === owner)) && (!switching || track == null)) renderer?.show(track)
+                        }
+                        override fun onFailure() { if (isCurrent(established) && !switching) stopSession(failed = true) }
+                        override fun onTransportFailure() { if (!switching) connectionLost(established) }
                         override fun onTextDeliveryUnconfirmed() {
+                            if (!isCurrent(established)) return
                             textDeliveryUnconfirmed = true
                             status.setText(R.string.text_delivery_unconfirmed)
                         }
-                        override fun onClipboardResponse(response: ClipboardResponse) { handleClipboardResponse(response) }
+                        override fun onClipboardResponse(response: ClipboardResponse) { if (isCurrent(established)) handleClipboardResponse(response) }
                     }, requireNotNull(renderer).eglContext)
+                    owner = session
                     media = session
                     session.acceptOffer(offer)
                 } catch (_: Exception) { stopSession(failed = true) }
             }
-        } catch (_: Exception) { showFailure() }
+        } catch (error: Exception) { signalingFailed(established, error) }
+    }
+
+    private fun isCurrent(established: AuthenticatedHostConnection): Boolean =
+        synchronized(lock) { active && connection === established }
+
+    private fun signalingFailed(established: AuthenticatedHostConnection, error: Exception) {
+        if (error is EOFException || error is SocketException || error is SocketTimeoutException ||
+            (error is SSLException && error !is SSLHandshakeException)) connectionLost(established)
+        else runOnUiThread { if (isCurrent(established)) stopSession(failed = true) }
+    }
+
+    private fun firstFrameTimedOut() {
+        val current = synchronized(lock) { connection }
+        if (reconnecting && current != null) connectionLost(current)
+        else if (active) stopSession(failed = true)
+    }
+
+    private fun connectionLost(established: AuthenticatedHostConnection) {
+        runOnUiThread {
+            if (!isCurrent(established)) return@runOnUiThread
+            if (switching || selected == null || (!firstFrameShown && !reconnecting) || media?.hasUnconfirmedText() == true) {
+                stopSession(failed = true)
+                return@runOnUiThread
+            }
+            val retryDelay = if (reconnecting) 8_000L else 1_000L
+            if (!reconnecting) reconnectedSize = if (selected is Selection.Window) desiredWindowSize() else null
+            reconnecting = true
+            setFullscreen(false)
+            rendererGeneration++
+            firstFrameShown = false
+            lastVideoTapSent = false
+            captureRevision = null
+            firstFrameDeadline.finish()
+            keyboard?.clearFocus()
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken, 0)
+            viewport?.setTrackpadMode(false)
+            trackpadEnabled = false
+            trackpadButton?.setText(R.string.enable_trackpad)
+            automaticWanted = false
+            suspendAutomaticClipboard()
+            automaticSwitch?.isChecked = false
+            clipboardAction = null
+            removeClipboardListener()
+            mainHandler.removeCallbacks(resizeForLayout)
+            runCatching { media?.close() }
+            media = null
+            synchronized(lock) { if (connection === established) connection = null }
+            runCatching { established.close() }
+            try { renderer?.reset() } catch (_: Exception) { stopSession(failed = true); return@runOnUiThread }
+            firstFrameDeadline = FirstFrameDeadline(mainHandler) { firstFrameTimedOut() }
+            updateControlAvailability()
+            status.setText(if (controlMode) R.string.screen_reconnecting_control else R.string.screen_reconnecting)
+            mainHandler.removeCallbacks(retryConnection)
+            mainHandler.postDelayed(retryConnection, retryDelay)
+        }
+    }
+
+    private fun reconnect() {
+        val host = sessionHost ?: return stopSession(failed = true)
+        val pairing = host.pairing ?: return stopSession(failed = true)
+        val target = selected ?: return stopSession(failed = true)
+        val size = reconnectedSize
+        if (!active || !reconnecting) return
+        executor.execute {
+            try {
+                val established = AuthenticatedHostConnection.reconnect(host.address, host.port, hexBytes(pairing.fingerprint),
+                    UUID.fromString(pairing.deviceID), DeviceSigningKey(pairing.keyAlias))
+                val keep = synchronized(lock) {
+                    if (!active || !reconnecting || connection != null) false else { connection = established; true }
+                }
+                if (!keep) { established.close(); return@execute }
+                if (!established.canResume()) {
+                    runOnUiThread { if (isCurrent(established)) { stopSession(failed = false); status.setText(R.string.reconnect_stopped) } }
+                    return@execute
+                }
+                val available = when (target) {
+                    Selection.Main -> true
+                    is Selection.Display -> established.listDisplays().any { it.id == target.info.id }
+                    is Selection.Application -> established.listApplications().any { it.id == target.info.id && it.name == target.info.name }
+                    is Selection.Window -> established.listWindows().any { it.id == target.info.id && it.application == target.info.application }
+                }
+                if (!available) {
+                    runOnUiThread { if (isCurrent(established)) { stopSession(failed = true); status.setText(R.string.reconnect_target_unavailable) } }
+                    return@execute
+                }
+                when (target) {
+                    Selection.Main -> startMedia(established, null)
+                    is Selection.Display -> startMedia(established, target.info.id)
+                    is Selection.Application -> startMedia(established, null, applicationId = target.info.id)
+                    is Selection.Window -> startMedia(established, null, windowId = target.info.id, size = size)
+                }
+            } catch (error: Exception) {
+                val current = synchronized(lock) { connection }
+                if (current != null) signalingFailed(current, error)
+                else runOnUiThread {
+                    if (active && reconnecting) {
+                        if (error is SSLHandshakeException || error is SecurityException) stopSession(failed = true)
+                        else {
+                            status.setText(if (controlMode) R.string.screen_reconnecting_control else R.string.screen_reconnecting)
+                            mainHandler.postDelayed(retryConnection, 8_000)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -947,6 +1086,8 @@ class VideoActivity : ComponentActivity() {
 
     private fun stopSession(failed: Boolean) {
         setFullscreen(false)
+        reconnecting = false
+        mainHandler.removeCallbacks(retryConnection)
         textDeliveryUnconfirmed = textDeliveryUnconfirmed || media?.hasUnconfirmedText() == true
         firstFrameDeadline.finish()
         val current = synchronized(lock) {

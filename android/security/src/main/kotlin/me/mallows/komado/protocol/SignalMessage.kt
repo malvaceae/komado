@@ -41,6 +41,9 @@ sealed interface SignalMessage {
     data class StartWindowControl(val id: Long, val size: WindowSize? = null) : SignalMessage
     data object StopMedia : SignalMessage
     data object MediaStopped : SignalMessage
+    data object ResumeCheck : SignalMessage
+    data object ResumeAllowed : SignalMessage
+    data object ResumeDenied : SignalMessage
     data class Offer(val sdp: String) : SignalMessage
     data class Answer(val sdp: String) : SignalMessage
 }
@@ -178,6 +181,18 @@ object SignalMessageCodec {
                     if (fields.size != 2) throw MessageException()
                     SignalMessage.MediaStopped
                 }
+                "resume.check" -> {
+                    if (fields.size != 2) throw MessageException()
+                    SignalMessage.ResumeCheck
+                }
+                "resume.allowed" -> {
+                    if (fields.size != 2) throw MessageException()
+                    SignalMessage.ResumeAllowed
+                }
+                "resume.denied" -> {
+                    if (fields.size != 2) throw MessageException()
+                    SignalMessage.ResumeDenied
+                }
                 "offer" -> {
                     if (fields.size != 3 || !validSDP(fields[2])) throw MessageException()
                     SignalMessage.Offer(fields[2])
@@ -241,6 +256,9 @@ object SignalMessageCodec {
                 (message.size?.let { listOf(it.width.toString(), it.height.toString()) } ?: emptyList())
             SignalMessage.StopMedia -> listOf("1", "media.stop")
             SignalMessage.MediaStopped -> listOf("1", "media.stopped")
+            SignalMessage.ResumeCheck -> listOf("1", "resume.check")
+            SignalMessage.ResumeAllowed -> listOf("1", "resume.allowed")
+            SignalMessage.ResumeDenied -> listOf("1", "resume.denied")
             is SignalMessage.Offer -> {
                 if (!validSDP(message.sdp)) throw MessageException()
                 listOf("1", "offer", message.sdp)

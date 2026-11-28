@@ -26,7 +26,7 @@ public actor SignalingServer {
         case listening(interfaceName: String, address: String, port: UInt16)
         case listenerUnavailable(interfaceName: String, address: String, port: UInt16)
         case authenticated(UUID, PairedDevice)
-        case mediaRequested(UUID, PairedDevice, MediaTarget)
+        case mediaRequested(UUID, PairedDevice, MediaTarget, resuming: Bool)
         case mediaStopRequested(UUID, PairedDevice)
         case answer(UUID, PairedDevice, String)
         case disconnected(UUID)
@@ -53,6 +53,7 @@ public actor SignalingServer {
     private let startedAt: ContinuousClock.Instant
     private var limiter = ConnectionRateLimit()
     private var active: (id: UUID, session: SignalingSession)?
+    private var resumeDeviceID: UUID?
     private var retry: Task<Void, Never>?
     private var started = false
     private var stopped = false
@@ -60,6 +61,7 @@ public actor SignalingServer {
 
     public nonisolated static func create(identity: SecIdentity, bindings: [ListenerBinding], port: NWEndpoint.Port,
                                          pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator,
+                                         resumeDeviceID: UUID? = nil,
                                          onEvent: @escaping @Sendable (Event) -> Void) throws -> SignalingServer {
         guard !bindings.isEmpty,
               Set(bindings.map { "\($0.interface.index)|\($0.address)" }).count == bindings.count else {
@@ -77,14 +79,17 @@ public actor SignalingServer {
             return Slot(key: "\(binding.interface.index)|\(binding.address)", interfaceName: binding.interface.name, address: displayedAddress,
                         port: (binding.port ?? port).rawValue, listener: listener)
         }
-        return SignalingServer(listeners: listeners, pairing: pairing, authentication: authentication, onEvent: onEvent)
+        return SignalingServer(listeners: listeners, pairing: pairing, authentication: authentication,
+                               resumeDeviceID: resumeDeviceID, onEvent: onEvent)
     }
 
     private init(listeners: [Slot], pairing: PairingCoordinator, authentication: DeviceAuthenticationCoordinator,
+                 resumeDeviceID: UUID?,
                  onEvent: @escaping @Sendable (Event) -> Void) {
         self.listeners = listeners
         self.pairing = pairing
         self.authentication = authentication
+        self.resumeDeviceID = resumeDeviceID
         self.onEvent = onEvent
         self.startedAt = clock.now
     }
@@ -123,6 +128,8 @@ public actor SignalingServer {
     public func isActive(sessionID: UUID) -> Bool {
         !stopped && active?.id == sessionID
     }
+
+    public func setResumeDeviceID(_ id: UUID?) { resumeDeviceID = id }
 
     /// Retire only listeners whose assigned addresses are no longer available.
     public func retainListeners(keys: Set<String>) async {
@@ -202,7 +209,8 @@ public actor SignalingServer {
         let handshake = ServerHandshake(sessionID: id, pairing: pairing, authentication: authentication)
         let session = SignalingSession(connection: connection, handshake: handshake, queue: queue,
                                        onAuthenticated: { [weak self] device in await self?.authenticated(id: id, device: device) },
-                                       onMediaRequested: { [weak self] device, target in await self?.mediaRequested(id: id, device: device, target: target) },
+                                       onMediaRequested: { [weak self] device, target, resuming in await self?.mediaRequested(id: id, device: device, target: target, resuming: resuming) },
+                                       canResume: { [weak self] device in await self?.canResume(id: id, device: device) ?? false },
                                        onMediaStopRequested: { [weak self] device in await self?.mediaStopRequested(id: id, device: device) },
                                        onAnswer: { [weak self] device, sdp in await self?.answer(id: id, device: device, sdp: sdp) },
                                        onClosed: { [weak self] in await self?.sessionClosed(id: id) })
@@ -220,9 +228,13 @@ public actor SignalingServer {
         onEvent(.answer(id, device, sdp))
     }
 
-    private func mediaRequested(id: UUID, device: PairedDevice, target: MediaTarget) {
+    private func mediaRequested(id: UUID, device: PairedDevice, target: MediaTarget, resuming: Bool) {
         guard !stopped, active?.id == id else { return }
-        onEvent(.mediaRequested(id, device, target))
+        onEvent(.mediaRequested(id, device, target, resuming: resuming))
+    }
+
+    private func canResume(id: UUID, device: PairedDevice) -> Bool {
+        !stopped && active?.id == id && resumeDeviceID == device.id
     }
 
     private func mediaStopRequested(id: UUID, device: PairedDevice) {

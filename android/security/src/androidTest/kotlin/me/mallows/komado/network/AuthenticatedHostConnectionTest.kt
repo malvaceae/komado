@@ -84,6 +84,10 @@ class AuthenticatedHostConnectionTest {
                         }
                         assertTrue(verified)
                         send(socket, SignalMessage.Accepted(id))
+                        if (index == 1) {
+                            assertEquals(SignalMessage.ResumeCheck, receive(socket))
+                            send(socket, SignalMessage.ResumeAllowed)
+                        }
                         assertEquals(SignalMessage.StartMedia, receive(socket))
                         if (index == 0) {
                             send(socket, SignalMessage.Offer("v=0\r\ns=offer\r\n"))
@@ -129,6 +133,8 @@ class AuthenticatedHostConnectionTest {
                 paired.close()
                 val reconnected = AuthenticatedHostConnection.reconnect("127.0.0.1", server.localPort, fingerprint, id, key)
                 assertEquals(id, reconnected.deviceID)
+                assertTrue(reconnected.canResume())
+                assertThrows(IOException::class.java) { reconnected.canResume() }
                 reconnected.requestMedia()
                 reconnected.receiveOffer()
                 assertThrows(SignalMessageCodec.MessageException::class.java) {
@@ -175,6 +181,35 @@ class AuthenticatedHostConnectionTest {
                 assertTrue(icon.contentEquals(connection.applicationIcon(33)))
                 connection.requestMedia(control = true, applicationId = 33)
                 connection.close()
+                task.get(20, TimeUnit.SECONDS)
+            } finally {
+                server.close()
+                executor.shutdownNow()
+                executor.awaitTermination(10, TimeUnit.SECONDS)
+            }
+        }
+    }
+
+    @Test fun hostCanDenyResumption() {
+        withServer { server, fingerprint ->
+            val executor = Executors.newSingleThreadExecutor()
+            val id = UUID.randomUUID()
+            val task = executor.submit {
+                (server.accept() as SSLSocket).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.startHandshake()
+                    receive(socket) as SignalMessage.Pair
+                    send(socket, SignalMessage.Challenge(ByteArray(32)))
+                    receive(socket) as SignalMessage.Proof
+                    send(socket, SignalMessage.Accepted(id))
+                    assertEquals(SignalMessage.ResumeCheck, receive(socket))
+                    send(socket, SignalMessage.ResumeDenied)
+                    assertThrows(java.io.EOFException::class.java) { receive(socket) }
+                }
+            }
+            try {
+                AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint,
+                    "Android test", ByteArray(32), key).use { assertFalse(it.canResume()) }
                 task.get(20, TimeUnit.SECONDS)
             } finally {
                 server.close()

@@ -104,6 +104,10 @@
     <string name="screen_connected">画面を表示中</string>
     <string name="screen_failed">画面に接続できませんでした。Macの待ち受けと画面収録の許可を確認してください。</string>
     <string name="screen_disconnected">画面への接続が終了しました。再接続するには接続先から画面を開いてください。</string>
+    <string name="screen_reconnecting">接続が切れました。再接続しています…</string>
+    <string name="screen_reconnecting_control">接続が切れました。再接続にはMacで操作を許可してください。</string>
+    <string name="reconnect_target_unavailable">共有していた対象が見つかりません。表示対象を選び直してください。</string>
+    <string name="reconnect_stopped">Mac側で共有が停止されたため、再接続を終了しました。</string>
     <string name="text_delivery_unconfirmed">文字入力を確認できず接続を終了しました。一部だけ反映された可能性があります。接続先から再接続してください。</string>
     <string name="screen_closed">接続を終了しました。</string>
     <string name="close_screen">画面を閉じる</string>

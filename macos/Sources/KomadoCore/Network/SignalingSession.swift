@@ -9,7 +9,8 @@ actor SignalingSession {
     private let handshake: ServerHandshake
     private let queue: DispatchQueue
     private let onAuthenticated: @Sendable (PairedDevice) async -> Void
-    private let onMediaRequested: @Sendable (PairedDevice, MediaTarget) async -> Void
+    private let onMediaRequested: @Sendable (PairedDevice, MediaTarget, Bool) async -> Void
+    private let canResume: @Sendable (PairedDevice) async -> Bool
     private let onMediaStopRequested: @Sendable (PairedDevice) async -> Void
     private let onAnswer: @Sendable (PairedDevice, String) async -> Void
     private let onClosed: @Sendable () async -> Void
@@ -19,6 +20,8 @@ actor SignalingSession {
     private var ready = false
     private var device: PairedDevice?
     private var mediaState: MediaState = .idle
+    private var resumeChecked = false
+    private var resuming = false
     private var displaySnapshot: [DisplayInfo]?
     private var applicationSnapshot: [ApplicationSelection]?
     private var nextApplicationOffset: UInt16? = 0
@@ -29,7 +32,8 @@ actor SignalingSession {
 
     init(connection: NWConnection, handshake: ServerHandshake, queue: DispatchQueue,
          onAuthenticated: @escaping @Sendable (PairedDevice) async -> Void,
-         onMediaRequested: @escaping @Sendable (PairedDevice, MediaTarget) async -> Void,
+         onMediaRequested: @escaping @Sendable (PairedDevice, MediaTarget, Bool) async -> Void,
+         canResume: @escaping @Sendable (PairedDevice) async -> Bool,
          onMediaStopRequested: @escaping @Sendable (PairedDevice) async -> Void,
          onAnswer: @escaping @Sendable (PairedDevice, String) async -> Void,
          onClosed: @escaping @Sendable () async -> Void) {
@@ -38,6 +42,7 @@ actor SignalingSession {
         self.queue = queue
         self.onAuthenticated = onAuthenticated
         self.onMediaRequested = onMediaRequested
+        self.canResume = canResume
         self.onMediaStopRequested = onMediaStopRequested
         self.onAnswer = onAnswer
         self.onClosed = onClosed
@@ -131,6 +136,17 @@ actor SignalingSession {
                 }
                 let message = try SignalMessage.decode(frame)
                 if let device {
+                    if resumeChecked && !resuming { await close(); return }
+                    if message == .resumeCheck && mediaState == .idle && !resumeChecked {
+                        resumeChecked = true
+                        resuming = await canResume(device)
+                        guard !closed, mediaState == .idle else { return }
+                        let response = try SignalFrame.encode((resuming ? SignalMessage.resumeAllowed : .resumeDenied).encode())
+                        connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                            Task { await self?.sentCatalog(error: error) }
+                        })
+                        return
+                    }
                     if message == .stopMedia && mediaState == .complete {
                         mediaState = .stopping
                         timeout = Task { [weak self] in
@@ -242,12 +258,16 @@ actor SignalingSession {
                     default: target = nil; startsMedia = false
                     }
                     if startsMedia && mediaState == .idle, let target {
+                        if resuming {
+                            guard await canResume(device) else { await close(); return }
+                            guard !closed, mediaState == .idle else { return }
+                        }
                         mediaState = .preparingOffer
                         timeout = Task { [weak self] in
                             do { try await Task.sleep(for: .seconds(30)) } catch { return }
                             await self?.close()
                         }
-                        await onMediaRequested(device, target)
+                        await onMediaRequested(device, target, resuming)
                         if !closed { receive() }
                         return
                     }

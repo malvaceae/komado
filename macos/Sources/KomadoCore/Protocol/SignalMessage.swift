@@ -65,6 +65,9 @@ public enum SignalMessage: Equatable, Sendable {
     case startWindowControl(UInt32, size: WindowSize? = nil)
     case stopMedia
     case mediaStopped
+    case resumeCheck
+    case resumeAllowed
+    case resumeDenied
     case offer(String)
     case answer(String)
 
@@ -180,6 +183,15 @@ public enum SignalMessage: Equatable, Sendable {
         case "media.stopped":
             guard fields.count == 2 else { throw MessageError.invalid }
             return .mediaStopped
+        case "resume.check":
+            guard fields.count == 2 else { throw MessageError.invalid }
+            return .resumeCheck
+        case "resume.allowed":
+            guard fields.count == 2 else { throw MessageError.invalid }
+            return .resumeAllowed
+        case "resume.denied":
+            guard fields.count == 2 else { throw MessageError.invalid }
+            return .resumeDenied
         case "offer":
             guard fields.count == 3, validSDP(fields[2]) else { throw MessageError.invalid }
             return .offer(fields[2])
@@ -244,6 +256,9 @@ public enum SignalMessage: Equatable, Sendable {
             fields = ["1", "window.start", String(id)]
         case .stopMedia: fields = ["1", "media.stop"]
         case .mediaStopped: fields = ["1", "media.stopped"]
+        case .resumeCheck: fields = ["1", "resume.check"]
+        case .resumeAllowed: fields = ["1", "resume.allowed"]
+        case .resumeDenied: fields = ["1", "resume.denied"]
         case let .offer(sdp):
             guard Self.validSDP(sdp) else { throw MessageError.invalid }
             fields = ["1", "offer", sdp]

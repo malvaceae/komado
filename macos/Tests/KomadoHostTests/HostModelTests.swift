@@ -1,10 +1,34 @@
 import Foundation
+import CryptoKit
 import Security
 import XCTest
 @testable import KomadoCore
 @testable import KomadoHost
 
 final class HostModelTests: XCTestCase {
+    @MainActor
+    func testRemovingDeviceRevokesPendingResume() async throws {
+        let service = "me.mallows.komado.test.resume.\(UUID().uuidString)"
+        let settings = try XCTUnwrap(UserDefaults(suiteName: service))
+        let registry = PairedDeviceRegistry(service: service)
+        defer {
+            settings.removePersistentDomain(forName: service)
+            SecItemDelete([kSecClass: kSecClassGenericPassword, kSecAttrService: service] as CFDictionary)
+        }
+        let first = PairedDevice(id: UUID(), name: "First", publicKeyDER: P256.Signing.PrivateKey().publicKey.derRepresentation)
+        let second = PairedDevice(id: UUID(), name: "Second", publicKeyDER: P256.Signing.PrivateKey().publicKey.derRepresentation)
+        try registry.add(first)
+        try registry.add(second)
+        settings.set(first.id.uuidString, forKey: "resumeDeviceID")
+        let model = HostModel(identityStore: HostTLSIdentityStore(service: service), registry: registry,
+                              pairing: PairingCoordinator(registry: registry, now: { .zero }),
+                              authentication: DeviceAuthenticationCoordinator(registry: registry, now: { .zero }), settings: settings)
+        await model.remove(second)
+        XCTAssertNil(settings.string(forKey: "resumeDeviceID"))
+        XCTAssertNotNil(try registry.find(id: first.id))
+        XCTAssertNil(try registry.find(id: second.id))
+    }
+
     @MainActor
     func testAccessibilityPermissionRequestAndRefresh() throws {
         let service = "me.mallows.komado.test.permissions.\(UUID().uuidString)"

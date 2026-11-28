@@ -17,6 +17,7 @@ private final class ServerTestBox: @unchecked Sendable {
     private var mediaCount = 0
     private var requestedDisplay: UInt32?
     private var requestedControl = false
+    private var requestedResume = false
     func setInterface(_ value: NWInterface?) -> Bool {
         lock.withLock {
             guard !pathObserved else { return false }
@@ -38,6 +39,8 @@ private final class ServerTestBox: @unchecked Sendable {
     func noteMedia(_ display: UInt32?, control: Bool) -> Int { lock.withLock { mediaCount += 1; requestedDisplay = display; requestedControl = control; return mediaCount } }
     func getRequestedDisplay() -> UInt32? { lock.withLock { requestedDisplay } }
     func getRequestedControl() -> Bool { lock.withLock { requestedControl } }
+    func setRequestedResume(_ value: Bool) { lock.withLock { requestedResume = value } }
+    func getRequestedResume() -> Bool { lock.withLock { requestedResume } }
 }
 
 private final class ServerTestPeer: @unchecked Sendable {
@@ -215,8 +218,8 @@ final class SignalingServerTests: XCTestCase {
         let selectedMediaRequested = expectation(description: "selected display requested")
         let controlRequested = expectation(description: "control requested")
         let answerReceived = expectation(description: "SDP answer")
-        let disconnected = expectation(description: "nine disconnections")
-        disconnected.expectedFulfillmentCount = 9
+        let disconnected = expectation(description: "ten disconnections")
+        disconnected.expectedFulfillmentCount = 10
         let server = try SignalingServer.create(identity: identity.identity,
             bindings: [ListenerBinding(scope: .localLink, interface: interface, address: address)],
             port: .any, pairing: pairing, authentication: auth) { event in
@@ -227,8 +230,9 @@ final class SignalingServerTests: XCTestCase {
                     let count = box.nextAuthentication()
                     if count == 1 { firstAuthenticated.fulfill() }
                     if count <= 2 { authenticated.fulfill() }
-                case let .mediaRequested(id, _, target):
+                case let .mediaRequested(id, _, target, resuming):
                     box.setMediaSession(id)
+                    box.setRequestedResume(resuming)
                     let display: UInt32?
                     switch target {
                     case let .display(id), let .displayControl(id): display = id
@@ -362,6 +366,10 @@ final class SignalingServerTests: XCTestCase {
         let accepted = try await second.receive()
         XCTAssertEqual(accepted, .accepted(deviceID: deviceID))
         await fulfillment(of: [authenticated], timeout: 10)
+        await server.setResumeDeviceID(deviceID)
+        try await second.send(.resumeCheck)
+        let allowed = try await second.receive()
+        XCTAssertEqual(allowed, .resumeAllowed)
         try await second.send(.listDisplays)
         guard case let .displays(secondDisplays) = try await second.receive(),
               secondDisplays.contains(where: { $0.id == display.id }) else { return XCTFail("Expected display") }
@@ -369,9 +377,32 @@ final class SignalingServerTests: XCTestCase {
         await fulfillment(of: [selectedMediaRequested], timeout: 10)
         XCTAssertEqual(box.getRequestedDisplay(), display.id)
         XCTAssertTrue(box.getRequestedControl())
+        XCTAssertTrue(box.getRequestedResume())
+        await server.setResumeDeviceID(nil)
         let secondID = try XCTUnwrap(box.getLastAuthenticated())
         second.connection.cancel()
         await server.disconnect(sessionID: secondID)
+        let deniedPeer = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
+        try await deniedPeer.start()
+        try await deniedPeer.send(.authenticate(deviceID: deviceID))
+        guard case let .challenge(deniedChallenge) = try await deniedPeer.receive() else { return XCTFail("Expected challenge") }
+        let deniedSignature = try key.signature(for: Data("komado.device-auth.v1\0".utf8) + deniedChallenge).derRepresentation
+        try await deniedPeer.send(.proof(deniedSignature))
+        let deniedAccepted = try await deniedPeer.receive()
+        XCTAssertEqual(deniedAccepted, .accepted(deviceID: deviceID))
+        await server.setResumeDeviceID(deviceID)
+        try await deniedPeer.send(.resumeCheck)
+        let allowedBeforeRevocation = try await deniedPeer.receive()
+        XCTAssertEqual(allowedBeforeRevocation, .resumeAllowed)
+        await server.setResumeDeviceID(nil)
+        try await deniedPeer.send(.startControl)
+        do {
+            _ = try await deniedPeer.receive()
+            XCTFail("A revoked resume must not start media")
+        } catch { }
+        deniedPeer.connection.cancel()
+        let deniedID = try XCTUnwrap(box.getLastAuthenticated())
+        await server.disconnect(sessionID: deniedID)
         let unlisted = ServerTestPeer(host: address, port: port, fingerprint: fingerprint)
         try await unlisted.start()
         try await unlisted.send(.authenticate(deviceID: deviceID))
@@ -381,11 +412,11 @@ final class SignalingServerTests: XCTestCase {
         let unlistedAccepted = try await unlisted.receive()
         XCTAssertEqual(unlistedAccepted, .accepted(deviceID: deviceID))
         let thirdDeadline = Date().addingTimeInterval(5)
-        while box.getLastAuthenticated() == secondID && Date() < thirdDeadline {
+        while box.getLastAuthenticated() == deniedID && Date() < thirdDeadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         let unlistedID = try XCTUnwrap(box.getLastAuthenticated())
-        XCTAssertNotEqual(unlistedID, secondID)
+        XCTAssertNotEqual(unlistedID, deniedID)
         try await unlisted.send(.startDisplay(display.id))
         let closeDeadline = Date().addingTimeInterval(5)
         while await server.isActive(sessionID: unlistedID) && Date() < closeDeadline {
