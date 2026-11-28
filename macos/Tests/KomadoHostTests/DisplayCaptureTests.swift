@@ -73,8 +73,10 @@ final class DisplayCaptureTests: XCTestCase {
         try await Task.sleep(for: .seconds(2))
         XCTAssertNotNil(capture.frameMapping)
         let size = try XCTUnwrap(counter.frameSize)
-        XCTAssertLessThanOrEqual(max(size.width, size.height), 854)
-        XCTAssertLessThanOrEqual(min(size.width, size.height), 480)
+        let blocksWide = (Int(size.width) + 15) / 16, blocksHigh = (Int(size.height) + 15) / 16
+        XCTAssertLessThanOrEqual(blocksWide * blocksHigh, 1620)
+        XCTAssertLessThanOrEqual(size.width, CGFloat(display.width))
+        XCTAssertLessThanOrEqual(size.height, CGFloat(display.height))
         await fulfillment(of: [stoppedUnexpectedly], timeout: 0.1)
         try await capture.stop()
         let countAfterStop = counter.value

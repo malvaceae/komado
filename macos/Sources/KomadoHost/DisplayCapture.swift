@@ -11,14 +11,14 @@ enum CaptureResolution: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .standard: "標準（最大1280 × 720）"
-        case .reduced: "低解像度（最大854 × 480）"
+        case .standard: "標準（最大約92万画素）"
+        case .reduced: "低解像度（最大約41万画素）"
         }
     }
-    var maximum: (width: Int, height: Int) {
+    var maximumMacroblocks: Int {
         switch self {
-        case .standard: (1280, 720)
-        case .reduced: (854, 480)
+        case .standard: 3600
+        case .reduced: 1620
         }
     }
 }
@@ -100,14 +100,29 @@ final class DisplayCapture {
         try await stream.stopCapture()
     }
 
-    /// Conservative initial size pending encoder and device-specific testing.
+    /// Preserve aspect ratio within the H.264 frame-size limit without upscaling.
     static func dimensions(width: Int, height: Int, resolution: CaptureResolution = .standard) throws -> (width: Int, height: Int) {
         guard width >= 2, height >= 2 else { throw CaptureError.invalidDimensions }
-        let maximum = resolution.maximum
-        let longSide = max(width, height), shortSide = min(width, height)
-        let scale = min(1, Double(maximum.width) / Double(longSide), Double(maximum.height) / Double(shortSide))
-        return (max(2, Int(Double(width) * scale) / 2 * 2),
-                max(2, Int(Double(height) * scale) / 2 * 2))
+        let maximum = resolution.maximumMacroblocks
+        // H.264 counts 16×16 blocks, including padding, and limits each dimension.
+        let maxSide = Int(Double(CaptureResolution.standard.maximumMacroblocks * 8).squareRoot())
+        func size(_ scale: Double) -> (width: Int, height: Int) {
+            (max(2, Int(Double(width) * scale) / 2 * 2), max(2, Int(Double(height) * scale) / 2 * 2))
+        }
+        func fits(_ value: (width: Int, height: Int)) -> Bool {
+            let x = (value.width + 15) / 16, y = (value.height + 15) / 16
+            return x <= maxSide && y <= maxSide && x * y <= maximum
+        }
+        let scale = min(1, (Double(maximum * 256) / Double(width) / Double(height)).squareRoot(),
+                        Double(maxSide * 16) / Double(max(width, height)))
+        if fits(size(scale)) { return size(scale) }
+        // Find the largest fitting size when block padding exceeds the pixel estimate.
+        var low = 0.0, high = scale
+        for _ in 0..<32 {
+            let middle = (low + high) / 2
+            if fits(size(middle)) { low = middle } else { high = middle }
+        }
+        return size(low)
     }
 }
 
