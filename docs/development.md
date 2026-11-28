@@ -24,18 +24,18 @@ Androidのビルド、JVMテスト、lint：
 ./android/gradlew -p android :core:test :security:lintDebug :app:lintDebug :app:assembleDebug
 ```
 
-Androidのエミュレーターまたは実機を起動し、シリアルを指定して端末上のテストを実行します。
+Androidのエミュレーターまたは実機を起動し、テスト用APKをビルドして既存のアプリを保持したままインストールします。以下のシリアルは例です。
 
 ```sh
-ANDROID_SERIAL=emulator-5554 ./android/gradlew -p android :security:connectedDebugAndroidTest :app:connectedDebugAndroidTest
+./android/gradlew -p android :app:assembleDebug :app:assembleDebugAndroidTest :security:assembleDebugAndroidTest
+adb -s emulator-5554 install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5554 install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s emulator-5554 install -r android/security/build/outputs/apk/androidTest/debug/security-debug-androidTest.apk
+adb -s emulator-5554 shell am instrument -w me.mallows.komado.test/androidx.test.runner.AndroidJUnitRunner
+adb -s emulator-5554 shell am instrument -w me.mallows.komado.security.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-Android 17以降のエミュレーターでネットワークを使うテストには、デバッグアプリのインストールとローカルネットワーク権限が必要です。実行前の設定を確認したうえで、必要に応じて次のように付与します。
-
-```sh
-ANDROID_SERIAL=emulator-5554 ./android/gradlew -p android :app:installDebug
-adb -s emulator-5554 shell pm grant me.mallows.komado android.permission.ACCESS_LOCAL_NETWORK
-```
+Gradleの`connectedDebugAndroidTest`は実行後にアプリをアンインストールすることがあるため、既存データを残す場合は上記の手順を使います。Android 17以降でネットワークを使うテストにはローカルネットワーク権限が必要です。実行前の設定を確認し、必要な場合は`adb -s emulator-5554 shell pm grant me.mallows.komado android.permission.ACCESS_LOCAL_NETWORK`で付与します。
 
 未署名リリースAPKは`./android/gradlew -p android :app:assembleRelease`で生成します。配布には署名が必要です。GitHub ActionsのCIは現在設定していません。
 
