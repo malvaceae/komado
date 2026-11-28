@@ -116,6 +116,20 @@ class AndroidMediaSessionTest {
                     if (visible) break
                 }
                 assertTrue("Decoded video was not displayed", visible)
+                scenario.onActivity {
+                    val view = requireNotNull(renderer).view
+                    view.layoutParams = view.layoutParams.apply { height = view.height / 2 }
+                }
+                Thread.sleep(500)
+                scenario.onActivity {
+                    val view = requireNotNull(renderer).view
+                    view.layoutParams = view.layoutParams.apply { height = android.view.ViewGroup.LayoutParams.MATCH_PARENT }
+                }
+                Thread.sleep(1000)
+                val resized = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+                val resizedPixel = resized.getPixel(resized.width / 2, resized.height / 2)
+                resized.recycle()
+                assertTrue("Static video disappeared after resizing", Color.blue(resizedPixel) > 100 && Color.blue(resizedPixel) > Color.red(resizedPixel) + 40)
                 source.capturerObserver.onCapturerStopped()
                 instrumentation.runOnMainSync { receiver?.close(); renderer?.close() }
                 receiver = null

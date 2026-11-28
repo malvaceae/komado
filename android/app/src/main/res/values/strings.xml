@@ -97,6 +97,8 @@
     <string name="text_delivery_unconfirmed">文字入力を確認できず接続を終了しました。一部だけ反映された可能性があります。接続先から再接続してください。</string>
     <string name="screen_closed">接続を終了しました。</string>
     <string name="close_screen">画面を閉じる</string>
+    <string name="fullscreen">全画面表示</string>
+    <string name="exit_fullscreen">全画面を終了</string>
     <string name="video_description">Macの画面。ピンチで拡大・縮小、ドラッグまたは矢印キーで表示位置を移動します。</string>
     <string name="zoom_in">拡大</string>
     <string name="zoom_out">縮小</string>

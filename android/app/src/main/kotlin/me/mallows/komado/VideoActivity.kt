@@ -1,6 +1,5 @@
 package me.mallows.komado
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipboardManager
 import android.content.Context
@@ -8,12 +7,21 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
+import android.view.View
+import android.view.Gravity
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import me.mallows.komado.network.AuthenticatedHostConnection
 import me.mallows.komado.protocol.DisplayInfo
 import me.mallows.komado.protocol.WindowInfo
@@ -34,7 +42,7 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
-class VideoActivity : Activity() {
+class VideoActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val lock = Any()
@@ -61,6 +69,15 @@ class VideoActivity : Activity() {
     private var clipboardSendButton: Button? = null
     private var clipboardReceiveButton: Button? = null
     private var statisticsButton: Button? = null
+    private var fullscreenButton: Button? = null
+    private var exitFullscreenButton: Button? = null
+    private var fullscreen = false
+    private val fullscreenBack = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() { setFullscreen(false) }
+    }
+    private lateinit var header: View
+    private var windowNote: View? = null
+    private lateinit var controlsScroll: VideoControlsScrollView
     private enum class ClipboardAction { GET, PREPARE_SEND, SEND, AUTO_START, AUTO_POLL, AUTO_PREPARE, AUTO_SEND }
     private var clipboardAction: ClipboardAction? = null
     private var clipboardChangeGuard: ClipboardChangeGuard? = null
@@ -83,18 +100,21 @@ class VideoActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, fullscreenBack)
         controlMode = intent.getBooleanExtra(CONTROL_MODE, false)
         val host = runCatching { HostStore(applicationContext).load().firstOrNull { it.id == intent.getStringExtra(HOST_ID) } }.getOrNull()
         val pairing = host?.pairing
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(TextView(this).apply { text = host?.name.orEmpty(); textSize = 20f; setPadding(dp(16), dp(12), dp(16), 0) })
+        header = TextView(this).apply { text = host?.name.orEmpty(); textSize = 20f; setPadding(dp(16), dp(12), dp(16), 0) }
+        root.addView(header)
         status = TextView(this).apply { setText(R.string.screen_authenticating); setPadding(dp(16), dp(8), dp(16), dp(8)) }
         root.addView(status)
         if (controlMode && intent.getBooleanExtra(CHOOSE_WINDOW, false)) {
-            root.addView(TextView(this).apply {
+            windowNote = TextView(this).apply {
                 setText(R.string.window_control_note)
                 setPadding(dp(16), 0, dp(16), dp(8))
-            })
+            }
+            root.addView(windowNote)
         }
         try {
             val video = RemoteVideoRenderer(this, object : RendererCommon.RendererEvents {
@@ -153,7 +173,29 @@ class VideoActivity : Activity() {
                     }
                 }
             }
-            root.addView(viewport, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            val videoFrame = FrameLayout(this)
+            videoFrame.addView(viewport, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            exitFullscreenButton = Button(this).apply {
+                setText(R.string.exit_fullscreen)
+                visibility = View.GONE
+                setOnClickListener { setFullscreen(false) }
+            }
+            val exit = exitFullscreenButton!!
+            videoFrame.addView(exit, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END))
+            ViewCompat.setOnApplyWindowInsetsListener(exit) { view, insets ->
+                val safe = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.systemBars())
+                val params = view.layoutParams as FrameLayout.LayoutParams
+                val margin = dp(8)
+                val endInset = if (view.layoutDirection == View.LAYOUT_DIRECTION_RTL) safe.left else safe.right
+                if (params.topMargin != safe.top + margin || params.marginEnd != endInset + margin) {
+                    params.topMargin = safe.top + margin
+                    params.marginEnd = endInset + margin
+                    view.layoutParams = params
+                }
+                insets
+            }
+            root.addView(videoFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         } catch (_: Exception) { active = false; status.setText(R.string.screen_failed) }
         val controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val zoomControls = LinearLayout(this)
@@ -226,8 +268,15 @@ class VideoActivity : Activity() {
             setOnClickListener { showVideoStatistics() }
         }
         controls.addView(statisticsButton)
+        fullscreenButton = Button(this).apply {
+            setText(R.string.fullscreen)
+            isEnabled = false
+            setOnClickListener { setFullscreen(true) }
+        }
+        controls.addView(fullscreenButton)
         controls.addView(Button(this).apply { setText(R.string.close_screen); setOnClickListener { finish() } })
-        root.addView(VideoControlsScrollView(this).apply { addView(controls) })
+        controlsScroll = VideoControlsScrollView(this).apply { addView(controls) }
+        root.addView(controlsScroll)
         setContentView(root)
         if (host == null || pairing == null || !active) {
             stopSession(failed = true)
@@ -357,8 +406,28 @@ class VideoActivity : Activity() {
         clipboardSendButton?.isEnabled = clipboardAvailable
         clipboardReceiveButton?.isEnabled = clipboardAvailable
         statisticsButton?.isEnabled = active && firstFrameShown
+        fullscreenButton?.isEnabled = active && firstFrameShown
         automaticSwitch?.isEnabled = available && controlMode
         specialKeys?.setAvailable(available)
+    }
+
+    private fun setFullscreen(value: Boolean) {
+        if (value && (!active || !firstFrameShown)) return
+        if (fullscreen == value) return
+        fullscreen = value
+        fullscreenBack.isEnabled = value
+        header.visibility = if (value) View.GONE else View.VISIBLE
+        status.visibility = if (value) View.GONE else View.VISIBLE
+        windowNote?.visibility = if (value) View.GONE else View.VISIBLE
+        controlsScroll.visibility = if (value) View.GONE else View.VISIBLE
+        exitFullscreenButton?.visibility = if (value) View.VISIBLE else View.GONE
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        if (value) {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     private fun sendRemoteKey(key: SpecialKey, modifiers: Int): Boolean {
@@ -659,6 +728,7 @@ class VideoActivity : Activity() {
     }
 
     private fun stopSession(failed: Boolean) {
+        setFullscreen(false)
         textDeliveryUnconfirmed = textDeliveryUnconfirmed || media?.hasUnconfirmedText() == true
         firstFrameDeadline.finish()
         val current = synchronized(lock) {
