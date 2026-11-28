@@ -21,7 +21,7 @@ public enum WindowCatalog {
             guard let selection = selection(window) else { continue }
             guard ids.insert(selection.info.id).inserted else { throw CatalogError.unavailable }
             result.append(selection)
-            guard result.count <= 512 else { throw CatalogError.unavailable }
+            guard result.count <= Int(UInt16.max) else { throw CatalogError.unavailable }
         }
         return result.sorted {
             if $0.info.application != $1.info.application { return $0.info.application < $1.info.application }

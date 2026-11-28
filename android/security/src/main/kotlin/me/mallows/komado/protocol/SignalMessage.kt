@@ -126,11 +126,11 @@ object SignalMessageCodec {
                 }
                 "window.list" -> {
                     if (fields.size != 3) throw MessageException()
-                    SignalMessage.ListWindows(nonnegativeInteger(fields[2], 512).toInt())
+                    SignalMessage.ListWindows(nonnegativeInteger(fields[2], 65_535).toInt())
                 }
                 "window.listed" -> {
                     if (fields.size !in 3..163 || (fields.size - 3) % 5 != 0) throw MessageException()
-                    val next = nonnegativeInteger(fields[2], 512).toInt()
+                    val next = nonnegativeInteger(fields[2], 65_535).toInt()
                     val values = (3 until fields.size step 5).map { i ->
                         if (!validCatalogLabel(fields[i + 3]) || !validCatalogLabel(fields[i + 4])) throw MessageException()
                         WindowInfo(positiveInteger(fields[i], 4_294_967_295L),

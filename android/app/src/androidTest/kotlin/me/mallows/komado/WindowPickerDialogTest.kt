@@ -24,9 +24,10 @@ class WindowPickerDialogTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var dialog: AlertDialog
             lateinit var search: EditText
+            var selected: Long? = null
             scenario.onActivity { activity ->
-                val windows = (1L..150L).map { WindowInfo(it, 300, 200, "App", "Window $it") }
-                dialog = WindowPickerDialog.show(activity, windows, {}, {}, null, {})
+                val windows = (1L..513L).map { WindowInfo(it, 300, 200, "App", "Window $it") }
+                dialog = WindowPickerDialog.show(activity, windows, { selected = it.id }, {}, null, {})
             }
             InstrumentationRegistry.getInstrumentation().waitForIdleSync()
             scenario.onActivity {
@@ -50,7 +51,13 @@ class WindowPickerDialogTest {
                 if (!keyboardConnected) Thread.sleep(50)
             }
             assertTrue("Search must connect to the keyboard", keyboardConnected)
-            scenario.onActivity { dialog.dismiss() }
+            scenario.onActivity {
+                search.setText("Window 513")
+                val list = dialog.listView
+                assertEquals(1, list.count)
+                assertTrue(list.performItemClick(list.adapter.getView(0, null, list), 0, list.adapter.getItemId(0)))
+                assertEquals(513L, selected)
+            }
         }
     }
 

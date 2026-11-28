@@ -54,6 +54,40 @@ class AuthenticatedHostConnectionTest {
         store.deleteEntry(serverAlias)
     }
 
+    @Test fun listsMoreThan512WindowsAndSelectsTheLast() {
+        withServer { server, fingerprint ->
+            val executor = Executors.newSingleThreadExecutor()
+            val windows = (1..513).map { WindowInfo(it.toLong(), 300, 200, "App", "Window $it") }
+            val task = executor.submit {
+                (server.accept() as SSLSocket).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.startHandshake()
+                    receive(socket) as SignalMessage.Pair
+                    send(socket, SignalMessage.Challenge(ByteArray(32)))
+                    receive(socket) as SignalMessage.Proof
+                    send(socket, SignalMessage.Accepted(UUID.randomUUID()))
+                    for (offset in windows.indices step 32) {
+                        assertEquals(SignalMessage.ListWindows(offset), receive(socket))
+                        val end = minOf(offset + 32, windows.size)
+                        send(socket, SignalMessage.Windows(if (end < windows.size) end else 0, windows.subList(offset, end)))
+                    }
+                    assertEquals(SignalMessage.StartWindow(513), receive(socket))
+                }
+            }
+            try {
+                AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint, "Android test", ByteArray(32), key).use { connection ->
+                    assertEquals(windows, connection.listWindows())
+                    connection.requestMedia(windowId = 513)
+                }
+                task.get(20, TimeUnit.SECONDS)
+            } finally {
+                server.close()
+                executor.shutdownNow()
+                executor.awaitTermination(10, TimeUnit.SECONDS)
+            }
+        }
+    }
+
     @Test fun refreshesWindowsAfterAnAction() {
         withServer { server, fingerprint ->
             val executor = Executors.newSingleThreadExecutor()

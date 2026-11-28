@@ -72,6 +72,7 @@ class SignalMessageTest {
         assertThrows(SignalMessageCodec.MessageException::class.java) {
             SignalMessageCodec.encode(SignalMessage.Windows(0, listOf(WindowInfo(1, 1, 1, "a", "あ".repeat(33)))))
         }
-        assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.encode(SignalMessage.ListWindows(513)) }
+        assertEquals(SignalMessage.ListWindows(65_535), SignalMessageCodec.decode(SignalMessageCodec.encode(SignalMessage.ListWindows(65_535))))
+        assertThrows(SignalMessageCodec.MessageException::class.java) { SignalMessageCodec.encode(SignalMessage.ListWindows(65_536)) }
     }
 }

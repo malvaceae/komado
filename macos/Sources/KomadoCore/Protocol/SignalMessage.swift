@@ -133,11 +133,11 @@ public enum SignalMessage: Equatable, Sendable {
             }
             return .displays(displays)
         case "window.list":
-            guard fields.count == 3, let offset = nonnegativeInteger(fields[2], max: 512) else { throw MessageError.invalid }
+            guard fields.count == 3, let offset = nonnegativeInteger(fields[2], max: 65_535) else { throw MessageError.invalid }
             return .listWindows(UInt16(offset))
         case "window.listed":
             guard fields.count >= 3, fields.count <= 163, (fields.count - 3).isMultiple(of: 5),
-                  let next = nonnegativeInteger(fields[2], max: 512) else { throw MessageError.invalid }
+                  let next = nonnegativeInteger(fields[2], max: 65_535) else { throw MessageError.invalid }
             var windows: [WindowInfo] = []
             var ids = Set<UInt32>()
             for i in stride(from: 3, to: fields.count, by: 5) {
@@ -247,10 +247,9 @@ public enum SignalMessage: Equatable, Sendable {
             guard (1...64).contains(displays.count) else { throw MessageError.invalid }
             fields = ["1", "display.listed"] + displays.flatMap { [String($0.id), String($0.width), String($0.height), $0.name] }
         case let .listWindows(offset):
-            guard offset <= 512 else { throw MessageError.invalid }
             fields = ["1", "window.list", String(offset)]
         case let .windows(next, values):
-            guard next <= 512, values.count <= 32 else { throw MessageError.invalid }
+            guard values.count <= 32 else { throw MessageError.invalid }
             fields = ["1", "window.listed", String(next)] + values.flatMap {
                 [String($0.id), String($0.width), String($0.height), $0.application, $0.title]
             }

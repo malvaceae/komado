@@ -52,6 +52,6 @@ final class SignalMessageTests: XCTestCase {
         XCTAssertThrowsError(try SignalMessage.windows(next: 0, values: [windows[0], windows[0]]).encode())
         XCTAssertThrowsError(try SignalMessage.windows(next: 0, values: [WindowInfo(id: 1, width: 1, height: 1,
                                                                                     application: "a", title: String(repeating: "あ", count: 33))]).encode())
-        XCTAssertThrowsError(try SignalMessage.listWindows(513).encode())
+        XCTAssertEqual(try SignalMessage.decode(SignalMessage.listWindows(65_535).encode()), .listWindows(65_535))
     }
 }

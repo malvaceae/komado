@@ -139,8 +139,8 @@ class AuthenticatedHostConnection private constructor(
                 val page = receive(socket) as? SignalMessage.Windows ?: throw IOException("Expected window list")
                 if (page.values.any { !ids.add(it.id) }) throw IOException("Duplicate window")
                 windows.addAll(page.values)
-                if (windows.size > 512) throw IOException("Window list too large")
-                if (page.next != 0 && (page.values.size != 32 || page.next != windows.size || page.next >= 512)) {
+                if (windows.size > 65_535) throw IOException("Window list too large")
+                if (page.next != 0 && (page.values.size != 32 || page.next != windows.size || page.next >= 65_535)) {
                     throw IOException("Invalid window pagination")
                 }
                 offset = page.next
