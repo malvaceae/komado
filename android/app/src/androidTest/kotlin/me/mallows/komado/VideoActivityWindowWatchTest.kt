@@ -64,8 +64,7 @@ class VideoActivityWindowWatchTest {
             val fingerprint = server.fingerprint.joinToString("") { "%02X".format(it) }
             val host = Host(hostID, "Test Mac", "127.0.0.1", listener.localPort)
             val hosts = HostStore(context)
-            assertTrue(hosts.save(null, host))
-            assertTrue(hosts.pair(host, Pairing(deviceID.toString(), fingerprint, deviceAlias)))
+            assertTrue(hosts.add(host.copy(pairing = Pairing(deviceID.toString(), fingerprint, deviceAlias))))
             val intent = Intent(context, VideoActivity::class.java).putExtra(VideoActivity.HOST_ID, hostID)
                 .putExtra(VideoActivity.CHOOSE_WINDOW, true)
             ActivityScenario.launch<VideoActivity>(intent).use { scenario ->

@@ -64,10 +64,9 @@ private struct HostView: View {
                     if model.identityError {
                         Text("確認情報を読み込めませんでした。")
                             .foregroundStyle(.secondary)
-                    } else if let fingerprint = model.fingerprint {
-                        Text("SHA-256 フィンガープリント").foregroundStyle(.secondary)
-                        Text(fingerprint).font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
+                    } else if model.fingerprint != nil {
+                        Text("接続に必要な確認情報を作成済みです。")
+                            .foregroundStyle(.secondary)
                     } else {
                         Text("接続時にこのMacを確認するための情報を作成します。")
                             .foregroundStyle(.secondary)
@@ -167,9 +166,8 @@ private struct HostView: View {
                     Button("ペアリング情報を発行") { Task { await model.issueInvitation() } }
                         .disabled(!model.ready || model.busy || model.connectedDevice != nil)
                     if let invitation = model.invitation {
-                        Text("AndroidでQRコードを読み取るか、上記の接続先・確認情報と次のコードを入力してください。有効期限は2分です。")
+                        Text("接続する端末でQRコードを読み取ってください。有効期限は2分です。")
                             .foregroundStyle(.secondary)
-                        Text(invitation).font(.system(.body, design: .monospaced)).textSelection(.enabled)
                         if !model.pairingEndpoints.isEmpty {
                             Picker("QRコードの接続先", selection: Binding(
                                 get: { model.pairingEndpoints.first(where: { $0.id == selectedEndpoint })?.id ?? model.pairingEndpoints.first?.id ?? "" },

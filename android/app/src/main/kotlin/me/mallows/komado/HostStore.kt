@@ -16,21 +16,10 @@ internal class HostStore(context: Context, preferenceName: String = "hosts") {
 
     fun load(): List<Host> = synchronized(lock) { read() }
 
-    fun save(expected: Host?, updated: Host): Boolean = synchronized(lock) {
+    fun add(host: Host): Boolean = synchronized(lock) {
         val current = read()
-        if (expected == null) {
-            if (current.any { it.id == updated.id }) return false
-            write(current + updated)
-        } else {
-            if (current.none { it == expected } || updated.id != expected.id || updated.pairing != expected.pairing) return false
-            write(current.map { if (it.id == expected.id) updated else it })
-        }
-    }
-
-    fun pair(expected: Host, pairing: Pairing): Boolean = synchronized(lock) {
-        val current = read()
-        if (expected.pairing != null || current.none { it == expected }) return false
-        write(current.map { if (it.id == expected.id) it.copy(pairing = pairing) else it })
+        if (host.pairing == null || current.any { it.id == host.id }) return false
+        write(current + host)
     }
 
     /** Update only the same authenticated destination; never recreate a removed host. */
