@@ -706,9 +706,8 @@ final class HostModel: ObservableObject {
                        let normalized = mapping.normalizedContentPoint(x: Double(coordinate.x) / 1_000_000,
                                                                         y: Double(coordinate.y) / 1_000_000),
                        let point = geometry.point(x: normalized.x, y: normalized.y, captureRevision: input.captureRevision),
-                       let hit = FocusedWindow.window(at: point),
-                       let windows = ControlWindowSnapshot.onScreen() {
-                        allowed = safety.permits(point: point, hitProcessID: hit.processID, hitBounds: hit.bounds, windows: windows)
+                       let processID = FocusedWindow.processID(at: point) {
+                        allowed = safety.permits(hitProcessID: processID)
                     } else { allowed = false }
                 case .clipboard: allowed = false
                 }

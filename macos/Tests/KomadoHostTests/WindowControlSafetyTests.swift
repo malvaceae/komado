@@ -3,18 +3,11 @@ import XCTest
 @testable import KomadoHost
 
 final class WindowControlSafetyTests: XCTestCase {
-    func testApplicationControlRequiresAVisibleWindowOfTheSelectedProcess() {
+    func testApplicationControlRequiresSelectedProcess() {
         let bounds = CGRect(x: 100, y: 100, width: 200, height: 200)
-        let target = ControlWindowSnapshot(id: 1, processID: 10, bounds: bounds)
-        let other = ControlWindowSnapshot(id: 2, processID: 20, bounds: bounds)
         let safety = ApplicationControlSafety(processID: 10)
-        let point = CGPoint(x: 150, y: 150)
-        XCTAssertTrue(safety.permits(point: point, hitProcessID: 10, hitBounds: bounds, windows: [target]))
-        XCTAssertFalse(safety.permits(point: point, hitProcessID: 20, hitBounds: bounds, windows: [target, other]))
-        XCTAssertFalse(safety.permits(point: point, hitProcessID: 10, hitBounds: bounds, windows: []))
-        XCTAssertFalse(safety.permits(point: point, hitProcessID: 10, hitBounds: bounds,
-                                      windows: [target, .init(id: 3, processID: 10, bounds: bounds)]))
-        XCTAssertFalse(safety.permits(point: CGPoint(x: CGFloat.nan, y: 1), hitProcessID: 10, hitBounds: bounds, windows: [target]))
+        XCTAssertTrue(safety.permits(hitProcessID: 10))
+        XCTAssertFalse(safety.permits(hitProcessID: 20))
         XCTAssertTrue(safety.permitsKeyboard(focusedProcessID: 10, focusedBounds: bounds, displayBounds: bounds))
         XCTAssertFalse(safety.permitsKeyboard(focusedProcessID: 20, focusedBounds: bounds, displayBounds: bounds))
         XCTAssertFalse(safety.permitsKeyboard(focusedProcessID: 10, focusedBounds: bounds.offsetBy(dx: 500, dy: 0), displayBounds: bounds))

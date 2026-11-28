@@ -59,10 +59,7 @@ struct WindowControlSafety {
 struct ApplicationControlSafety {
     let processID: Int32
 
-    func permits(point: CGPoint, hitProcessID: Int32, hitBounds: CGRect, windows: [ControlWindowSnapshot]) -> Bool {
-        guard point.x.isFinite, point.y.isFinite, hitProcessID == processID, hitBounds.contains(point) else { return false }
-        return windows.filter { $0.processID == processID && $0.bounds == hitBounds }.count == 1
-    }
+    func permits(hitProcessID: Int32) -> Bool { hitProcessID == processID }
 
     func permitsKeyboard(focusedProcessID: Int32, focusedBounds: CGRect, displayBounds: CGRect) -> Bool {
         focusedProcessID == processID && displayBounds.contains(CGPoint(x: focusedBounds.midX, y: focusedBounds.midY))

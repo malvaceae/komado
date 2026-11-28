@@ -39,12 +39,7 @@ enum FocusedWindow {
     /// Accessibility hit-testing follows the window server's stacking order.
     /// Both a window result and a descendant exposing AXWindow are supported.
     static func window(at point: CGPoint) -> (processID: Int32, bounds: CGRect)? {
-        guard point.x.isFinite, point.y.isFinite, Float(point.x).isFinite, Float(point.y).isFinite else { return nil }
-        var element: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(point.x), Float(point.y), &element) == .success,
-              let element else { return nil }
-        var hitPID: pid_t = 0
-        guard AXUIElementGetPid(element, &hitPID) == .success, hitPID > 0 else { return nil }
+        guard let (element, hitPID) = hit(at: point) else { return nil }
         var role: CFTypeRef?
         let window: AXUIElement
         if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .success,
@@ -60,6 +55,19 @@ enum FocusedWindow {
         guard AXUIElementGetPid(window, &windowPID) == .success, windowPID == hitPID,
               let bounds = bounds(of: window) else { return nil }
         return (hitPID, bounds)
+    }
+
+    /// Menus and popovers do not necessarily expose an AXWindow.
+    static func processID(at point: CGPoint) -> Int32? { hit(at: point)?.1 }
+
+    private static func hit(at point: CGPoint) -> (AXUIElement, Int32)? {
+        guard point.x.isFinite, point.y.isFinite, Float(point.x).isFinite, Float(point.y).isFinite else { return nil }
+        var element: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(point.x), Float(point.y), &element) == .success,
+              let element else { return nil }
+        var hitPID: pid_t = 0
+        guard AXUIElementGetPid(element, &hitPID) == .success, hitPID > 0 else { return nil }
+        return (element, hitPID)
     }
 
     static func bounds(of window: AXUIElement) -> CGRect? {
