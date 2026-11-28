@@ -58,7 +58,9 @@
     <string name="statistics_size_value">%1$d × %2$d px</string>
     <string name="statistics_fps_value">%1$.1f fps</string>
     <string name="statistics_rtt_value">%1$.0f ms</string>
-    <string name="statistics_message">受信映像サイズ: %1$s\n受信フレームレート: %2$s\n通信の往復時間: %3$s\n映像コーデック: %4$s\n映像デコーダー: %5$s\n\n往復時間は操作が画面に反映されるまでの時間とは異なります。</string>
+    <string name="statistics_percent_value">%1$.1f%%</string>
+    <string name="statistics_count_value">%1$.0f</string>
+    <string name="statistics_message">受信映像サイズ: %1$s\n受信フレームレート: %2$s\n通信の往復時間: %3$s\n映像コーデック: %4$s\n映像デコーダー: %5$s\n受信パケットの損失率（累計）: %6$s\n受信フレームの欠落数（累計）: %7$s\n\n往復時間は操作が画面に反映されるまでの時間とは異なります。</string>
     <string name="clipboard_automatic_unavailable">自動同期を開始できませんでした。Mac側の許可を確認してください。</string>
     <string name="clipboard_send">Macへコピー</string>
     <string name="clipboard_receive">Macからコピー</string>

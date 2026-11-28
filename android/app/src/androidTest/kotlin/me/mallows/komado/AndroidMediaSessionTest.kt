@@ -457,6 +457,8 @@ class AndroidMediaSessionTest {
                 assertEquals(320, snapshot.width)
                 assertEquals(240, snapshot.height)
                 assertTrue("Video codec should be reported", snapshot.codec != null)
+                assertTrue("Video packet loss should be reported", snapshot.packetLossPercent != null)
+                assertTrue("Dropped video frames should be reported", snapshot.framesDropped != null)
             }
             source.capturerObserver.onCapturerStopped()
             if (closeBeforeText) {

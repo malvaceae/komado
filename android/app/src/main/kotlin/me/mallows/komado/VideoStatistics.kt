@@ -4,7 +4,8 @@ import org.webrtc.RTCStats
 
 /** Addresses and connection identifiers do not leave this parser. */
 internal data class VideoStatistics(val width: Int?, val height: Int?, val framesPerSecond: Double?,
-                                    val roundTripSeconds: Double?, val codec: String?, val decoder: String?) {
+                                    val roundTripSeconds: Double?, val codec: String?, val decoder: String?,
+                                    val packetLossPercent: Double?, val framesDropped: Double?) {
     companion object {
         fun from(stats: Map<String, RTCStats>): VideoStatistics {
             val inbound = stats.values.filter {
@@ -29,7 +30,13 @@ internal data class VideoStatistics(val width: Int?, val height: Int?, val frame
                 ?.takeIf { it.startsWith("video/", ignoreCase = true) && it.length > "video/".length }
                 ?.substringAfter('/')
             val decoder = (members["decoderImplementation"] as? String)?.takeIf { it.isNotBlank() }
-            return VideoStatistics(width, height, fps, rtt, codec, decoder)
+            fun count(name: String): Double? = (members[name] as? Number)?.toDouble()
+                ?.takeIf { it.isFinite() && it >= 0 && it % 1.0 == 0.0 }
+            val received = count("packetsReceived")
+            val lost = count("packetsLost")
+            val packetLoss = if (received != null && lost != null && received + lost > 0)
+                lost / (received + lost) * 100 else null
+            return VideoStatistics(width, height, fps, rtt, codec, decoder, packetLoss, count("framesDropped"))
         }
     }
 }

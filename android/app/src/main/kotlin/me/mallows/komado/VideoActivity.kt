@@ -1042,8 +1042,10 @@ class VideoActivity : ComponentActivity() {
                 getString(R.string.statistics_size_value, snapshot.width, snapshot.height) else unknown
             val fps = snapshot.framesPerSecond?.let { getString(R.string.statistics_fps_value, it) } ?: unknown
             val rtt = snapshot.roundTripSeconds?.let { getString(R.string.statistics_rtt_value, it * 1000) } ?: unknown
+            val packetLoss = snapshot.packetLossPercent?.let { getString(R.string.statistics_percent_value, it) } ?: unknown
+            val dropped = snapshot.framesDropped?.let { getString(R.string.statistics_count_value, it) } ?: unknown
             dialog.setMessage(getString(R.string.statistics_message, size, fps, rtt,
-                snapshot.codec ?: unknown, snapshot.decoder ?: unknown))
+                snapshot.codec ?: unknown, snapshot.decoder ?: unknown, packetLoss, dropped))
         } == true
         if (requested) mainHandler.postDelayed(timeout, 5_000)
         else dialog.setMessage(getString(R.string.statistics_unavailable))
