@@ -10,7 +10,7 @@ struct KomadoHostApp: App {
     var body: some Scene {
         MenuBarExtra(model.sharingScreen ? "\(model.sharingApplication ? "アプリ" : model.sharingWindow ? "ウインドウ" : "画面")を共有中" : "komado",
                      systemImage: model.sharingScreen ? "rectangle.on.rectangle" : "macwindow") {
-            Text(model.running ? (model.connectedDevice != nil ? "接続中" : (model.ready ? "接続待機中" : "準備中")) : "停止中")
+            Text(model.running ? (model.connectedDevice != nil ? "接続中" : (model.ready ? "接続待機中" : "準備中")) : (model.restoreListening ? "待ち受け再開待ち" : "停止中"))
             if model.sharingScreen { Text("\(model.sharingApplication ? "アプリ" : model.sharingWindow ? "ウインドウ" : "画面")を共有中: \(model.sharingDisplayName ?? "画面")") }
             if model.controllingScreen { Text("Androidからの操作を許可中") }
             if let device = model.connectedDevice { Text("接続中: \(device)") }
@@ -20,7 +20,7 @@ struct KomadoHostApp: App {
                 openWindow(id: "host")
                 NSApp.activate(ignoringOtherApps: true)
             }
-            if model.running {
+            if model.running || model.restoreListening {
                 if model.sharingScreen {
                     Button("画面共有を停止") { Task { await model.stopSharing() } }
                 }
@@ -50,7 +50,7 @@ private struct HostView: View {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("komado").font(.largeTitle.bold())
-                    Text(model.running ? (model.connectedDevice != nil ? "接続中" : (model.ready ? "接続待機中" : "準備中")) : "停止中")
+                    Text(model.running ? (model.connectedDevice != nil ? "接続中" : (model.ready ? "接続待機中" : "準備中")) : (model.restoreListening ? "待ち受け再開待ち" : "停止中"))
                         .foregroundStyle(.secondary)
                     if model.sharingScreen { Label("\(model.sharingApplication ? "アプリ" : model.sharingWindow ? "ウインドウ" : "画面")を共有中: \(model.sharingDisplayName ?? "画面")", systemImage: "rectangle.on.rectangle") }
                     if model.controllingScreen { Text("Androidからの操作を許可中") }
@@ -95,7 +95,7 @@ private struct HostView: View {
                         Text("ログイン項目を変更できませんでした。システム設定を確認してください。")
                             .foregroundStyle(.red)
                     }
-                    Text("起動後の接続待ち受けは手動で開始します。")
+                    Text("異常終了から再起動した場合は待ち受けを再開します。")
                         .foregroundStyle(.secondary)
                     Picker("映像の最大解像度", selection: $model.captureResolution) {
                         ForEach(CaptureResolution.allCases) { resolution in
@@ -113,9 +113,13 @@ private struct HostView: View {
                         .foregroundStyle(.secondary)
                     Text("操作にはアクセシビリティの許可も必要です。画面ロック中の操作停止は未検証です。")
                         .foregroundStyle(.secondary)
-                    if model.running {
+                    if model.running || model.restoreListening {
                         if model.sharingScreen {
                             Button("画面共有を停止") { Task { await model.stopSharing() } }
+                        }
+                        if !model.running {
+                            Button("待ち受けを再試行") { Task { await model.start() } }
+                                .disabled(model.busy || !model.networkReady || model.fingerprint == nil)
                         }
                         Button("接続を停止") { Task { await model.stop() } }
                     } else {

@@ -26,6 +26,7 @@ final class HostModel: ObservableObject {
     @Published private(set) var running = false {
         didSet { updateWaitingSleepActivity() }
     }
+    @Published private(set) var restoreListening: Bool
     @Published private(set) var ready = false
     @Published private(set) var busy = false
     @Published private(set) var addresses: [String] = []
@@ -115,6 +116,7 @@ final class HostModel: ObservableObject {
     private static let port: NWEndpoint.Port = 48365
     private static let keepAwakeKey = "keepAwakeWhileListening"
     private static let resumeDeviceKey = "resumeDeviceID"
+    private static let restoreListeningKey = "restoreListening"
     private static let captureResolutionKey = "captureResolution"
 
     convenience init() {
@@ -137,6 +139,7 @@ final class HostModel: ObservableObject {
         self.accessibilityPermission = accessibilityStatus()
         self.settings = settings
         self.resumeDeviceID = settings.string(forKey: Self.resumeDeviceKey).flatMap(UUID.init(uuidString:))
+        self.restoreListening = settings.bool(forKey: Self.restoreListeningKey)
         self.captureResolution = settings.string(forKey: Self.captureResolutionKey).flatMap(CaptureResolution.init(rawValue:)) ?? .standard
         self.keepAwakeWhileListening = settings.bool(forKey: Self.keepAwakeKey)
         self.identityStore = identityStore
@@ -232,6 +235,8 @@ final class HostModel: ObservableObject {
             ready = false
             running = true
             server = newServer
+            restoreListening = true
+            settings.set(true, forKey: Self.restoreListeningKey)
             try await newServer.start()
         } catch {
             running = false
@@ -242,6 +247,8 @@ final class HostModel: ObservableObject {
     }
 
     func stop() async {
+        restoreListening = false
+        settings.removeObject(forKey: Self.restoreListeningKey)
         resumeDeviceID = nil
         settings.removeObject(forKey: Self.resumeDeviceKey)
         let cleanup = stopMedia()
@@ -331,6 +338,10 @@ final class HostModel: ObservableObject {
     private func networkChanged(_ current: [NWInterface]) async {
         interfaces = current
         networkReady = true
+        if !running && restoreListening && !busy {
+            await start()
+            return
+        }
         guard running, let server else { return }
         guard let available = try? selectBindings() else { return }
         await server.updateListeners(available)

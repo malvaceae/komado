@@ -7,6 +7,41 @@ import XCTest
 
 final class HostModelTests: XCTestCase {
     @MainActor
+    func testRestoresListeningAfterInterruptedRunAndStopCancelsIt() async throws {
+        let service = "me.mallows.komado.test.restore.\(UUID().uuidString)"
+        let settings = try XCTUnwrap(UserDefaults(suiteName: service))
+        defer {
+            settings.removePersistentDomain(forName: service)
+            SecItemDelete([kSecClass: kSecClassKey, kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+                           kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+                           kSecAttrApplicationTag: Data("\(service).private-key".utf8)] as CFDictionary)
+            SecItemDelete([kSecClass: kSecClassGenericPassword, kSecAttrService: service,
+                           kSecAttrAccount: "certificate-v1"] as CFDictionary)
+        }
+        let identity = HostTLSIdentityStore(service: service)
+        _ = try identity.create()
+        let registry = PairedDeviceRegistry(service: "\(service).devices")
+        let pairing = PairingCoordinator(registry: registry, now: { .zero })
+        let auth = DeviceAuthenticationCoordinator(registry: registry, now: { .zero })
+        let deviceID = UUID()
+        settings.set(deviceID.uuidString, forKey: "resumeDeviceID")
+        settings.set(true, forKey: "restoreListening")
+        let restored = HostModel(identityStore: identity, registry: registry, pairing: pairing, authentication: auth, settings: settings)
+        try await waitFor { restored.ready || restored.error != nil }
+        if restored.error == "利用できるネットワークアドレスがありません。" { throw XCTSkip("No active local interface") }
+        XCTAssertNil(restored.error)
+        XCTAssertTrue(restored.running)
+        XCTAssertEqual(settings.string(forKey: "resumeDeviceID"), deviceID.uuidString)
+        await restored.stop()
+        XCTAssertFalse(settings.bool(forKey: "restoreListening"))
+        XCTAssertNil(settings.string(forKey: "resumeDeviceID"))
+        let stopped = HostModel(identityStore: identity, registry: registry, pairing: pairing, authentication: auth, settings: settings)
+        try await waitFor { stopped.networkReady }
+        XCTAssertFalse(stopped.running)
+        XCTAssertFalse(stopped.restoreListening)
+    }
+
+    @MainActor
     func testRemovingDeviceRevokesPendingResume() async throws {
         let service = "me.mallows.komado.test.resume.\(UUID().uuidString)"
         let settings = try XCTUnwrap(UserDefaults(suiteName: service))
@@ -98,6 +133,7 @@ final class HostModelTests: XCTestCase {
         try await waitFor { model.ready || model.error != nil }
         XCTAssertNil(model.error)
         XCTAssertTrue(model.ready)
+        XCTAssertTrue(settings.bool(forKey: "restoreListening"))
         XCTAssertFalse(model.addresses.isEmpty)
         XCTAssertEqual(Set(model.pairingEndpoints.map(\.port)).count, 1)
         XCTAssertTrue(try waitingAssertionExists())
@@ -110,6 +146,7 @@ final class HostModelTests: XCTestCase {
         model.allowRemoteControl = true
         await model.stop()
         XCTAssertFalse(model.running)
+        XCTAssertFalse(settings.bool(forKey: "restoreListening"))
         XCTAssertFalse(model.allowRemoteControl)
         XCTAssertNil(model.invitation)
         XCTAssertFalse(try waitingAssertionExists())
