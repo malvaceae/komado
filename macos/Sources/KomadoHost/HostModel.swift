@@ -701,7 +701,11 @@ final class HostModel: ObservableObject {
                 error = "操作中のウインドウのサイズが変わったため、接続を終了しました。"
                 return
             }
-            geometry = candidate
+            if case let .drag(drag) = input, let dispatcher = dragDispatcher {
+                geometry = dispatcher.geometry(for: drag, current: candidate)
+            } else {
+                geometry = candidate
+            }
             let allowed: Bool
             switch input {
             case .text, .key:

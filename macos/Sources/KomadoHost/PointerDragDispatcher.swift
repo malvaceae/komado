@@ -9,12 +9,17 @@ final class PointerDragDispatcher {
     private let post: (CGEvent) -> Void
     private var validator = PointerClickValidator()
     private var release: CGEvent?
+    private var dragGeometry: CaptureGeometry?
     private var closed = false
     var isDragging: Bool { release != nil }
 
     init(trusted: @escaping () -> Bool = { AXIsProcessTrusted() },
          post: @escaping (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) }) {
         self.trusted = trusted; self.post = post
+    }
+
+    func geometry(for drag: PointerDrag, current: CaptureGeometry) -> CaptureGeometry {
+        drag.phase == .begin ? current : (dragGeometry ?? current)
     }
 
     @discardableResult
@@ -33,6 +38,7 @@ final class PointerDragDispatcher {
             down.setIntegerValueField(.mouseEventClickState, value: 1)
             up.setIntegerValueField(.mouseEventClickState, value: 1)
             release = up
+            dragGeometry = geometry
             validator = next
             post(down)
         case .move:
@@ -46,6 +52,7 @@ final class PointerDragDispatcher {
             guard let release, trusted(), !closed else { return false }
             release.location = point
             self.release = nil
+            dragGeometry = nil
             validator = next
             post(release)
         }
@@ -56,5 +63,6 @@ final class PointerDragDispatcher {
         guard !closed else { return }
         closed = true
         if let release { self.release = nil; post(release) }
+        dragGeometry = nil
     }
 }
