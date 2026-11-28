@@ -9,6 +9,50 @@ import XCTest
 
 final class DisplayCaptureTests: XCTestCase {
     @MainActor
+    func testStaticWindowFrameIsDeliveredAfterConnection() async throws {
+        guard CGPreflightScreenCaptureAccess() else { throw XCTSkip("Screen capture permission unavailable for test runner") }
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: CGRect(x: 40, y: 40, width: 320, height: 240),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.title = "komado capture test"
+        window.contentView = NSTextField(labelWithString: "komado")
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil); window.close() }
+        var target: SCWindow?
+        for _ in 0..<30 {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            target = content.windows.first { $0.windowID == CGWindowID(window.windowNumber) }
+            if target != nil { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let factory = MediaFactory.create()
+        let source = factory.videoSource(forScreenCast: true)
+        let track = factory.videoTrack(with: source, trackId: "static-window-test")
+        let counter = FrameCounter()
+        track.add(counter)
+        defer { track.remove(counter) }
+        let route = MediaSessionGate()
+        let capturedWindow = try XCTUnwrap(target)
+        let starting = Task { try await DisplayCapture.start(window: capturedWindow, source: source, route: route) {} }
+        try await Task.sleep(for: .seconds(2))
+        XCTAssertEqual(counter.value, 0)
+        route.connected()
+        let capture = try await starting.value
+        defer { Task { try? await capture.stop() } }
+        for _ in 0..<50 {
+            if capture.frameMapping != nil { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertNotNil(capture.frameMapping)
+        for _ in 0..<30 {
+            if counter.value > 0 { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertGreaterThan(counter.value, 0, "A static window must be shown after the peer connects")
+    }
+
+    @MainActor
     func testDisplayFramesReachVideoTrackAndStop() async throws {
         guard CGPreflightScreenCaptureAccess() else { throw XCTSkip("Screen capture permission unavailable for test runner") }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)

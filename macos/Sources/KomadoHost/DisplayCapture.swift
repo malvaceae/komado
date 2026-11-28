@@ -58,6 +58,9 @@ final class DisplayCapture {
 
     private static func start(filter: SCContentFilter, size: (width: Int, height: Int), source: RTCVideoSource,
                               route: MediaSessionGate, onStopped: @escaping @Sendable () -> Void) async throws -> DisplayCapture {
+        // ScreenCaptureKit may emit no further frames for an unchanged window.
+        // Start only after the peer is ready so its first frame is not discarded.
+        try await route.waitUntilConnected()
         guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permissionRequired }
         let configuration = SCStreamConfiguration()
         configuration.width = size.width
