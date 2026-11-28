@@ -37,8 +37,7 @@ public enum WindowCatalog {
     }
 
     public static func matches(window: SCWindow, info: WindowInfo, processID: Int32) -> Bool {
-        guard let current = selection(window) else { return false }
-        return current.processID == processID && current.info == info
+        window.windowID == info.id && window.owningApplication?.processID == processID
     }
 
     private static func selection(_ window: SCWindow) -> WindowSelection? {
