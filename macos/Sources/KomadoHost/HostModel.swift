@@ -514,6 +514,7 @@ final class HostModel: ObservableObject {
                             throw HostMediaSession.SessionError.creationFailed
                         }
                         self.controlWindow = WindowControlSafety(target: snapshot)
+                        FocusedWindow.activate(snapshot)
                         self.pointerDispatcher = PointerClickDispatcher()
                         self.textDispatcher = KeyboardTextDispatcher()
                         self.keyDispatcher = KeyboardKeyDispatcher()

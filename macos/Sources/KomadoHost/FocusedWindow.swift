@@ -5,6 +5,22 @@ import ApplicationServices
 /// unknown or centered on a display other than the one being shared.
 @MainActor
 enum FocusedWindow {
+    /// Request focus only when the selected window has one unambiguous AX match.
+    static func activate(_ target: ControlWindowSnapshot) {
+        guard let windows = ControlWindowSnapshot.onScreen(),
+              WindowControlSafety(target: target).currentTarget(in: windows) == target,
+              windows.filter({ $0.processID == target.processID && $0.bounds == target.bounds }).count == 1,
+              let app = NSRunningApplication(processIdentifier: target.processID) else { return }
+        let element = AXUIElementCreateApplication(target.processID)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value) == .success,
+              let axWindows = value as? [AXUIElement] else { return }
+        let matches = axWindows.filter { bounds(of: $0) == target.bounds }
+        guard matches.count == 1,
+              AXUIElementPerformAction(matches[0], kAXRaiseAction as CFString) == .success else { return }
+        _ = app.activate(options: [])
+    }
+
     static func isOnDisplay(_ bounds: CGRect) -> Bool {
         guard let focused = snapshot() else { return false }
         return bounds.contains(CGPoint(x: focused.bounds.midX, y: focused.bounds.midY))
