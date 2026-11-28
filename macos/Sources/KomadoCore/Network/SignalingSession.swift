@@ -36,6 +36,15 @@ actor SignalingSession {
     private var nextWindowOffset: UInt16? = 0
     private var sentWindowCount = 0
     private var windowActionID: UInt32?
+    private var watchingWindows = false
+    private var windowWatchID: UUID?
+    private var windowChangePending = false
+    private var windowWatchReady = false
+    private var windowChangeDeferred = false
+    private var windowMonitor: WindowChangeMonitor?
+    private var windowReconciliation: Task<Void, Never>?
+    private var windowEventCheck: Task<Void, Never>?
+    private var reconcilingWindows = false
 
     init(connection: NWConnection, handshake: ServerHandshake, queue: DispatchQueue,
          onAuthenticated: @escaping @Sendable (PairedDevice) async -> Void,
@@ -76,6 +85,13 @@ actor SignalingSession {
         closed = true
         timeout?.cancel()
         timeout = nil
+        windowReconciliation?.cancel()
+        windowReconciliation = nil
+        windowEventCheck?.cancel()
+        windowEventCheck = nil
+        let monitor = windowMonitor
+        windowMonitor = nil
+        await monitor?.stop()
         connection.cancel()
         await handshake.disconnect()
         await onClosed()
@@ -183,6 +199,12 @@ actor SignalingSession {
                 }
                 let message = try SignalMessage.decode(frame)
                 if let device {
+                    if watchingWindows {
+                        switch message {
+                        case .listWindows, .stopWatchingWindows: break
+                        default: await close(); return
+                        }
+                    }
                     if resumeChecked && !resuming { await close(); return }
                     if message == .resumeCheck && mediaState == .idle && !resumeChecked {
                         resumeChecked = true
@@ -302,7 +324,58 @@ actor SignalingSession {
                         if !closed { receive() }
                         return
                     }
+                    if message == .watchWindows, mediaState == .idle, !watchingWindows,
+                       windowSnapshot != nil, nextWindowOffset == nil {
+                        watchingWindows = true
+                        windowWatchID = UUID()
+                        windowChangePending = false
+                        windowWatchReady = false
+                        windowChangeDeferred = false
+                        let monitor = await MainActor.run {
+                            let monitor = WindowChangeMonitor { [weak self] in
+                                Task { await self?.scheduleWindowCheck() }
+                            }
+                            monitor.start()
+                            return monitor
+                        }
+                        guard !closed, watchingWindows else { await monitor.stop(); return }
+                        windowMonitor = monitor
+                        let response = try SignalFrame.encode(SignalMessage.windowsWatching.encode())
+                        connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                            Task { await self?.sentCatalog(error: error) }
+                        })
+                        windowWatchReady = true
+                        if windowChangeDeferred { await windowDidChange() }
+                        windowReconciliation = Task { [weak self] in
+                            while !Task.isCancelled {
+                                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                                await self?.reconcileWindows()
+                            }
+                        }
+                        return
+                    }
+                    if message == .stopWatchingWindows, mediaState == .idle, watchingWindows {
+                        watchingWindows = false
+                        windowWatchID = nil
+                        windowChangePending = false
+                        windowWatchReady = false
+                        windowChangeDeferred = false
+                        windowReconciliation?.cancel()
+                        windowReconciliation = nil
+                        windowEventCheck?.cancel()
+                        windowEventCheck = nil
+                        let monitor = windowMonitor
+                        windowMonitor = nil
+                        await monitor?.stop()
+                        guard !closed else { return }
+                        let response = try SignalFrame.encode(SignalMessage.windowsWatchStopped.encode())
+                        connection.send(content: response, completion: .contentProcessed { [weak self] error in
+                            Task { await self?.sentCatalog(error: error) }
+                        })
+                        return
+                    }
                     if case let .listWindows(offset) = message, mediaState == .idle {
+                        if watchingWindows && offset == 0 { windowChangePending = false }
                         if offset == 0 && nextWindowOffset == nil {
                             windowSnapshot = nil
                             nextWindowOffset = 0
@@ -330,6 +403,7 @@ actor SignalingSession {
                         return
                     }
                     if case let .windowAction(id, action) = message, mediaState == .idle {
+                        guard !watchingWindows else { await close(); return }
                         guard let snapshot = windowSnapshot,
                               let selected = snapshot.prefix(sentWindowCount).first(where: { $0.info.id == id }),
                               try await WindowCatalog.matches(selected), !closed, mediaState == .idle else { await close(); return }
@@ -343,6 +417,7 @@ actor SignalingSession {
                         if !closed { receive() }
                         return
                     }
+                    guard !watchingWindows else { await close(); return }
                     let target: MediaTarget?
                     let startsMedia: Bool
                     switch message {
@@ -422,6 +497,44 @@ actor SignalingSession {
         guard !closed else { return }
         guard error == nil else { await close(); return }
         receive()
+    }
+
+    private func scheduleWindowCheck() {
+        guard !closed, watchingWindows, !windowChangePending, windowEventCheck == nil else { return }
+        windowEventCheck = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+            await self?.checkWindowEvent()
+        }
+    }
+
+    private func checkWindowEvent() async {
+        windowEventCheck = nil
+        await reconcileWindows()
+    }
+
+    private func windowDidChange() async {
+        guard !closed, watchingWindows, !windowChangePending else { return }
+        guard windowWatchReady else { windowChangeDeferred = true; return }
+        windowChangeDeferred = false
+        windowChangePending = true
+        do {
+            let message = try SignalFrame.encode(SignalMessage.windowsChanged.encode())
+            connection.send(content: message, completion: .contentProcessed { [weak self] error in
+                if error != nil { Task { await self?.close() } }
+            })
+        } catch { await close() }
+    }
+
+    private func reconcileWindows() async {
+        guard !closed, watchingWindows, !windowChangePending, !reconcilingWindows,
+              let snapshot = windowSnapshot, let watchID = windowWatchID else { return }
+        reconcilingWindows = true
+        defer { reconcilingWindows = false }
+        do {
+            let current = try await WindowCatalog.all()
+            guard !closed, watchingWindows, windowWatchID == watchID else { return }
+            if current != snapshot { await windowDidChange() }
+        } catch { await close() }
     }
 
     private func sent(response: SignalMessage, error: NWError?) async {

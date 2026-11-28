@@ -34,7 +34,9 @@ import java.security.cert.X509Certificate
 import java.security.spec.X509EncodedKeySpec
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.KeyManager
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLHandshakeException
@@ -133,6 +135,118 @@ class AuthenticatedHostConnectionTest {
                 server.close()
                 executor.shutdownNow()
                 executor.awaitTermination(10, TimeUnit.SECONDS)
+            }
+        }
+    }
+
+    @Test fun watchesWindowChangesAndStopsDuringARefresh() {
+        withServer { server, fingerprint ->
+            val executor = Executors.newSingleThreadExecutor()
+            val first = listOf(WindowInfo(1, 300, 200, "App", "First", true))
+            val updated = listOf(WindowInfo(1, 640, 480, "App", "Updated", true))
+            val allowChange = CountDownLatch(1)
+            val secondRequest = CountDownLatch(1)
+            val allowSecondResponse = CountDownLatch(1)
+            val update = CountDownLatch(1)
+            val received = AtomicReference<List<WindowInfo>>()
+            val failure = java.util.concurrent.atomic.AtomicBoolean(false)
+            val task = executor.submit {
+                (server.accept() as SSLSocket).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.startHandshake()
+                    receive(socket) as SignalMessage.Pair
+                    send(socket, SignalMessage.Challenge(ByteArray(32)))
+                    receive(socket) as SignalMessage.Proof
+                    send(socket, SignalMessage.Accepted(UUID.randomUUID()))
+                    assertEquals(SignalMessage.ListWindows(0), receive(socket))
+                    send(socket, SignalMessage.Windows(0, first))
+                    assertEquals(SignalMessage.WatchWindows, receive(socket))
+                    send(socket, SignalMessage.WindowsWatching)
+                    assertTrue(allowChange.await(10, TimeUnit.SECONDS))
+                    send(socket, SignalMessage.WindowsChanged)
+                    assertEquals(SignalMessage.ListWindows(0), receive(socket))
+                    send(socket, SignalMessage.WindowsChanged)
+                    send(socket, SignalMessage.Windows(0, updated))
+                    assertEquals(SignalMessage.ListWindows(0), receive(socket))
+                    secondRequest.countDown()
+                    assertTrue(allowSecondResponse.await(10, TimeUnit.SECONDS))
+                    send(socket, SignalMessage.Windows(0, updated))
+                    assertEquals(SignalMessage.StopWatchingWindows, receive(socket))
+                    send(socket, SignalMessage.WindowsChanged)
+                    send(socket, SignalMessage.WindowsWatchStopped)
+                    assertEquals(SignalMessage.ListWindows(0), receive(socket))
+                    send(socket, SignalMessage.Windows(0, updated))
+                }
+            }
+            try {
+                AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint, "Android test", ByteArray(32), key).use { connection ->
+                    assertEquals(first, connection.listWindows())
+                    val watch = connection.watchWindows({ received.set(it); update.countDown() }, { failure.set(true) })
+                    allowChange.countDown()
+                    assertTrue(update.await(10, TimeUnit.SECONDS))
+                    assertEquals(updated, received.get())
+                    assertTrue(secondRequest.await(10, TimeUnit.SECONDS))
+                    watch.stop()
+                    allowSecondResponse.countDown()
+                    assertEquals(updated, connection.listWindows())
+                    assertFalse(failure.get())
+                }
+                task.get(20, TimeUnit.SECONDS)
+            } finally {
+                allowChange.countDown()
+                allowSecondResponse.countDown()
+                server.close()
+                executor.shutdownNow()
+                executor.awaitTermination(10, TimeUnit.SECONDS)
+            }
+        }
+    }
+
+    @Test fun stoppedWatchDoesNotInterruptAFollowingMediaRequest() {
+        withServer { server, fingerprint ->
+            val serverExecutor = Executors.newSingleThreadExecutor()
+            val clientExecutor = Executors.newSingleThreadExecutor()
+            val requestStarted = CountDownLatch(1)
+            val allowResponse = CountDownLatch(1)
+            val watchFailed = java.util.concurrent.atomic.AtomicBoolean(false)
+            val windows = listOf(WindowInfo(1, 300, 200, "App", "Window", true))
+            val task = serverExecutor.submit {
+                (server.accept() as SSLSocket).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.startHandshake()
+                    receive(socket) as SignalMessage.Pair
+                    send(socket, SignalMessage.Challenge(ByteArray(32)))
+                    receive(socket) as SignalMessage.Proof
+                    send(socket, SignalMessage.Accepted(UUID.randomUUID()))
+                    assertEquals(SignalMessage.ListWindows(0), receive(socket))
+                    send(socket, SignalMessage.Windows(0, windows))
+                    assertEquals(SignalMessage.ListWindows(0), receive(socket))
+                    requestStarted.countDown()
+                    assertTrue(allowResponse.await(10, TimeUnit.SECONDS))
+                    send(socket, SignalMessage.Windows(0, windows))
+                    assertEquals(SignalMessage.StartWindow(1), receive(socket))
+                }
+            }
+            try {
+                AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint, "Android test", ByteArray(32), key).use { connection ->
+                    assertEquals(windows, connection.listWindows())
+                    val list = clientExecutor.submit<List<WindowInfo>> { connection.listWindows() }
+                    assertTrue(requestStarted.await(10, TimeUnit.SECONDS))
+                    val watch = connection.watchWindows({}, { watchFailed.set(true) })
+                    watch.stop()
+                    allowResponse.countDown()
+                    assertEquals(windows, list.get(10, TimeUnit.SECONDS))
+                    connection.requestMedia(windowId = 1)
+                    assertFalse(watchFailed.get())
+                }
+                task.get(20, TimeUnit.SECONDS)
+            } finally {
+                allowResponse.countDown()
+                server.close()
+                serverExecutor.shutdownNow()
+                clientExecutor.shutdownNow()
+                serverExecutor.awaitTermination(10, TimeUnit.SECONDS)
+                clientExecutor.awaitTermination(10, TimeUnit.SECONDS)
             }
         }
     }

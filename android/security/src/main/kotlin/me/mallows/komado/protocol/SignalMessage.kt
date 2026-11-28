@@ -32,6 +32,11 @@ sealed interface SignalMessage {
     data class Displays(val values: List<DisplayInfo>) : SignalMessage
     data class ListWindows(val offset: Int) : SignalMessage
     data class Windows(val next: Int, val values: List<WindowInfo>) : SignalMessage
+    data object WatchWindows : SignalMessage
+    data object WindowsWatching : SignalMessage
+    data object WindowsChanged : SignalMessage
+    data object StopWatchingWindows : SignalMessage
+    data object WindowsWatchStopped : SignalMessage
     data class ListApplications(val offset: Int) : SignalMessage
     data class Applications(val next: Int, val values: List<ApplicationInfo>) : SignalMessage
     data class ApplicationIcon(val id: Long) : SignalMessage
@@ -133,6 +138,16 @@ object SignalMessageCodec {
                 "window.list" -> {
                     if (fields.size != 3) throw MessageException()
                     SignalMessage.ListWindows(nonnegativeInteger(fields[2], 65_535).toInt())
+                }
+                "window.watch", "window.watching", "window.changed", "window.watch.stop", "window.watch.stopped" -> {
+                    if (fields.size != 2) throw MessageException()
+                    when (fields[1]) {
+                        "window.watch" -> SignalMessage.WatchWindows
+                        "window.watching" -> SignalMessage.WindowsWatching
+                        "window.changed" -> SignalMessage.WindowsChanged
+                        "window.watch.stop" -> SignalMessage.StopWatchingWindows
+                        else -> SignalMessage.WindowsWatchStopped
+                    }
                 }
                 "window.listed" -> {
                     if (fields.size !in 3..195 || (fields.size - 3) % 6 != 0) throw MessageException()
@@ -270,6 +285,11 @@ object SignalMessageCodec {
                 listOf("1", "display.listed") + message.values.flatMap { listOf(it.id.toString(), it.width.toString(), it.height.toString(), it.name) }
             }
             is SignalMessage.ListWindows -> listOf("1", "window.list", message.offset.toString())
+            SignalMessage.WatchWindows -> listOf("1", "window.watch")
+            SignalMessage.WindowsWatching -> listOf("1", "window.watching")
+            SignalMessage.WindowsChanged -> listOf("1", "window.changed")
+            SignalMessage.StopWatchingWindows -> listOf("1", "window.watch.stop")
+            SignalMessage.WindowsWatchStopped -> listOf("1", "window.watch.stopped")
             is SignalMessage.Windows -> {
                 if (message.values.size > 32 || message.values.any { !validCatalogLabel(it.application) || !validCatalogLabel(it.title) }) throw MessageException()
                 listOf("1", "window.listed", message.next.toString()) + message.values.flatMap {

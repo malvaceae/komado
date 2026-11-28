@@ -186,6 +186,10 @@ class AuthenticatedHostConnection private constructor(
 
     /** Fetches one bounded snapshot in pages; the total wait is limited. */
     fun listWindows(): List<WindowInfo> = synchronized(mediaLock) {
+        readWindows { receive(socket) }
+    }
+
+    private fun readWindows(receivePage: () -> SignalMessage): List<WindowInfo> {
         if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
         windowsRequested = false
         val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -195,7 +199,7 @@ class AuthenticatedHostConnection private constructor(
             var offset = 0
             do {
                 send(socket, SignalMessage.ListWindows(offset))
-                val page = receive(socket) as? SignalMessage.Windows ?: throw IOException("Expected window list")
+                val page = receivePage() as? SignalMessage.Windows ?: throw IOException("Expected window list")
                 if (page.values.any { !ids.add(it.id) }) throw IOException("Duplicate window")
                 windows.addAll(page.values)
                 if (windows.size > 65_535) throw IOException("Window list too large")
@@ -205,11 +209,105 @@ class AuthenticatedHostConnection private constructor(
                 offset = page.next
             } while (offset != 0)
             windowsRequested = true
-            windows
+            return windows
         } catch (error: Exception) {
             runCatching { close() }
             throw error
         } finally { timeout.cancel(false) }
+    }
+
+    /** Watches only while the window chooser is open. Stop before using another signaling operation. */
+    fun watchWindows(onWindows: (List<WindowInfo>) -> Unit, onFailure: () -> Unit): WindowWatch {
+        val watch = WindowWatch(onWindows, onFailure)
+        Thread({ watch.run() }, "komado-window-watch").apply { isDaemon = true; start() }
+        return watch
+    }
+
+    inner class WindowWatch internal constructor(
+        private val onWindows: (List<WindowInfo>) -> Unit,
+        private val onFailure: () -> Unit,
+    ) {
+        private val lock = Any()
+        private var stopped = false
+        private var started = false
+        private var busy = false
+        private var stopSent = false
+        private var stopDeadline: ScheduledFuture<*>? = null
+
+        fun stop() = synchronized(lock) {
+            stopped = true
+            if (started) {
+                if (stopDeadline == null) stopDeadline = timeouts.schedule({ runCatching { close() } }, 10, TimeUnit.SECONDS)
+                if (!busy) sendStop()
+            }
+        }
+
+        private fun sendStop() {
+            if (stopSent) return
+            stopSent = true
+            Thread({
+                try { send(socket, SignalMessage.StopWatchingWindows) }
+                catch (_: Exception) { runCatching { close() } }
+            }, "komado-window-watch-stop").apply { isDaemon = true; start() }
+        }
+
+        internal fun run() {
+            try {
+                synchronized(mediaLock) {
+                    if (synchronized(lock) { stopped }) return
+                    if (closed || mediaState != MediaState.IDLE || !windowsRequested) throw IOException("Unexpected signaling state")
+                    val oldTimeout = socket.soTimeout
+                    try {
+                        socket.soTimeout = 0
+                        synchronized(lock) {
+                            if (stopped) return
+                            send(socket, SignalMessage.WatchWindows)
+                            started = true
+                            busy = true
+                        }
+                        val startDeadline = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        try {
+                            if (receive(socket) != SignalMessage.WindowsWatching) throw IOException("Expected window watch response")
+                        } finally { startDeadline.cancel(false) }
+                        synchronized(lock) { busy = false; if (stopped) sendStop() }
+                        var dirty = false
+                        while (true) {
+                            val message = if (dirty) SignalMessage.WindowsChanged else receive(socket)
+                            dirty = false
+                            when (message) {
+                                SignalMessage.WindowsChanged -> {
+                                    val refresh = synchronized(lock) {
+                                        if (stopped) { sendStop(); false } else { busy = true; true }
+                                    }
+                                    if (!refresh) continue
+                                    val windows = readWindows {
+                                        var response = receive(socket)
+                                        while (response == SignalMessage.WindowsChanged) {
+                                            dirty = true
+                                            response = receive(socket)
+                                        }
+                                        response
+                                    }
+                                    synchronized(lock) { busy = false; if (stopped) sendStop() }
+                                    if (!synchronized(lock) { stopped }) onWindows(windows)
+                                }
+                                SignalMessage.WindowsWatchStopped -> {
+                                    if (!synchronized(lock) { stopSent }) throw IOException("Unexpected window watch stop")
+                                    return
+                                }
+                                else -> throw IOException("Unexpected window watch message")
+                            }
+                        }
+                    } finally {
+                        synchronized(lock) { stopDeadline?.cancel(false); stopDeadline = null }
+                        if (!socket.isClosed) socket.soTimeout = oldTimeout
+                    }
+                }
+            } catch (_: Exception) {
+                runCatching { close() }
+                if (!synchronized(lock) { stopped }) onFailure()
+            }
+        }
     }
 
     /** Requests a state change for a window from this connection's list. */

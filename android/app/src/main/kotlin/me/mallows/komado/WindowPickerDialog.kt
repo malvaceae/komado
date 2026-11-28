@@ -86,8 +86,10 @@ internal class WindowPickerDialog private constructor(
                     dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
                 }
             return WindowPickerDialog(dialog) { replacement ->
-                allWindows = replacement
-                update(search.text.toString())
+                if (allWindows != replacement) {
+                    allWindows = replacement
+                    update(search.text.toString())
+                }
             }
         }
     }

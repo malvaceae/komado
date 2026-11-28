@@ -64,6 +64,7 @@ class VideoActivity : ComponentActivity() {
     private var media: AndroidMediaSession? = null
     private var renderer: RemoteVideoRenderer? = null
     private var targetDialog: AlertDialog? = null
+    private var windowWatch: AuthenticatedHostConnection.WindowWatch? = null
     private var windowActionDialog: AlertDialog? = null
     private var settingsDialog: AlertDialog? = null
     private var statisticsDialog: AlertDialog? = null
@@ -390,7 +391,7 @@ class VideoActivity : ComponentActivity() {
     }
 
     private fun prepareTarget(established: AuthenticatedHostConnection, target: Target,
-                              reload: Long? = null, size: WindowSize? = null) {
+                              reload: Long? = null, size: WindowSize? = null, expectedApplication: String? = null) {
         when (target) {
             Target.MAIN -> {
                 selected = Selection.Main
@@ -424,7 +425,9 @@ class VideoActivity : ComponentActivity() {
                     return
                 }
                 if (reload != null) {
-                    val window = windows.firstOrNull { it.id == reload } ?: run { showFailure(); return }
+                    val window = windows.firstOrNull {
+                        it.id == reload && (expectedApplication == null || it.application == expectedApplication)
+                    } ?: run { showFailure(); return }
                     selected = Selection.Window(window)
                     startMedia(established, null, reload, size)
                     return
@@ -523,11 +526,12 @@ class VideoActivity : ComponentActivity() {
     private fun chooseWindow(established: AuthenticatedHostConnection, windows: List<WindowInfo>) {
         lateinit var picker: WindowPickerDialog
         picker = WindowPickerDialog.show(this, windows, onChoose = { window ->
+            stopWindowWatch()
             targetDialog = null
             selected = Selection.Window(window)
             currentWindowId = window.id
             val size = desiredWindowSize()
-            if (active) executor.execute { startMedia(established, null, window.id, size) }
+            if (active) executor.execute { prepareTarget(established, Target.WINDOW, window.id, size, window.application) }
         }, onCancel = { finish() }, onActions = if (!controlMode) null else { window ->
             windowActionDialog = AlertDialog.Builder(this).setTitle(R.string.window_action_title)
                 .setItems(arrayOf(getString(R.string.window_minimize), getString(R.string.window_restore), getString(R.string.window_close))) { _, index ->
@@ -537,13 +541,17 @@ class VideoActivity : ComponentActivity() {
                     dialog.show()
                 }
         }, onRefresh = {
+            stopWindowWatch()
             picker.setLoading(true)
             executor.execute {
                 val result = runCatching { established.listWindows() }
                 runOnUiThread {
                     if (active && targetDialog === picker.dialog) {
                         picker.setLoading(false)
-                        result.onSuccess { picker.update(it) }.onFailure {
+                        result.onSuccess {
+                            picker.update(it)
+                            watchWindowChanges(established, picker)
+                        }.onFailure {
                             stopSession(failed = true)
                             status.setText(R.string.window_selection_failed)
                         }
@@ -552,13 +560,42 @@ class VideoActivity : ComponentActivity() {
             }
         })
         targetDialog = picker.dialog
+        watchWindowChanges(established, picker)
+    }
+
+    private fun watchWindowChanges(established: AuthenticatedHostConnection, picker: WindowPickerDialog) {
+        lateinit var watch: AuthenticatedHostConnection.WindowWatch
+        watch = established.watchWindows(onWindows = { windows ->
+            runOnUiThread {
+                if (active && targetDialog === picker.dialog && windowWatch === watch) picker.update(windows)
+            }
+        }, onFailure = {
+            runOnUiThread {
+                if (active && targetDialog === picker.dialog && windowWatch === watch) {
+                    stopSession(failed = true)
+                    status.setText(R.string.window_selection_failed)
+                }
+            }
+        })
+        windowWatch = watch
+    }
+
+    private fun stopWindowWatch() {
+        val watch = windowWatch ?: return
+        windowWatch = null
+        watch.stop()
     }
 
     private fun performWindowAction(established: AuthenticatedHostConnection, window: WindowInfo, action: WindowAction) {
+        stopWindowWatch()
         val dialog = targetDialog
         dialog?.listView?.isEnabled = false
         executor.execute {
-            val result = runCatching { established.performWindowAction(window.id, action) }
+            val result = runCatching {
+                if (established.listWindows().any { it.id == window.id && it.application == window.application }) {
+                    established.performWindowAction(window.id, action)
+                } else false
+            }
             runOnUiThread {
                 if (active && targetDialog === dialog) {
                     dialog?.listView?.isEnabled = true
@@ -1200,6 +1237,7 @@ class VideoActivity : ComponentActivity() {
         nextTarget = null
         reloadWindowId = null
         currentWindowId = null
+        windowWatch = null
         mainHandler.removeCallbacks(resizeForLayout)
         runCatching { current?.close() }
         targetDialog?.dismiss()

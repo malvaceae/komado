@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Foundation
 import Network
@@ -111,6 +112,24 @@ private final class ServerTestPeer: @unchecked Sendable {
         let size = header.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
         guard size > 0 && size <= SignalFrame.maximumPayload else { throw PeerError.badFrame }
         return try SignalMessage.decode(try await read(Int(size)))
+    }
+
+    func awaitWindowChange(matching: @Sendable ([WindowInfo]) -> Bool) async throws -> Bool {
+        for _ in 0..<10 {
+            guard try await receive() == .windowsChanged else { return false }
+            var offset: UInt16 = 0
+            var windows: [WindowInfo] = []
+            repeat {
+                try await send(.listWindows(offset))
+                var response = try await receive()
+                while response == .windowsChanged { response = try await receive() }
+                guard case let .windows(next, values) = response else { return false }
+                windows.append(contentsOf: values)
+                offset = next
+            } while offset != 0
+            if matching(windows) { return true }
+        }
+        return false
     }
 
     private func read(_ count: Int) async throws -> Data {
@@ -261,7 +280,7 @@ final class SignalingServerTests: XCTestCase {
         XCTAssertEqual(box.getEndpoints().count, count)
     }
 
-    func testLocalServerPairsAndAuthenticatesAgain() async throws {
+    @MainActor func testLocalServerPairsAndAuthenticatesAgain() async throws {
         let box = ServerTestBox(), pathReady = expectation(description: "network path")
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
@@ -422,6 +441,41 @@ final class SignalingServerTests: XCTestCase {
             }
             offset = next
         } while offset != 0
+        try await first.send(.watchWindows)
+        let watchStarted = try await first.receive()
+        XCTAssertEqual(watchStarted, .windowsWatching)
+        let testTitle = "komado-window-watch-\(UUID().uuidString)"
+        _ = NSApplication.shared
+        var testWindow: NSWindow? = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 320, height: 240),
+                                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        testWindow?.isReleasedWhenClosed = false
+        testWindow?.title = testTitle
+        testWindow?.orderFront(nil)
+        defer { testWindow?.close() }
+        let testWindowID = CGWindowID(try XCTUnwrap(testWindow?.windowNumber))
+        let watchTimeout = Task {
+            try? await Task.sleep(for: .seconds(20))
+            if !Task.isCancelled { first.connection.cancel() }
+        }
+        defer { watchTimeout.cancel() }
+        let created = try await first.awaitWindowChange { $0.contains { $0.id == testWindowID && $0.title == testTitle } }
+        XCTAssertTrue(created)
+        testWindow?.title = "\(testTitle)-updated"
+        let renamed = try await first.awaitWindowChange { $0.contains { $0.id == testWindowID && $0.title == "\(testTitle)-updated" } }
+        XCTAssertTrue(renamed)
+        var frame = try XCTUnwrap(testWindow?.frame)
+        frame.size.width += 80
+        testWindow?.setFrame(frame, display: true)
+        let resized = try await first.awaitWindowChange { $0.contains { $0.id == testWindowID && $0.width >= 400 } }
+        XCTAssertTrue(resized)
+        testWindow?.close()
+        testWindow = nil
+        let removedWindow = try await first.awaitWindowChange { !$0.contains { $0.id == testWindowID } }
+        XCTAssertTrue(removedWindow)
+        try await first.send(.stopWatchingWindows)
+        var watchResponse = try await first.receive()
+        while watchResponse == .windowsChanged { watchResponse = try await first.receive() }
+        XCTAssertEqual(watchResponse, .windowsWatchStopped)
         try await first.send(.listWindows(0))
         guard case .windows = try await first.receive() else { return XCTFail("Expected a refreshed window list") }
         let localCandidate = "a=candidate:1 1 udp 1 \(address) 54321 typ host\r\n"

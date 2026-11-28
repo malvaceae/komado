@@ -63,6 +63,7 @@ public enum SignalMessage: Equatable, Sendable {
     case displays([DisplayInfo])
     case listWindows(UInt16)
     case windows(next: UInt16, values: [WindowInfo])
+    case watchWindows, windowsWatching, windowsChanged, stopWatchingWindows, windowsWatchStopped
     case listApplications(UInt16)
     case applications(next: UInt16, values: [ApplicationInfo])
     case applicationIcon(UInt32)
@@ -143,6 +144,15 @@ public enum SignalMessage: Equatable, Sendable {
         case "window.list":
             guard fields.count == 3, let offset = nonnegativeInteger(fields[2], max: 65_535) else { throw MessageError.invalid }
             return .listWindows(UInt16(offset))
+        case "window.watch", "window.watching", "window.changed", "window.watch.stop", "window.watch.stopped":
+            guard fields.count == 2 else { throw MessageError.invalid }
+            switch fields[1] {
+            case "window.watch": return .watchWindows
+            case "window.watching": return .windowsWatching
+            case "window.changed": return .windowsChanged
+            case "window.watch.stop": return .stopWatchingWindows
+            default: return .windowsWatchStopped
+            }
         case "window.listed":
             guard fields.count >= 3, fields.count <= 195, (fields.count - 3).isMultiple(of: 6),
                   let next = nonnegativeInteger(fields[2], max: 65_535) else { throw MessageError.invalid }
@@ -264,6 +274,11 @@ public enum SignalMessage: Equatable, Sendable {
             fields = ["1", "display.listed"] + displays.flatMap { [String($0.id), String($0.width), String($0.height), $0.name] }
         case let .listWindows(offset):
             fields = ["1", "window.list", String(offset)]
+        case .watchWindows: fields = ["1", "window.watch"]
+        case .windowsWatching: fields = ["1", "window.watching"]
+        case .windowsChanged: fields = ["1", "window.changed"]
+        case .stopWatchingWindows: fields = ["1", "window.watch.stop"]
+        case .windowsWatchStopped: fields = ["1", "window.watch.stopped"]
         case let .windows(next, values):
             guard values.count <= 32 else { throw MessageError.invalid }
             fields = ["1", "window.listed", String(next)] + values.flatMap {

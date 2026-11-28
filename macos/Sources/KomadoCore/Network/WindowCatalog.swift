@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 @preconcurrency import ScreenCaptureKit
 
-struct WindowSelection: Sendable {
+struct WindowSelection: Equatable, Sendable {
     let info: WindowInfo
     let processID: Int32
 }
