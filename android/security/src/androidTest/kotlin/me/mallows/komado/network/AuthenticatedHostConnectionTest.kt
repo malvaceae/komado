@@ -22,6 +22,7 @@ import java.io.DataInputStream
 import java.io.IOException
 import java.net.InetAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -272,6 +273,45 @@ class AuthenticatedHostConnectionTest {
                 assertThrows(IOException::class.java) { reconnected.receiveOffer() }
                 reconnected.close()
                 task.get(20, TimeUnit.SECONDS)
+            } finally {
+                server.close()
+                executor.shutdownNow()
+                executor.awaitTermination(10, TimeUnit.SECONDS)
+            }
+        }
+    }
+
+    @Test fun mediaStopRestoresTimeoutForNextRequest() {
+        withServer { server, fingerprint ->
+            val executor = Executors.newSingleThreadExecutor()
+            val task = executor.submit {
+                (server.accept() as SSLSocket).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.startHandshake()
+                    receive(socket) as SignalMessage.Pair
+                    send(socket, SignalMessage.Challenge(ByteArray(32)))
+                    receive(socket) as SignalMessage.Proof
+                    send(socket, SignalMessage.Accepted(UUID.randomUUID()))
+                    assertEquals(SignalMessage.StartMedia, receive(socket))
+                    send(socket, SignalMessage.Offer("v=0\r\ns=offer\r\n"))
+                    receive(socket) as SignalMessage.Answer
+                    assertEquals(SignalMessage.StopMedia, receive(socket))
+                    send(socket, SignalMessage.MediaStopped)
+                    assertEquals(SignalMessage.ListDisplays, receive(socket))
+                    socket.soTimeout = 35_000
+                    assertEquals(-1, socket.inputStream.read())
+                }
+            }
+            try {
+                val connection = AuthenticatedHostConnection.pair("127.0.0.1", server.localPort, fingerprint,
+                    "Android test", ByteArray(32), key)
+                connection.requestMedia()
+                connection.receiveOffer()
+                connection.sendAnswer("v=0\r\ns=answer\r\n")
+                connection.requestMediaStop()
+                assertTrue(connection.awaitClosure())
+                assertThrows(SocketTimeoutException::class.java) { connection.listDisplays() }
+                task.get(10, TimeUnit.SECONDS)
             } finally {
                 server.close()
                 executor.shutdownNow()

@@ -281,9 +281,11 @@ class AuthenticatedHostConnection private constructor(
 
     /** Waits for a requested media stop, or for the signaling connection to close. */
     fun awaitClosure(): Boolean {
-        synchronized(mediaLock) {
+        val previousTimeout = synchronized(mediaLock) {
             if (closed || mediaState !in setOf(MediaState.ANSWER_SENT, MediaState.STOP_REQUESTED)) throw IOException("Unexpected signaling state")
+            val timeout = socket.soTimeout
             socket.soTimeout = 0
+            timeout
         }
         val first = socket.inputStream.read()
         if (first == -1) return false
@@ -297,6 +299,7 @@ class AuthenticatedHostConnection private constructor(
             }
             stopTimeout?.cancel(false)
             stopTimeout = null
+            socket.soTimeout = previousTimeout
             mediaState = MediaState.IDLE
             displaysRequested = false
             windowsRequested = false
