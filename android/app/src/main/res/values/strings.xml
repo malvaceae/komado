@@ -89,13 +89,12 @@
     <string name="application_list_waiting">アプリ一覧を取得中…</string>
     <string name="application_choosing">アプリを選択してください。</string>
     <string name="application_selection_failed">アプリ一覧を取得できませんでした。</string>
-    <string name="no_applications">表示できるアプリがありません。</string>
     <string name="application_capture_note">選択したアプリのみ表示します。メニューバーは「表示対象を変更」から画面を選んでください。他の画面のウインドウは含まれません。</string>
     <string name="control_window">ウインドウを操作</string>
     <string name="window_control_note">Mac上で見えている部分を操作できます。文字入力にはウインドウのフォーカスが必要です。</string>
     <string name="window_option">%1$s — %2$s（%3$d × %4$d pt）</string>
     <string name="window_search">アプリ名・タイトル</string>
-    <string name="window_refresh">更新</string>
+    <string name="refresh">更新</string>
     <string name="window_action_hint">ウインドウを長押しすると最小化・復元・終了できます。</string>
     <string name="window_action_title">ウインドウの操作</string>
     <string name="window_minimize">最小化</string>

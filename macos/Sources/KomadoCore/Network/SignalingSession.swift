@@ -186,6 +186,11 @@ actor SignalingSession {
                         return
                     }
                     if case let .listApplications(offset) = message, mediaState == .idle {
+                        if offset == 0 && nextApplicationOffset == nil {
+                            applicationSnapshot = nil
+                            nextApplicationOffset = 0
+                            sentApplicationCount = 0
+                        }
                         guard nextApplicationOffset == offset else { await close(); return }
                         let snapshot: [ApplicationSelection]
                         if let current = applicationSnapshot { snapshot = current }

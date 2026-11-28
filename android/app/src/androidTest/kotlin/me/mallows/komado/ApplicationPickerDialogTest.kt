@@ -3,12 +3,14 @@ package me.mallows.komado
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
+import android.app.AlertDialog
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import me.mallows.komado.protocol.ApplicationInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -22,7 +24,7 @@ class ApplicationPickerDialogTest {
             scenario.onActivity { activity ->
                 val applications = listOf(ApplicationInfo(1, "Editor"), ApplicationInfo(2, "Browser"))
                 var selected: Long? = null
-                val picker = ApplicationPickerDialog(activity, applications, { selected = it.id }, {}, {})
+                val picker = ApplicationPickerDialog(activity, applications, { selected = it.id }, {}, {}, {})
                 picker.show()
                 val icon = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
                 picker.updateIcon(2, icon)
@@ -35,6 +37,20 @@ class ApplicationPickerDialogTest {
                 picker.dialog.listView.performItemClick(row, 0, picker.dialog.listView.adapter.getItemId(0))
                 assertEquals(2L, selected)
             }
+        }
+    }
+
+    @Test fun emptyListCanBeRefreshed() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            var refreshed = false
+            scenario.onActivity { activity ->
+                val picker = ApplicationPickerDialog(activity, emptyList(), {}, {}, {}, { refreshed = true })
+                picker.show()
+                assertEquals(0, picker.dialog.listView.count)
+                assertTrue(picker.dialog.getButton(AlertDialog.BUTTON_NEUTRAL).performClick())
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            assertTrue(refreshed)
         }
     }
 

@@ -22,6 +22,7 @@ internal class ApplicationPickerDialog(
     private val onChoose: (ApplicationInfo) -> Unit,
     private val onCancel: () -> Unit,
     private val onIconRequested: (ApplicationInfo) -> Unit,
+    private val onRefresh: () -> Unit,
 ) {
     private val icons = mutableMapOf<Long, Bitmap>()
     private val requestedIcons = mutableSetOf<Long>()
@@ -76,6 +77,7 @@ internal class ApplicationPickerDialog(
         update("")
         dialog = AlertDialog.Builder(activity).setCustomTitle(header)
             .setAdapter(adapter) { _, index -> onChoose(visible[index]) }
+            .setNeutralButton(R.string.refresh) { _, _ -> onRefresh() }
             .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
             .setOnCancelListener { onCancel() }.create()
     }

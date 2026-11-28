@@ -237,6 +237,7 @@ class AuthenticatedHostConnectionTest {
             val executor = Executors.newSingleThreadExecutor()
             val id = UUID.randomUUID()
             val applications = (1..33).map { ApplicationInfo(it.toLong(), "Application $it") }
+            val refreshed = applications + ApplicationInfo(34, "New application")
             val icon = byteArrayOf(1, 2, 3, 4)
             val task = executor.submit {
                 (server.accept() as SSLSocket).use { socket ->
@@ -252,7 +253,13 @@ class AuthenticatedHostConnectionTest {
                     send(socket, SignalMessage.Applications(0, applications.drop(32)))
                     assertEquals(SignalMessage.ApplicationIcon(33), receive(socket))
                     send(socket, SignalMessage.ApplicationIconResult(33, icon))
-                    assertEquals(SignalMessage.StartApplicationControl(33), receive(socket))
+                    assertEquals(SignalMessage.ListApplications(0), receive(socket))
+                    send(socket, SignalMessage.Applications(32, refreshed.take(32)))
+                    assertEquals(SignalMessage.ListApplications(32), receive(socket))
+                    send(socket, SignalMessage.Applications(0, refreshed.drop(32)))
+                    assertEquals(SignalMessage.ApplicationIcon(34), receive(socket))
+                    send(socket, SignalMessage.ApplicationIconResult(34, icon))
+                    assertEquals(SignalMessage.StartApplicationControl(34), receive(socket))
                 }
             }
             try {
@@ -260,7 +267,9 @@ class AuthenticatedHostConnectionTest {
                     "Android test", ByteArray(32), key)
                 assertEquals(applications, connection.listApplications())
                 assertTrue(icon.contentEquals(connection.applicationIcon(33)))
-                connection.requestMedia(control = true, applicationId = 33)
+                assertEquals(refreshed, connection.listApplications())
+                assertTrue(icon.contentEquals(connection.applicationIcon(34)))
+                connection.requestMedia(control = true, applicationId = 34)
                 connection.close()
                 task.get(20, TimeUnit.SECONDS)
             } finally {

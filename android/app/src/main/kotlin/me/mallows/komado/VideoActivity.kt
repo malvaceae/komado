@@ -412,8 +412,8 @@ class VideoActivity : ComponentActivity() {
                 }
                 runOnUiThread {
                     if (active) {
-                        if (applications.isEmpty()) { stopSession(failed = true); status.setText(R.string.no_applications) }
-                        else { status.setText(R.string.application_choosing); chooseApplication(established, applications) }
+                        status.setText(R.string.application_choosing)
+                        chooseApplication(established, applications)
                     }
                 }
             }
@@ -586,6 +586,10 @@ class VideoActivity : ComponentActivity() {
                     runOnUiThread { if (active && !cancelled.get() && targetDialog === picker.dialog) picker.updateIcon(application.id, bitmap) }
                 }
             }
+        }, onRefresh = {
+            cancelled.set(true)
+            targetDialog = null
+            if (active) executor.execute { prepareTarget(established, Target.APPLICATION) }
         })
         targetDialog = picker.dialog
         picker.dialog.setOnDismissListener {

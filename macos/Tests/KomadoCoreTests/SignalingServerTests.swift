@@ -300,6 +300,15 @@ final class SignalingServerTests: XCTestCase {
             XCTAssertEqual(id, applicationID)
             XCTAssertLessThanOrEqual(icon.count, 8192)
         }
+        applicationOffset = 0
+        applicationIDs.removeAll()
+        repeat {
+            try await first.send(.listApplications(applicationOffset))
+            guard case let .applications(next, values) = try await first.receive() else { return XCTFail("Expected refreshed application page") }
+            for application in values { XCTAssertTrue(applicationIDs.insert(application.id).inserted) }
+            if next != 0 { XCTAssertEqual(Int(next), applicationIDs.count) }
+            applicationOffset = next
+        } while applicationOffset != 0
         try await first.send(.listDisplays)
         guard case let .displays(displays) = try await first.receive(), let display = displays.first else {
             return XCTFail("Expected a nonempty display list")

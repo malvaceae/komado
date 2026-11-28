@@ -85,8 +85,8 @@ class AuthenticatedHostConnection private constructor(
 
     /** Fetches a snapshot of the host's available applications. */
     fun listApplications(): List<ApplicationInfo> = synchronized(mediaLock) {
-        if (closed || mediaState != MediaState.IDLE || applicationsRequested) throw IOException("Unexpected signaling state")
-        applicationsRequested = true
+        if (closed || mediaState != MediaState.IDLE) throw IOException("Unexpected signaling state")
+        applicationsRequested = false
         val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         try {
             val applications = mutableListOf<ApplicationInfo>()
@@ -103,6 +103,7 @@ class AuthenticatedHostConnection private constructor(
                 }
                 offset = page.next
             } while (offset != 0)
+            applicationsRequested = true
             applications
         } catch (error: Exception) {
             runCatching { close() }

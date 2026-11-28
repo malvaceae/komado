@@ -56,7 +56,7 @@ internal object WindowPickerDialog {
         update("")
         return AlertDialog.Builder(activity).setCustomTitle(header)
             .setAdapter(adapter) { _, index -> onChoose(visible[index]) }
-            .setNeutralButton(R.string.window_refresh) { _, _ -> onRefresh() }
+            .setNeutralButton(R.string.refresh) { _, _ -> onRefresh() }
             .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
             .setOnCancelListener { onCancel() }
             .create().also { dialog ->
