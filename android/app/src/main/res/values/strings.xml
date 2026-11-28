@@ -90,7 +90,7 @@
     <string name="application_capture_note">選択したアプリのみ表示します。メニューバーは「表示対象を変更」から画面を選んでください。他の画面のウインドウは含まれません。</string>
     <string name="control_window">ウインドウを操作</string>
     <string name="window_control_note">Mac上で見えている部分を操作できます。文字入力にはウインドウのフォーカスが必要です。</string>
-    <string name="window_option">%1$s — %2$s</string>
+    <string name="window_option">%1$s — %2$s（%3$d × %4$d pt）</string>
     <string name="window_search">アプリ名・タイトル</string>
     <string name="window_search_empty">一致するウインドウがありません。</string>
     <string name="window_selection_failed">ウインドウ一覧を取得できませんでした。Macの画面収録の許可とアプリのバージョンを確認してください。</string>

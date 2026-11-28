@@ -60,13 +60,14 @@ class WindowPickerDialogTest {
                 val windows = listOf(
                     WindowInfo(1, 300, 200, "Editor", "Notes"),
                     WindowInfo(2, 300, 200, "Browser", "Project"),
-                    WindowInfo(3, 300, 200, "Editor", "Project")
+                    WindowInfo(3, 640, 480, "Editor", "Project")
                 )
                 var selected: Long? = null
                 val dialog = WindowPickerDialog.show(activity, windows, { selected = it.id }, {})
                 val root = dialog.window!!.decorView
                 val search = find(root, EditText::class.java)!!
                 assertEquals(3, dialog.listView.count)
+                assertEquals("Editor — Project（640 × 480 pt）", dialog.listView.adapter.getItem(2))
                 search.setText("editor")
                 assertEquals(2, dialog.listView.count)
                 search.setText("PROJECT")

@@ -43,7 +43,7 @@ internal object WindowPickerDialog {
             val term = query.trim()
             visible = windows.filter { it.application.contains(term, ignoreCase = true) || it.title.contains(term, ignoreCase = true) }
             adapter.clear()
-            adapter.addAll(visible.map { activity.getString(R.string.window_option, it.application, it.title) })
+            adapter.addAll(visible.map { activity.getString(R.string.window_option, it.application, it.title, it.width, it.height) })
             empty.visibility = if (visible.isEmpty()) View.VISIBLE else View.GONE
         }
         search.addTextChangedListener(object : TextWatcher {
