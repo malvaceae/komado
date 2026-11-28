@@ -34,6 +34,7 @@ public actor SignalingServer {
         case authenticated(UUID, PairedDevice)
         case mediaRequested(UUID, PairedDevice, MediaTarget, resuming: Bool)
         case mediaStopRequested(UUID, PairedDevice)
+        case windowMinimizeRequested(UUID, PairedDevice, WindowInfo, Int32, Bool)
         case answer(UUID, PairedDevice, String)
         case disconnected(UUID)
         case throttled
@@ -167,6 +168,11 @@ public actor SignalingServer {
         try await current.session.sendMediaStopped()
     }
 
+    public func sendWindowMinimized(id: UInt32, success: Bool, sessionID: UUID) async throws {
+        guard let current = active, !stopped, !removing, current.id == sessionID else { throw ServerError.noConnection }
+        try await current.session.sendWindowMinimized(id: id, success: success)
+    }
+
     /// Blocks new sessions and disconnects the current one before removing the
     /// device. All registration removal must use this while the server is active.
     @discardableResult
@@ -241,6 +247,9 @@ public actor SignalingServer {
                                        onMediaRequested: { [weak self] device, target, resuming in await self?.mediaRequested(id: id, device: device, target: target, resuming: resuming) },
                                        canResume: { [weak self] device in await self?.canResume(id: id, device: device) ?? false },
                                        onMediaStopRequested: { [weak self] device in await self?.mediaStopRequested(id: id, device: device) },
+                                       onWindowMinimize: { [weak self] device, window, processID, minimized in
+                                           await self?.windowMinimizeRequested(id: id, device: device, window: window, processID: processID, minimized: minimized)
+                                       },
                                        onAnswer: { [weak self] device, sdp in await self?.answer(id: id, device: device, sdp: sdp) },
                                        onClosed: { [weak self] in await self?.sessionClosed(id: id) })
         active = (id, session)
@@ -269,6 +278,11 @@ public actor SignalingServer {
     private func mediaStopRequested(id: UUID, device: PairedDevice) {
         guard !stopped, active?.id == id else { return }
         onEvent(.mediaStopRequested(id, device))
+    }
+
+    private func windowMinimizeRequested(id: UUID, device: PairedDevice, window: WindowInfo, processID: Int32, minimized: Bool) {
+        guard !stopped, active?.id == id else { return }
+        onEvent(.windowMinimizeRequested(id, device, window, processID, minimized))
     }
 
     private func sessionClosed(id: UUID) {

@@ -151,6 +151,21 @@ class AuthenticatedHostConnection private constructor(
         } finally { timeout.cancel(false) }
     }
 
+    /** Requests a state change for a window from this connection's list. */
+    fun setWindowMinimized(id: Long, minimized: Boolean): Boolean = synchronized(mediaLock) {
+        if (closed || mediaState != MediaState.IDLE || !windowsRequested) throw IOException("Unexpected signaling state")
+        val timeout = timeouts.schedule({ runCatching { close() } }, HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        try {
+            send(socket, SignalMessage.SetWindowMinimized(id, minimized))
+            val response = receive(socket) as? SignalMessage.WindowMinimizedResult ?: throw IOException("Expected window action result")
+            if (response.id != id) throw IOException("Unexpected window action result")
+            response.success
+        } catch (error: Exception) {
+            runCatching { close() }
+            throw error
+        } finally { timeout.cancel(false) }
+    }
+
     /** Queries the authenticated host once before starting media. */
     fun listDisplays(): List<DisplayInfo> = synchronized(mediaLock) {
         if (closed || mediaState != MediaState.IDLE || displaysRequested) throw IOException("Unexpected signaling state")

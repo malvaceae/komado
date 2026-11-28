@@ -63,6 +63,7 @@ class VideoActivity : ComponentActivity() {
     private var media: AndroidMediaSession? = null
     private var renderer: RemoteVideoRenderer? = null
     private var targetDialog: AlertDialog? = null
+    private var windowActionDialog: AlertDialog? = null
     private var settingsDialog: AlertDialog? = null
     private var statisticsDialog: AlertDialog? = null
     private var viewport: ZoomableVideoView? = null
@@ -525,7 +526,34 @@ class VideoActivity : ComponentActivity() {
             currentWindowId = window.id
             val size = desiredWindowSize()
             if (active) executor.execute { startMedia(established, null, window.id, size) }
-        }, onCancel = { finish() })
+        }, onCancel = { finish() }, onActions = if (!controlMode) null else { window ->
+            windowActionDialog = AlertDialog.Builder(this).setTitle(R.string.window_action_title)
+                .setItems(arrayOf(getString(R.string.window_minimize), getString(R.string.window_restore))) { _, action ->
+                    setWindowMinimized(established, window, action == 0)
+                }.setNegativeButton(R.string.cancel, null).create().also { dialog ->
+                    dialog.setOnDismissListener { if (windowActionDialog === dialog) windowActionDialog = null }
+                    dialog.show()
+                }
+        })
+    }
+
+    private fun setWindowMinimized(established: AuthenticatedHostConnection, window: WindowInfo, minimized: Boolean) {
+        val dialog = targetDialog
+        dialog?.listView?.isEnabled = false
+        executor.execute {
+            val result = runCatching { established.setWindowMinimized(window.id, minimized) }
+            runOnUiThread {
+                if (active && targetDialog === dialog) {
+                    dialog?.listView?.isEnabled = true
+                    if (result.isFailure) {
+                        stopSession(failed = true)
+                        status.setText(R.string.window_selection_failed)
+                    } else {
+                        Toast.makeText(this, if (result.getOrDefault(false)) R.string.window_action_sent else R.string.window_action_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
     }
 
     private fun chooseApplication(established: AuthenticatedHostConnection, applications: List<ApplicationInfo>) {
@@ -1104,6 +1132,8 @@ class VideoActivity : ComponentActivity() {
         runCatching { current?.close() }
         targetDialog?.dismiss()
         targetDialog = null
+        windowActionDialog?.dismiss()
+        windowActionDialog = null
         settingsDialog?.dismiss()
         settingsDialog = null
         statisticsDialog?.dismiss()

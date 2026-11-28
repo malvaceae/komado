@@ -400,6 +400,8 @@ final class HostModel: ObservableObject {
             Task { [weak self] in await self?.startMedia(connection: id, device: device, target: target, resuming: resuming) }
         case let .mediaStopRequested(id, _):
             Task { [weak self] in await self?.stopMediaForSwitch(connection: id) }
+        case let .windowMinimizeRequested(id, _, window, processID, minimized):
+            Task { [weak self] in await self?.setWindowMinimized(connection: id, window: window, processID: processID, minimized: minimized) }
         case let .answer(id, _, sdp):
             if mediaConnection == id { applyAnswer(sdp) }
         case let .disconnected(id):
@@ -415,6 +417,23 @@ final class HostModel: ObservableObject {
             running = false
             ready = false
         }
+    }
+
+    private func setWindowMinimized(connection: UUID, window: WindowInfo, processID: Int32, minimized: Bool) async {
+        guard let server, await server.isActive(sessionID: connection), self.server === server,
+              connectedSession == connection, running else { return }
+        if allowRemoteControl { switchingControl = true }
+        var success = false
+        if allowRemoteControl && accessibilityStatus() && consoleStatus() && NSApplication.shared.isProtectedDataAvailable,
+           let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false),
+           await server.isActive(sessionID: connection), self.server === server,
+           connectedSession == connection, running, allowRemoteControl, accessibilityStatus(), consoleStatus(),
+           NSApplication.shared.isProtectedDataAvailable,
+           let target = content.windows.first(where: { WindowCatalog.matches(window: $0, info: window, processID: processID) }) {
+            success = WindowMinimization.set(minimized, window: target, windows: content.windows)
+        }
+        do { try await server.sendWindowMinimized(id: window.id, success: success, sessionID: connection) }
+        catch { await server.disconnect(sessionID: connection) }
     }
 
     private func startMedia(connection: UUID, device: PairedDevice, target: MediaTarget, resuming: Bool) async {

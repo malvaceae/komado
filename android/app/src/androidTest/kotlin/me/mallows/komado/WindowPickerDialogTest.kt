@@ -26,7 +26,7 @@ class WindowPickerDialogTest {
             lateinit var search: EditText
             scenario.onActivity { activity ->
                 val windows = (1L..150L).map { WindowInfo(it, 300, 200, "App", "Window $it") }
-                dialog = WindowPickerDialog.show(activity, windows, {}, {})
+                dialog = WindowPickerDialog.show(activity, windows, {}, {}, null)
             }
             InstrumentationRegistry.getInstrumentation().waitForIdleSync()
             scenario.onActivity {
@@ -63,7 +63,7 @@ class WindowPickerDialogTest {
                     WindowInfo(3, 640, 480, "Editor", "Project")
                 )
                 var selected: Long? = null
-                val dialog = WindowPickerDialog.show(activity, windows, { selected = it.id }, {})
+                val dialog = WindowPickerDialog.show(activity, windows, { selected = it.id }, {}, null)
                 val root = dialog.window!!.decorView
                 val search = find(root, EditText::class.java)!!
                 assertEquals(3, dialog.listView.count)
@@ -82,6 +82,21 @@ class WindowPickerDialogTest {
                 val list = dialog.listView
                 assertTrue(list.performItemClick(list.adapter.getView(1, null, list), 1, list.adapter.getItemId(1)))
                 assertEquals(3L, selected)
+            }
+        }
+    }
+
+    @Test fun longPressRequestsActionForFilteredWindow() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                var requested: Long? = null
+                val windows = listOf(WindowInfo(1, 300, 200, "Editor", "Notes"), WindowInfo(2, 640, 480, "Editor", "Project"))
+                val dialog = WindowPickerDialog.show(activity, windows, {}, {}, { requested = it.id })
+                find(dialog.window!!.decorView, EditText::class.java)!!.setText("Project")
+                val list = dialog.listView
+                assertTrue(list.onItemLongClickListener.onItemLongClick(list, list.adapter.getView(0, null, list), 0, list.adapter.getItemId(0)))
+                assertEquals(2L, requested)
+                dialog.dismiss()
             }
         }
     }

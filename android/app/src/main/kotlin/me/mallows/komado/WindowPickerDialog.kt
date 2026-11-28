@@ -14,7 +14,8 @@ import android.widget.TextView
 import me.mallows.komado.protocol.WindowInfo
 
 internal object WindowPickerDialog {
-    fun show(activity: Activity, windows: List<WindowInfo>, onChoose: (WindowInfo) -> Unit, onCancel: () -> Unit): AlertDialog {
+    fun show(activity: Activity, windows: List<WindowInfo>, onChoose: (WindowInfo) -> Unit, onCancel: () -> Unit,
+             onActions: ((WindowInfo) -> Unit)?): AlertDialog {
         val padding = (16 * activity.resources.displayMetrics.density).toInt()
         val search = EditText(activity).apply {
             setSingleLine()
@@ -35,6 +36,7 @@ internal object WindowPickerDialog {
                 setPadding(0, padding, 0, 0)
             })
             addView(search)
+            if (onActions != null) addView(TextView(activity).apply { setText(R.string.window_action_hint) })
             addView(empty)
         }
         var visible = windows
@@ -59,6 +61,10 @@ internal object WindowPickerDialog {
             .create().also { dialog ->
                 dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
                 dialog.show()
+                if (onActions != null) dialog.listView.setOnItemLongClickListener { _, _, position, _ ->
+                    onActions(visible[position])
+                    true
+                }
                 // AlertDialog does not detect an editor inside its custom title.
                 dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
             }

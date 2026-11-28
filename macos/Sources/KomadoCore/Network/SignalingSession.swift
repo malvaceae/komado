@@ -4,7 +4,7 @@ import Network
 /// One authenticated TLS connection with an SDP exchange for each media session.
 actor SignalingSession {
     enum SessionError: Error { case notAuthenticated, unexpectedState }
-    private enum MediaState { case idle, preparingOffer, awaitingAnswer, complete, stopping }
+    private enum MediaState { case idle, preparingOffer, awaitingAnswer, complete, stopping, windowAction }
     private let connection: NWConnection
     private let handshake: ServerHandshake
     private let queue: DispatchQueue
@@ -12,6 +12,7 @@ actor SignalingSession {
     private let onMediaRequested: @Sendable (PairedDevice, MediaTarget, Bool) async -> Void
     private let canResume: @Sendable (PairedDevice) async -> Bool
     private let onMediaStopRequested: @Sendable (PairedDevice) async -> Void
+    private let onWindowMinimize: @Sendable (PairedDevice, WindowInfo, Int32, Bool) async -> Void
     private let onAnswer: @Sendable (PairedDevice, String) async -> Void
     private let onClosed: @Sendable () async -> Void
     private var decoder = SignalFrame.Decoder()
@@ -29,12 +30,14 @@ actor SignalingSession {
     private var windowSnapshot: [WindowSelection]?
     private var nextWindowOffset: UInt16? = 0
     private var sentWindowCount = 0
+    private var windowActionID: UInt32?
 
     init(connection: NWConnection, handshake: ServerHandshake, queue: DispatchQueue,
          onAuthenticated: @escaping @Sendable (PairedDevice) async -> Void,
          onMediaRequested: @escaping @Sendable (PairedDevice, MediaTarget, Bool) async -> Void,
          canResume: @escaping @Sendable (PairedDevice) async -> Bool,
          onMediaStopRequested: @escaping @Sendable (PairedDevice) async -> Void,
+         onWindowMinimize: @escaping @Sendable (PairedDevice, WindowInfo, Int32, Bool) async -> Void,
          onAnswer: @escaping @Sendable (PairedDevice, String) async -> Void,
          onClosed: @escaping @Sendable () async -> Void) {
         self.connection = connection
@@ -44,6 +47,7 @@ actor SignalingSession {
         self.onMediaRequested = onMediaRequested
         self.canResume = canResume
         self.onMediaStopRequested = onMediaStopRequested
+        self.onWindowMinimize = onWindowMinimize
         self.onAnswer = onAnswer
         self.onClosed = onClosed
     }
@@ -96,6 +100,18 @@ actor SignalingSession {
         windowSnapshot = nil
         nextWindowOffset = 0
         sentWindowCount = 0
+        timeout?.cancel()
+        timeout = nil
+        connection.send(content: encoded, completion: .contentProcessed { [weak self] error in
+            Task { await self?.sentCatalog(error: error) }
+        })
+    }
+
+    func sendWindowMinimized(id: UInt32, success: Bool) throws {
+        guard !closed, device != nil, mediaState == .windowAction, windowActionID == id else { throw SessionError.unexpectedState }
+        let encoded = try SignalFrame.encode(SignalMessage.windowMinimizedResult(id, success).encode())
+        mediaState = .idle
+        windowActionID = nil
         timeout?.cancel()
         timeout = nil
         connection.send(content: encoded, completion: .contentProcessed { [weak self] error in
@@ -219,6 +235,20 @@ actor SignalingSession {
                         connection.send(content: response, completion: .contentProcessed { [weak self] error in
                             Task { await self?.sentCatalog(error: error) }
                         })
+                        return
+                    }
+                    if case let .setWindowMinimized(id, minimized) = message, mediaState == .idle {
+                        guard let snapshot = windowSnapshot,
+                              let selected = snapshot.prefix(sentWindowCount).first(where: { $0.info.id == id }),
+                              try await WindowCatalog.matches(selected), !closed, mediaState == .idle else { await close(); return }
+                        mediaState = .windowAction
+                        windowActionID = id
+                        timeout = Task { [weak self] in
+                            do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                            await self?.close()
+                        }
+                        await onWindowMinimize(device, selected.info, selected.processID, minimized)
+                        if !closed { receive() }
                         return
                     }
                     let target: MediaTarget?
