@@ -9,6 +9,6 @@
 
 ## 検証と制約
 
-合成音声を使った一時テストで、MacからAndroid API 26・37エミュレーターにOpus音声とH.264映像、DataChannelのメッセージを同じ接続で送信した。切り替え後の製品のWebRTC処理でも、合成映像の受信とAndroidからのクリックイベントの到達を両エミュレーターで確認した。macOSの自動テストとアプリのビルドも実行した。
+合成音声を使った一時テストで、MacからAndroid API 26・37エミュレーターにOpus音声とH.264映像、DataChannelのメッセージを同じ接続で送信した。切り替え後の製品のWebRTC処理でも、合成映像の受信とAndroidからのクリックイベントの到達を両エミュレーターで確認した。Macのテスト用ウインドウをScreenCaptureKitで取得し、両エミュレーターで映像を受信した。macOSの自動テストとアプリのビルドも実行した。
 
-音声転送の実装と検証範囲は[ADR 0020](0020-audio-capture.md)を参照する。実際の画面のAndroidへの転送とAndroid実機、別端末での接続は引き続き検証する。解像度の扱いは[ADR 0013](0013-capture-resolution.md)を参照する。
+音声転送の実装と検証範囲は[ADR 0020](0020-audio-capture.md)を参照する。ディスプレイ全体のAndroidへの転送とAndroid実機、別端末での接続は引き続き検証する。解像度の扱いは[ADR 0013](0013-capture-resolution.md)を参照する。
